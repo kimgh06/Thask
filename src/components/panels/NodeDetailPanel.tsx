@@ -52,7 +52,7 @@ export function NodeDetailPanel({
   const [dirty, setDirty] = useState(false);
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (isOpen) {
       const el = document.getElementById('sidebar-detail-slot');
       setPortalTarget(el);
