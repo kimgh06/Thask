@@ -40,3 +40,4 @@ pgdata/
 
 # oh-my-claudecode
 .omc/
+.claude/settings.json

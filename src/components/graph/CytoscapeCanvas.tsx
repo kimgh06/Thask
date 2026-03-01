@@ -277,20 +277,25 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
       cy.on('drag', 'node', (evt: EventObject) => {
         const node = evt.target;
         if (node.id() === HANDLE_ID || node.id() === RESIZE_HANDLE_ID) return;
-        const pos = node.position();
+        const cursorPos = evt.position;
+        // Find the innermost (smallest) GROUP under cursor for nested GROUP support
+        let innerTarget: string | null = null;
+        let innerTargetArea = Infinity;
         cy.nodes('[nodeType="GROUP"]').forEach((g) => {
-          // Skip self, collapsed, and descendants (cycle prevention)
-          if (g.id() === node.id() || g.hasClass('group-collapsed') || dragDescendantIds?.has(g.id())) {
-            g.removeClass('drop-target');
-            return;
-          }
+          g.removeClass('drop-target');
+          if (g.id() === node.id() || g.hasClass('group-collapsed') || dragDescendantIds?.has(g.id())) return;
           const bb = g.boundingBox({});
-          if (pos.x >= bb.x1 && pos.x <= bb.x2 && pos.y >= bb.y1 && pos.y <= bb.y2) {
-            g.addClass('drop-target');
-          } else {
-            g.removeClass('drop-target');
+          if (cursorPos.x >= bb.x1 && cursorPos.x <= bb.x2 && cursorPos.y >= bb.y1 && cursorPos.y <= bb.y2) {
+            const area = (bb.x2 - bb.x1) * (bb.y2 - bb.y1);
+            if (area < innerTargetArea) {
+              innerTarget = g.id();
+              innerTargetArea = area;
+            }
           }
         });
+        if (innerTarget) {
+          cy.getElementById(innerTarget).addClass('drop-target');
+        }
       });
 
       cy.on('dragfree', 'node', (evt: EventObject) => {
@@ -298,19 +303,24 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         cy.nodes('.drop-target').removeClass('drop-target');
         const cb = callbacksRef.current;
         const node = evt.target;
-        const pos = node.position();
-        cb.onNodeDragEnd?.(node.id(), pos.x, pos.y);
+        const nodePos = node.position();
+        cb.onNodeDragEnd?.(node.id(), nodePos.x, nodePos.y);
 
-        // Find GROUP node under drop position (skip self, collapsed, descendants)
+        // Find GROUP node under cursor drop position (skip self, collapsed, descendants)
+        const dropPos = evt.position;
         const groupNodes = cy.nodes().filter(
           (n) => n.data('nodeType') === 'GROUP' && n.id() !== node.id() && n.id() !== HANDLE_ID && !n.hasClass('group-collapsed') && !dragDescendantIds?.has(n.id()),
         );
         let targetGroup: string | null = null;
+        let targetGroupArea = Infinity;
         groupNodes.forEach((g) => {
-          if (targetGroup) return;
           const bb = g.boundingBox({});
-          if (pos.x >= bb.x1 && pos.x <= bb.x2 && pos.y >= bb.y1 && pos.y <= bb.y2) {
-            targetGroup = g.id();
+          if (dropPos.x >= bb.x1 && dropPos.x <= bb.x2 && dropPos.y >= bb.y1 && dropPos.y <= bb.y2) {
+            const area = (bb.x2 - bb.x1) * (bb.y2 - bb.y1);
+            if (area < targetGroupArea) {
+              targetGroup = g.id();
+              targetGroupArea = area;
+            }
           }
         });
 
