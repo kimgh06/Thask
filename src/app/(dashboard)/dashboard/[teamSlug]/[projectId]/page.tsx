@@ -52,6 +52,7 @@ export default function ProjectGraphPage() {
     requestDeleteNode, executeDeleteNode, confirmDelete, setConfirmDelete,
     savePositions, resizeNode, dropNodeOnGroup,
     connectNodes, updateEdgeType, updateEdgeLabel, deleteEdge,
+    groupSelectedNodes, ungroupSelectedNodes,
   } = useGraphData(projectId);
 
   const { selectedNodeDetail, nodeHistory, connectedNodeIds } = useNodeDetail(
@@ -91,6 +92,20 @@ export default function ProjectGraphPage() {
         return;
       }
 
+      // Ctrl+G: group selected nodes into new GROUP
+      if ((e.ctrlKey || e.metaKey) && e.key === 'g' && !e.shiftKey && !isInput) {
+        e.preventDefault();
+        if (selectedNodeIds.length >= 2) groupSelectedNodes(selectedNodeIds);
+        return;
+      }
+
+      // Ctrl+Shift+G: ungroup selected nodes from their GROUP
+      if ((e.ctrlKey || e.metaKey) && e.key === 'G' && e.shiftKey && !isInput) {
+        e.preventDefault();
+        if (selectedNodeIds.length >= 1) ungroupSelectedNodes(selectedNodeIds);
+        return;
+      }
+
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (isInput) return;
         e.preventDefault();
@@ -116,7 +131,7 @@ export default function ProjectGraphPage() {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNodeId, selectedNodeIds, edgeColorPopover, filteredNodes, undo, redo]);
+  }, [selectedNodeId, selectedNodeIds, edgeColorPopover, filteredNodes, undo, redo, groupSelectedNodes, ungroupSelectedNodes]);
 
   // Apply filters to cytoscape visibility
   useEffect(() => {

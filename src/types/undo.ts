@@ -44,4 +44,16 @@ export type UndoEntry =
       nodeId: string;
       prevParentId: string | null;
       nextParentId: string | null;
+    }
+  | {
+      type: 'groupNodes';
+      groupId: string;
+      groupData: GraphNode;
+      childIds: string[];
+      prevParentIds: (string | null)[];
+    }
+  | {
+      type: 'ungroupNodes';
+      childIds: string[];
+      prevParentIds: (string | null)[];
     };

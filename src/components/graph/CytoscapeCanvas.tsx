@@ -6,6 +6,7 @@ import fcose from 'cytoscape-fcose';
 import edgehandles from 'cytoscape-edgehandles';
 import { cytoscapeStylesheet } from '@/lib/cytoscape/styles';
 import { getFcoseLayout, getPresetLayout } from '@/lib/cytoscape/layouts';
+import { getChildNodes, getDescendantNodes, getDescendantIdSet } from '@/lib/cytoscape/groupHelpers';
 import type { GraphNode, GraphEdge } from '@/types/graph';
 
 // Register extensions once
@@ -115,10 +116,6 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         disableBrowserGestures: true,
       });
       eh.enable();
-      // Allow edge creation from compound parent nodes (GROUP with children)
-      // Default canStartOn blocks isParent() nodes
-      (eh as ReturnType<Core['edgehandles']> & { canStartOn: (n: cytoscape.NodeSingular) => boolean }).canStartOn =
-        (node) => node.isNode() && node.id() !== HANDLE_ID && node.id() !== RESIZE_HANDLE_ID;
       ehRef.current = eh;
 
       // --- Custom hover handle ---
@@ -210,46 +207,31 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         if (!eh.active) hideHandle();
       });
 
-      // Hide edge handle when node drag starts + temporarily unparent for GROUP stability
+      // Hide edge handle when node drag starts + setup GROUP drag state
       cy.on('grab', 'node', (e) => {
         const node = e.target;
         if (node.id() === HANDLE_ID || node.id() === RESIZE_HANDLE_ID) return;
         handleNode.style('display', 'none');
         hoverSource = null;
 
-        // If node is inside a GROUP, temporarily unparent so GROUP stays fixed
-        const parentId = node.data('parent');
-        if (parentId) {
-          const parentNode = cy.getElementById(parentId);
-          if (parentNode.length && parentNode.data('nodeType') === 'GROUP' && !parentNode.hasClass('group-collapsed')) {
-            dragOriginalParent = parentId;
-            dragOriginalMinDims = {
-              w: parentNode.data('minWidth'),
-              h: parentNode.data('minHeight'),
-            };
-
-            // Lock GROUP to current size and position before unparenting
-            const bb = parentNode.boundingBox({});
-            const bbW = bb.x2 - bb.x1;
-            const bbH = bb.y2 - bb.y1;
-            const groupCenter = { x: (bb.x1 + bb.x2) / 2, y: (bb.y1 + bb.y2) / 2 };
-            parentNode.data('minWidth', bbW);
-            parentNode.data('minHeight', bbH);
-
-            node.move({ parent: null });
-
-            // Empty GROUP: set position + style to prevent jump
-            if (!parentNode.isParent()) {
-              parentNode.position(groupCenter);
-              parentNode.style({ width: bbW, height: bbH });
-            }
-          }
+        if (node.data('nodeType') === 'GROUP') {
+          // GROUP grabbed: collect all descendants + their position offsets
+          const groupPos = node.position();
+          const descendants = getDescendantNodes(cy, node.id());
+          const childOffsets = new Map<string, { dx: number; dy: number }>();
+          descendants.forEach((d: cytoscape.NodeSingular) => {
+            const dPos = d.position();
+            childOffsets.set(d.id(), {
+              dx: dPos.x - groupPos.x,
+              dy: dPos.y - groupPos.y,
+            });
+          });
+          groupDragState = { groupId: node.id(), childOffsets };
+          dragDescendantIds = getDescendantIdSet(cy, node.id());
+        } else {
+          groupDragState = null;
+          dragDescendantIds = null;
         }
-
-        // Precompute descendant IDs for cycle prevention during GROUP nesting
-        dragDescendantIds = node.data('nodeType') === 'GROUP' && node.isParent()
-          ? new Set(node.descendants().map((d: cytoscape.NodeSingular) => d.id()))
-          : null;
       });
 
       // Start edge drawing when handle is tapped/dragged
@@ -294,12 +276,13 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         }
       });
 
-      // Highlight GROUP nodes when dragging a node over them
+      // Highlight GROUP nodes when dragging a node over them + move GROUP children in lockstep
       cy.on('drag', 'node', (evt: EventObject) => {
         const node = evt.target;
         if (node.id() === HANDLE_ID || node.id() === RESIZE_HANDLE_ID) return;
         const cursorPos = evt.position;
-        // Find the innermost (smallest) GROUP under cursor for nested GROUP support
+
+        // Drop-target highlight: find innermost (smallest) GROUP under cursor
         let innerTarget: string | null = null;
         let innerTargetArea = Infinity;
         cy.nodes('[nodeType="GROUP"]').forEach((g) => {
@@ -317,6 +300,20 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         if (innerTarget) {
           cy.getElementById(innerTarget).addClass('drop-target');
         }
+
+        // GROUP drag: move all descendants in lockstep
+        if (groupDragState && groupDragState.groupId === node.id()) {
+          const groupPos = node.position();
+          groupDragState.childOffsets.forEach((offset, childId) => {
+            const child = cy.getElementById(childId);
+            if (child.length) {
+              child.position({
+                x: groupPos.x + offset.dx,
+                y: groupPos.y + offset.dy,
+              });
+            }
+          });
+        }
       });
 
       cy.on('dragfree', 'node', (evt: EventObject) => {
@@ -324,75 +321,90 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         cy.nodes('.drop-target').removeClass('drop-target');
         const cb = callbacksRef.current;
         const node = evt.target;
-
-        // Collect positions: compound parent → all descendants; otherwise → single node
         const positionsToSave: Array<{ id: string; x: number; y: number }> = [];
-        if (node.isParent()) {
-          node.descendants().forEach((d: cytoscape.NodeSingular) => {
-            const p = d.position();
-            positionsToSave.push({ id: d.id(), x: p.x, y: p.y });
+
+        if (groupDragState && groupDragState.groupId === node.id()) {
+          // GROUP was dragged: save GROUP + all descendant positions
+          const gPos = node.position();
+          positionsToSave.push({ id: node.id(), x: gPos.x, y: gPos.y });
+          groupDragState.childOffsets.forEach((_offset, childId) => {
+            const child = cy.getElementById(childId);
+            if (child.length) {
+              const p = child.position();
+              positionsToSave.push({ id: childId, x: p.x, y: p.y });
+            }
           });
+          groupDragState = null;
         } else {
+          // Regular node (or child of GROUP) dragged
+          const dropPos = evt.position;
+
+          // Find innermost GROUP under drop position
+          const groupNodes = cy.nodes().filter(
+            (n) => n.data('nodeType') === 'GROUP' && n.id() !== node.id() && n.id() !== HANDLE_ID && !n.hasClass('group-collapsed') && !dragDescendantIds?.has(n.id()),
+          );
+          let targetGroup: string | null = null;
+          let targetGroupArea = Infinity;
+          groupNodes.forEach((g) => {
+            const bb = g.boundingBox({});
+            if (dropPos.x >= bb.x1 && dropPos.x <= bb.x2 && dropPos.y >= bb.y1 && dropPos.y <= bb.y2) {
+              const area = (bb.x2 - bb.x1) * (bb.y2 - bb.y1);
+              if (area < targetGroupArea) {
+                targetGroup = g.id();
+                targetGroupArea = area;
+              }
+            }
+          });
+
+          const currentParentId = (node.data('parentId') as string) || null;
+
+          if (currentParentId) {
+            // Node has a parent GROUP — check if still inside bounds
+            const parentNode = cy.getElementById(currentParentId);
+            if (parentNode.length && parentNode.data('nodeType') === 'GROUP' && !parentNode.hasClass('group-collapsed')) {
+              const bb = parentNode.boundingBox({});
+              const nodePos = node.position();
+              const isInside = nodePos.x >= bb.x1 && nodePos.x <= bb.x2 && nodePos.y >= bb.y1 && nodePos.y <= bb.y2;
+              if (!isInside) {
+                // Dragged outside parent → detach or reparent
+                cb.onNodeDropOnGroup?.(node.id(), targetGroup);
+              } else if (targetGroup && targetGroup !== currentParentId) {
+                // Dropped inside a different GROUP
+                cb.onNodeDropOnGroup?.(node.id(), targetGroup);
+              }
+            }
+          } else {
+            // Node has no parent — check if dropped on a GROUP
+            if (targetGroup) {
+              const group = cy.getElementById(targetGroup);
+              const groupBB = group.boundingBox({});
+              const nodePos = node.position();
+              const pad = 25;
+              const nw = node.width() / 2;
+              const nh = node.height() / 2;
+              const fitsInside =
+                nodePos.x - nw >= groupBB.x1 + pad &&
+                nodePos.x + nw <= groupBB.x2 - pad &&
+                nodePos.y - nh >= groupBB.y1 + pad &&
+                nodePos.y + nh <= groupBB.y2 - pad;
+              if (fitsInside) {
+                const clampedX = Math.max(groupBB.x1 + pad + nw, Math.min(groupBB.x2 - pad - nw, nodePos.x));
+                const clampedY = Math.max(groupBB.y1 + pad + nh, Math.min(groupBB.y2 - pad - nh, nodePos.y));
+                node.position({ x: clampedX, y: clampedY });
+              }
+              cb.onNodeDropOnGroup?.(node.id(), targetGroup);
+            }
+          }
+
+          // Save dragged node position
           const p = node.position();
           positionsToSave.push({ id: node.id(), x: p.x, y: p.y });
         }
+
+        dragDescendantIds = null;
         if (positionsToSave.length > 0) {
           cb.onNodeDragEnd?.(positionsToSave);
         }
-
-        // Find GROUP node under cursor drop position (skip self, collapsed, descendants)
-        const dropPos = evt.position;
-        const groupNodes = cy.nodes().filter(
-          (n) => n.data('nodeType') === 'GROUP' && n.id() !== node.id() && n.id() !== HANDLE_ID && !n.hasClass('group-collapsed') && !dragDescendantIds?.has(n.id()),
-        );
-        let targetGroup: string | null = null;
-        let targetGroupArea = Infinity;
-        groupNodes.forEach((g) => {
-          const bb = g.boundingBox({});
-          if (dropPos.x >= bb.x1 && dropPos.x <= bb.x2 && dropPos.y >= bb.y1 && dropPos.y <= bb.y2) {
-            const area = (bb.x2 - bb.x1) * (bb.y2 - bb.y1);
-            if (area < targetGroupArea) {
-              targetGroup = g.id();
-              targetGroupArea = area;
-            }
-          }
-        });
-
-        if (dragOriginalParent) {
-          // Node was temporarily unparented from a GROUP during grab
-          if (targetGroup === dragOriginalParent) {
-            // Dropped back inside original group → re-parent (no API call)
-            node.move({ parent: dragOriginalParent });
-          } else {
-            // Moved to different group or out of all groups → notify server
-            cb.onNodeDropOnGroup?.(node.id(), targetGroup);
-          }
-
-          // Restore original GROUP dimensions
-          const originalGroup = cy.getElementById(dragOriginalParent);
-          if (originalGroup.length) {
-            if (dragOriginalMinDims?.w !== undefined) {
-              originalGroup.data('minWidth', dragOriginalMinDims.w);
-            } else {
-              originalGroup.removeData('minWidth');
-            }
-            if (dragOriginalMinDims?.h !== undefined) {
-              originalGroup.data('minHeight', dragOriginalMinDims.h);
-            } else {
-              originalGroup.removeData('minHeight');
-            }
-          }
-
-          dragOriginalParent = null;
-          dragOriginalMinDims = null;
-        } else {
-          // Normal case: node was not inside any group
-          const currentParent = node.data('parent') || null;
-          if (targetGroup !== currentParent) {
-            cb.onNodeDropOnGroup?.(node.id(), targetGroup);
-          }
-        }
-        dragDescendantIds = null;
       });
 
       // Edge click for color change
@@ -409,9 +421,11 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         cb.onToggleGroupCollapse?.(evt.target.id());
       });
 
-      // Temporary unparent state — keeps GROUP fixed while child is dragged
-      let dragOriginalParent: string | null = null;
-      let dragOriginalMinDims: { w: number | undefined; h: number | undefined } | null = null;
+      // GROUP drag state: when a GROUP is grabbed, store descendants + position offsets
+      let groupDragState: {
+        groupId: string;
+        childOffsets: Map<string, { dx: number; dy: number }>;
+      } | null = null;
       let dragDescendantIds: Set<string> | null = null;
 
       // --- 8-directional resize for GROUP nodes ---
@@ -473,7 +487,7 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         resizeTarget.ungrabify();
         resizeTarget.addClass('resizing');
 
-        const bb = resizeTarget.boundingBox({});
+        const bb = resizeTarget.boundingBox({ includeLabels: false, includeOverlays: false });
         resizeStartBB = { x1: bb.x1, y1: bb.y1, x2: bb.x2, y2: bb.y2 };
         resizeStartPos = { x: e.clientX, y: e.clientY };
       }
@@ -513,16 +527,34 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         if (moveTop) y1 += deltaY;
         if (moveBottom) y2 += deltaY;
 
-        // Enforce minimum dimensions
-        const MIN_W = 80;
-        const MIN_H = 50;
-        if (x2 - x1 < MIN_W) {
-          if (moveLeft) x1 = x2 - MIN_W;
-          else x2 = x1 + MIN_W;
+        // Enforce minimum dimensions (dynamic: clamp to children bounding box)
+        let minW = 80;
+        let minH = 50;
+        if (resizeTarget.data('nodeType') === 'GROUP' && !resizeTarget.hasClass('group-collapsed')) {
+          const children = getChildNodes(cy, resizeTarget.id());
+          if (children.length > 0) {
+            const PAD = 30;
+            let cxMin = Infinity, cyMin = Infinity, cxMax = -Infinity, cyMax = -Infinity;
+            children.forEach((c: cytoscape.NodeSingular) => {
+              const pos = c.position();
+              const hw = c.width() / 2;
+              const hh = c.height() / 2;
+              cxMin = Math.min(cxMin, pos.x - hw);
+              cyMin = Math.min(cyMin, pos.y - hh);
+              cxMax = Math.max(cxMax, pos.x + hw);
+              cyMax = Math.max(cyMax, pos.y + hh);
+            });
+            minW = Math.max(minW, cxMax - cxMin + PAD * 2);
+            minH = Math.max(minH, cyMax - cyMin + PAD * 2);
+          }
         }
-        if (y2 - y1 < MIN_H) {
-          if (moveTop) y1 = y2 - MIN_H;
-          else y2 = y1 + MIN_H;
+        if (x2 - x1 < minW) {
+          if (moveLeft) x1 = x2 - minW;
+          else x2 = x1 + minW;
+        }
+        if (y2 - y1 < minH) {
+          if (moveTop) y1 = y2 - minH;
+          else y2 = y1 + minH;
         }
 
         const newW = x2 - x1;
@@ -530,23 +562,10 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         const newCenterX = (x1 + x2) / 2;
         const newCenterY = (y1 + y2) / 2;
 
-        if (resizeTarget.isParent()) {
-          resizeTarget.data('minWidth', newW);
-          resizeTarget.data('minHeight', newH);
-          // Shift children so parent bounding box matches desired position
-          const actualBB = resizeTarget.boundingBox({});
-          const shiftX = newCenterX - (actualBB.x1 + actualBB.x2) / 2;
-          const shiftY = newCenterY - (actualBB.y1 + actualBB.y2) / 2;
-          if (Math.abs(shiftX) > 0.5 || Math.abs(shiftY) > 0.5) {
-            resizeTarget.children().forEach((child) => {
-              const pos = child.position();
-              child.position({ x: pos.x + shiftX, y: pos.y + shiftY });
-            });
-          }
-        } else {
-          resizeTarget.style({ width: newW, height: newH });
-          resizeTarget.position({ x: newCenterX, y: newCenterY });
-        }
+        // GROUP is a regular node with explicit width/height — set directly
+        resizeTarget.data('width', newW);
+        resizeTarget.data('height', newH);
+        resizeTarget.position({ x: newCenterX, y: newCenterY });
       }
 
       function onResizeEnd() {
@@ -559,9 +578,8 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         resizeTarget.grabify();
         resizeTarget.removeClass('resizing');
 
-        const bb = resizeTarget.boundingBox({});
-        const finalW = bb.x2 - bb.x1;
-        const finalH = bb.y2 - bb.y1;
+        const finalW = resizeTarget.data('width') as number;
+        const finalH = resizeTarget.data('height') as number;
         callbacksRef.current.onNodeResize?.(resizeTarget.id(), finalW, finalH);
       }
 
@@ -617,48 +635,30 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
           const data: Record<string, unknown> = {
             id: node.id,
             label: node.title,
+            title: node.title,
             nodeType: node.type,
             status: node.status,
           };
+          // Store parentId as regular data (NOT Cytoscape compound 'parent')
+          data.parentId = node.parentId || null;
+
           if (node.type === 'GROUP') {
             const childCount = nodes.filter((n) => n.parentId === node.id).length;
             data.childCount = childCount;
-            if (node.width && node.height) {
-              data.minWidth = node.width;
-              data.minHeight = node.height;
-            }
+            data.width = node.width || 160;
+            data.height = node.height || 100;
           }
 
           if (existing.length) {
             existing.data(data);
-            // Sync parent via move() — data() is unreliable for topology changes within batch
-            const currentParent = existing.data('parent') || null;
-            const newParent = node.parentId || null;
-            if (currentParent !== newParent) {
-              existing.move({ parent: newParent });
-            }
-            if (node.type === 'GROUP' && node.width && node.height && !existing.isParent()) {
-              existing.style({ width: node.width, height: node.height });
-            }
           } else {
-            // New nodes: include parent in data for cy.add()
-            const addData = { ...data };
-            if (node.parentId) {
-              addData.parent = node.parentId;
-            }
             cy.add({
               group: 'nodes',
-              data: addData,
+              data: { ...data },
               position: hasPositions
                 ? { x: node.positionX, y: node.positionY }
                 : undefined,
             });
-            if (node.type === 'GROUP' && node.width && node.height) {
-              const added = cy.getElementById(node.id);
-              if (!added.isParent()) {
-                added.style({ width: node.width, height: node.height });
-              }
-            }
           }
         });
 
@@ -694,7 +694,7 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         }
       });
       cy.nodes().forEach((n) => {
-        const parentId = n.data('parent');
+        const parentId = n.data('parentId') as string | null;
         if (parentId && collapsedGroupIds.includes(parentId)) {
           n.addClass('collapsed-child');
         } else {
@@ -715,7 +715,31 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         if (hasPositions) {
           cy.layout(getPresetLayout()).run();
         } else {
-          cy.layout(getFcoseLayout()).run();
+          const layout = cy.layout(getFcoseLayout());
+          layout.on('layoutstop', () => {
+            // After fcose: reposition GROUP nodes to encompass their children
+            cy.nodes('[nodeType="GROUP"]').forEach((g) => {
+              if (g.hasClass('group-collapsed')) return;
+              const children = cy.nodes().filter((n: cytoscape.NodeSingular) => n.data('parentId') === g.id());
+              if (children.length === 0) return;
+              const PAD = 40;
+              const NODE_HALF = 40;
+              let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+              children.forEach((c: cytoscape.NodeSingular) => {
+                const pos = c.position();
+                minX = Math.min(minX, pos.x - NODE_HALF);
+                maxX = Math.max(maxX, pos.x + NODE_HALF);
+                minY = Math.min(minY, pos.y - NODE_HALF);
+                maxY = Math.max(maxY, pos.y + NODE_HALF);
+              });
+              const w = Math.max(160, maxX - minX + PAD * 2);
+              const h = Math.max(100, maxY - minY + PAD * 2);
+              g.data('width', w);
+              g.data('height', h);
+              g.position({ x: (minX + maxX) / 2, y: (minY + maxY) / 2 });
+            });
+          });
+          layout.run();
         }
         initialLayoutDone.current = true;
       }

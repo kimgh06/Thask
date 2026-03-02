@@ -49,6 +49,7 @@ export const cytoscapeStylesheet: StylesheetStyle[] = [
       'border-color': '#d1d5db',
       'background-color': '#f9fafb',
       'overlay-padding': 4,
+      'z-index': 10,
     },
   },
 
@@ -62,17 +63,23 @@ export const cytoscapeStylesheet: StylesheetStyle[] = [
     } as Record<string, string>,
   })),
 
-  // GROUP node base style (visible even when empty / no children)
+  // GROUP node — regular node with explicit dimensions (no compound parent)
   {
     selector: 'node[nodeType="GROUP"]',
     style: {
-      width: 160,
-      height: 100,
+      width: 'data(width)',
+      height: 'data(height)',
+      shape: 'round-rectangle',
       'border-style': 'dashed',
       'border-color': '#94a3b8',
       'border-width': 2,
       'background-opacity': 0.08,
+      'background-color': '#64748b',
       'text-valign': 'top',
+      'text-halign': 'center',
+      'font-size': 14,
+      'font-weight': 600,
+      'z-index': 0,
     } as Record<string, string | number>,
   },
 
@@ -139,30 +146,6 @@ export const cytoscapeStylesheet: StylesheetStyle[] = [
       'overlay-color': '#6366f1',
       'overlay-opacity': 0.12,
     },
-  },
-
-  // Compound (parent) node — overrides base node when it has children
-  {
-    selector: ':parent',
-    style: {
-      'background-opacity': 0.08,
-      'background-color': '#64748b',
-      'border-color': '#94a3b8',
-      'border-width': 2,
-      'border-style': 'dashed',
-      padding: 20,
-      'text-valign': 'top',
-      'text-halign': 'center',
-      'font-size': 14,
-      'font-weight': 600,
-      shape: 'round-rectangle',
-      'min-width': 'data(minWidth)',
-      'min-height': 'data(minHeight)',
-      'min-width-bias-left': '50%',
-      'min-width-bias-right': '50%',
-      'min-height-bias-top': '50%',
-      'min-height-bias-bottom': '50%',
-    } as Record<string, string | number>,
   },
 
   // Drop target highlight when dragging a node over a GROUP

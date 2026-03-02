@@ -356,11 +356,102 @@ export function useGraphData(projectId: string) {
     deleteEdgeMutation.mutate(edgeId);
   }
 
+  async function groupSelectedNodes(nodeIds: string[]) {
+    // Filter out GROUP nodes — only regular nodes can be grouped
+    const targets = nodes.filter((n) => nodeIds.includes(n.id) && n.type !== 'GROUP');
+    if (targets.length < 2) return;
+
+    // Calculate bounding box of selected nodes to determine GROUP dimensions
+    const PADDING = 40;
+    const NODE_HALF = 40; // approximate half node size
+    const minX = Math.min(...targets.map((n) => n.positionX)) - NODE_HALF - PADDING;
+    const maxX = Math.max(...targets.map((n) => n.positionX)) + NODE_HALF + PADDING;
+    const minY = Math.min(...targets.map((n) => n.positionY)) - NODE_HALF - PADDING;
+    const maxY = Math.max(...targets.map((n) => n.positionY)) + NODE_HALF + PADDING;
+    const groupWidth = Math.max(160, maxX - minX);
+    const groupHeight = Math.max(100, maxY - minY);
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    // Create GROUP at centroid with explicit dimensions
+    const res = await fetch(`/api/projects/${projectId}/nodes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'New Group', type: 'GROUP', positionX: cx, positionY: cy, width: groupWidth, height: groupHeight }),
+    });
+    if (!res.ok) return;
+    const json = await res.json();
+    const groupData = json.data as GraphNode;
+    if (!groupData) return;
+
+    // Record previous parentIds for undo
+    const childIds = targets.map((n) => n.id);
+    const prevParentIds = targets.map((n) => n.parentId);
+
+    // Assign all targets as children of the new GROUP
+    await Promise.all(
+      childIds.map((id) =>
+        fetch(`/api/projects/${projectId}/nodes/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parentId: groupData.id }),
+        }),
+      ),
+    );
+
+    pushUndo({ type: 'groupNodes', groupId: groupData.id, groupData, childIds, prevParentIds });
+    invalidateGraph();
+    selectNode(groupData.id);
+  }
+
+  async function ungroupSelectedNodes(nodeIds: string[]) {
+    const childIds: string[] = [];
+    const prevParentIds: (string | null)[] = [];
+
+    for (const id of nodeIds) {
+      const node = nodes.find((n) => n.id === id);
+      if (!node) continue;
+
+      if (node.type === 'GROUP') {
+        // GROUP selected: collect all its children
+        for (const child of nodes.filter((n) => n.parentId === id)) {
+          if (!childIds.includes(child.id)) {
+            childIds.push(child.id);
+            prevParentIds.push(child.parentId);
+          }
+        }
+      } else if (node.parentId) {
+        // Regular node with a parent: unparent it
+        if (!childIds.includes(id)) {
+          childIds.push(id);
+          prevParentIds.push(node.parentId);
+        }
+      }
+    }
+
+    if (childIds.length === 0) return;
+
+    // Set parentId to null for all collected nodes
+    await Promise.all(
+      childIds.map((id) =>
+        fetch(`/api/projects/${projectId}/nodes/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parentId: null }),
+        }),
+      ),
+    );
+
+    pushUndo({ type: 'ungroupNodes', childIds, prevParentIds });
+    invalidateGraph();
+  }
+
   return {
     nodes, edges, loading, filteredNodes, fetchGraph: invalidateGraph,
     addNode, addGroup, updateNode,
     requestDeleteNode, executeDeleteNode, confirmDelete, setConfirmDelete,
     savePositions, resizeNode, dropNodeOnGroup,
     connectNodes, updateEdgeType, updateEdgeLabel, deleteEdge,
+    groupSelectedNodes, ungroupSelectedNodes,
   };
 }

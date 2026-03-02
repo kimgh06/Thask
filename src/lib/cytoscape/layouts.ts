@@ -10,11 +10,8 @@ export function getFcoseLayout() {
     nodeRepulsion: 8000,
     idealEdgeLength: 120,
     edgeElasticity: 0.45,
-    nestingFactor: 0.1,
     gravity: 0.25,
     gravityRange: 3.8,
-    gravityCompound: 1.0,
-    gravityRangeCompound: 1.5,
     numIter: 2500,
     tile: true,
   };

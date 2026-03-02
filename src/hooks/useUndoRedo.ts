@@ -282,6 +282,86 @@ export function useUndoRedo(projectId: string) {
           );
           break;
         }
+
+        // ── groupNodes ──
+        case 'groupNodes': {
+          if (direction === 'undo') {
+            // Restore previous parents for all children
+            await Promise.all(
+              entry.childIds.map((id, i) =>
+                fetch(`/api/projects/${projectId}/nodes/${id}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ parentId: entry.prevParentIds[i] }),
+                }),
+              ),
+            );
+            // Delete the GROUP
+            await fetch(`/api/projects/${projectId}/nodes/${entry.groupId}`, {
+              method: 'DELETE',
+            });
+          } else {
+            // Re-create GROUP
+            const res = await fetch(`/api/projects/${projectId}/nodes`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: entry.groupData.type,
+                title: entry.groupData.title,
+                positionX: entry.groupData.positionX,
+                positionY: entry.groupData.positionY,
+                width: entry.groupData.width,
+                height: entry.groupData.height,
+              }),
+            });
+            const json = await res.json();
+            if (json.data) {
+              entry.groupId = json.data.id;
+              entry.groupData = json.data;
+              // Re-parent all children
+              await Promise.all(
+                entry.childIds.map((id) =>
+                  fetch(`/api/projects/${projectId}/nodes/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ parentId: json.data.id }),
+                  }),
+                ),
+              );
+            }
+          }
+          invalidateGraph();
+          break;
+        }
+
+        // ── ungroupNodes ──
+        case 'ungroupNodes': {
+          if (direction === 'undo') {
+            // Restore previous parents
+            await Promise.all(
+              entry.childIds.map((id, i) =>
+                fetch(`/api/projects/${projectId}/nodes/${id}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ parentId: entry.prevParentIds[i] }),
+                }),
+              ),
+            );
+          } else {
+            // Unparent all
+            await Promise.all(
+              entry.childIds.map((id) =>
+                fetch(`/api/projects/${projectId}/nodes/${id}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ parentId: null }),
+                }),
+              ),
+            );
+          }
+          invalidateGraph();
+          break;
+        }
       }
     },
     [projectId, queryClient, invalidateGraph],
