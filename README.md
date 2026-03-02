@@ -3,7 +3,7 @@
 <table><tr>
 <td align="center" width="120"><img src="public/icon.svg" alt="Thask" width="80" /></td>
 <td align="center"><h1>Thask</h1><em>Thask it, done.</em></td>
-<td align="center" width="120"><img src="public/mascot.png" alt="Thask Mascot" width="100" /></td>
+<td align="center" width="160"><img src="public/mascot.png" alt="Thask Mascot" width="140" /></td>
 </tr></table>
 
 **Visualize product flows, tasks, and bugs as a linked node graph.**
