@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { GraphNode, GraphEdge, NodeHistoryEntry } from '@/types/graph';
 
 export function useNodeDetail(
@@ -9,31 +9,31 @@ export function useNodeDetail(
   nodes: GraphNode[],
   edges: GraphEdge[],
 ) {
-  const [selectedNodeDetail, setSelectedNodeDetail] = useState<GraphNode | null>(null);
   const [nodeHistory, setNodeHistory] = useState<NodeHistoryEntry[]>([]);
-  const [connectedNodeIds, setConnectedNodeIds] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (!selectedNodeId) {
-      setSelectedNodeDetail(null);
-      setNodeHistory([]);
-      setConnectedNodeIds([]);
-      return;
-    }
+  // Derived directly from nodes array — always in sync with optimistic updates & waterfall
+  const selectedNodeDetail = useMemo(
+    () => (selectedNodeId ? nodes.find((n) => n.id === selectedNodeId) ?? null : null),
+    [selectedNodeId, nodes],
+  );
 
-    // Instant: basic data from already-loaded nodes array
-    const basicNode = nodes.find((n) => n.id === selectedNodeId);
-    if (basicNode) setSelectedNodeDetail(basicNode);
-
-    // Instant: connected nodes from already-loaded edges array
+  const connectedNodeIds = useMemo(() => {
+    if (!selectedNodeId) return [];
     const connected = new Set<string>();
     edges.forEach((e) => {
       if (e.sourceId === selectedNodeId) connected.add(e.targetId);
       if (e.targetId === selectedNodeId) connected.add(e.sourceId);
     });
-    setConnectedNodeIds(Array.from(connected));
+    return Array.from(connected);
+  }, [selectedNodeId, edges]);
 
-    // Async: only history needs a fetch
+  // Async: only history needs a fetch
+  useEffect(() => {
+    if (!selectedNodeId) {
+      setNodeHistory([]);
+      return;
+    }
+
     async function fetchHistory() {
       const res = await fetch(`/api/projects/${projectId}/nodes/${selectedNodeId}`);
       if (res.ok) {
@@ -43,7 +43,6 @@ export function useNodeDetail(
     }
 
     fetchHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNodeId, projectId]);
 
   return { selectedNodeDetail, nodeHistory, connectedNodeIds };
