@@ -1,22 +1,15 @@
 <div align="center">
 
-<br />
-
-<img src="public/mascot.png" alt="Thask Mascot" width="180" />
-
-<br />
-
-<img src="public/icon.svg" alt="Thask" width="40" />
-
-# Thask
-
-*Thask it, done.*
+<table><tr>
+<td align="center" width="120"><img src="public/icon.svg" alt="Thask" width="80" /></td>
+<td align="center"><h1>Thask</h1><em>Thask it, done.</em></td>
+<td align="center" width="120"><img src="public/mascot.png" alt="Thask Mascot" width="100" /></td>
+</tr></table>
 
 **Visualize product flows, tasks, and bugs as a linked node graph.**
 <br />
 Built for QA risk management and change impact analysis.
 
-<br />
 <br />
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -29,10 +22,7 @@ Built for QA risk management and change impact analysis.
 &nbsp;
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 
-<br />
-
 <!-- TODO: Add hero screenshot/GIF here -->
-<!-- ![Thask Graph Editor](docs/images/hero.png) -->
 
 </div>
 
