@@ -28,7 +28,11 @@ export default function ProjectGraphPage() {
   const [connectedNodeIds, setConnectedNodeIds] = useState<string[]>([]);
 
   // Confirm dialog state
-  const [confirmDelete, setConfirmDelete] = useState<{ nodeId: string; childCount: number } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{
+    nodeId: string;
+    title: string;
+    message: string;
+  } | null>(null);
 
   // Edge color popover state (for changing existing edge color)
   const [edgeColorPopover, setEdgeColorPopover] = useState<{
@@ -71,16 +75,37 @@ export default function ProjectGraphPage() {
     fetchGraph();
   }, [fetchGraph]);
 
-  // ESC key to close edge color popover
+  // Keyboard shortcuts: ESC (close popover), Delete/Backspace (delete selected)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape' && edgeColorPopover.visible) {
         setEdgeColorPopover((p) => ({ ...p, visible: false }));
+        return;
+      }
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Don't trigger when typing in inputs
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+        e.preventDefault();
+
+        // Edge popover showing → delete edge
+        if (edgeColorPopover.visible && edgeColorPopover.edgeId) {
+          handleEdgeDelete();
+          return;
+        }
+
+        // Node selected → delete node
+        if (selectedNodeId) {
+          handleDeleteNode(selectedNodeId);
+        }
       }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [edgeColorPopover.visible]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedNodeId, edgeColorPopover]);
 
   // Filter nodes for display
   const filteredNodes = nodes.filter((n) => {
@@ -111,7 +136,7 @@ export default function ProjectGraphPage() {
     });
   }, [activeNodeTypeFilters, activeStatusFilters, nodes]);
 
-  // Node selection - fetch detail
+  // Node selection — show basic data instantly, fetch history async
   useEffect(() => {
     if (!selectedNodeId) {
       setSelectedNodeDetail(null);
@@ -120,17 +145,29 @@ export default function ProjectGraphPage() {
       return;
     }
 
-    async function fetchDetail() {
+    // Instant: basic data from already-loaded nodes array
+    const basicNode = nodes.find((n) => n.id === selectedNodeId);
+    if (basicNode) setSelectedNodeDetail(basicNode);
+
+    // Instant: connected nodes from already-loaded edges array
+    const connected = new Set<string>();
+    edges.forEach((e) => {
+      if (e.sourceId === selectedNodeId) connected.add(e.targetId);
+      if (e.targetId === selectedNodeId) connected.add(e.sourceId);
+    });
+    setConnectedNodeIds(Array.from(connected));
+
+    // Async: only history needs a fetch
+    async function fetchHistory() {
       const res = await fetch(`/api/projects/${projectId}/nodes/${selectedNodeId}`);
       if (res.ok) {
         const json = await res.json();
-        setSelectedNodeDetail(json.data);
         setNodeHistory(json.data.history || []);
-        setConnectedNodeIds(json.data.connectedNodeIds || []);
       }
     }
 
-    fetchDetail();
+    fetchHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedNodeId, projectId]);
 
   // Handlers
@@ -180,13 +217,33 @@ export default function ProjectGraphPage() {
 
   function handleDeleteNode(nodeId: string) {
     const node = nodes.find((n) => n.id === nodeId);
-    if (node?.type === 'GROUP') {
-      const childCount = nodes.filter((n) => n.parentId === nodeId).length;
-      if (childCount > 0) {
-        setConfirmDelete({ nodeId, childCount });
-        return;
-      }
+    if (!node) return;
+
+    const edgeCount = edges.filter((e) => e.sourceId === nodeId || e.targetId === nodeId).length;
+    const childCount = nodes.filter((n) => n.parentId === nodeId).length;
+
+    // GROUP with children → always confirm
+    if (node.type === 'GROUP' && childCount > 0) {
+      const edgeNote = edgeCount > 0 ? ` ${edgeCount} connected edge(s) will also be deleted.` : '';
+      setConfirmDelete({
+        nodeId,
+        title: 'Delete Group',
+        message: `This group contains ${childCount} node(s). They will be removed from the group (preserved).${edgeNote}`,
+      });
+      return;
     }
+
+    // Node with edges → confirm
+    if (edgeCount > 0) {
+      setConfirmDelete({
+        nodeId,
+        title: `Delete ${node.type === 'GROUP' ? 'Group' : 'Node'}`,
+        message: `"${node.title}" and ${edgeCount} connected edge(s) will be deleted.`,
+      });
+      return;
+    }
+
+    // No edges, no children → delete immediately
     executeDeleteNode(nodeId);
   }
 
@@ -370,9 +427,9 @@ export default function ProjectGraphPage() {
 
       {confirmDelete && (
         <ConfirmDialog
-          title="Delete Group"
-          message={`This group contains ${confirmDelete.childCount} node(s). Deleting will remove them from the group (nodes are preserved).`}
-          confirmLabel="Delete Group"
+          title={confirmDelete.title}
+          message={confirmDelete.message}
+          confirmLabel="Delete"
           variant="danger"
           onConfirm={() => executeDeleteNode(confirmDelete.nodeId)}
           onCancel={() => setConfirmDelete(null)}

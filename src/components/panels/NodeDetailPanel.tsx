@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useLayoutEffect } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, Trash2 } from 'lucide-react';
+import { X, Trash2, Check, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { GraphNode, NodeType, NodeStatus, NodeHistoryEntry } from '@/types/graph';
 import { NODE_TYPES, NODE_STATUSES } from '@/types/graph';
@@ -34,6 +34,8 @@ const STATUS_COLORS: Record<NodeStatus, string> = {
   BLOCKED: 'bg-gray-100 text-gray-600',
 };
 
+const DEBOUNCE_MS = 500;
+
 export function NodeDetailPanel({
   node,
   allNodes,
@@ -49,8 +51,57 @@ export function NodeDetailPanel({
   const [description, setDescription] = useState('');
   const [type, setType] = useState<NodeType>('TASK');
   const [status, setStatus] = useState<NodeStatus>('IN_PROGRESS');
-  const [dirty, setDirty] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingFields = useRef<Partial<GraphNode> | null>(null);
+  const nodeIdRef = useRef<string | null>(null);
+  const savedIndicatorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Flush any pending debounced save immediately
+  const flush = useCallback(() => {
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current);
+      debounceTimer.current = null;
+    }
+    if (pendingFields.current && nodeIdRef.current) {
+      onUpdate(nodeIdRef.current, pendingFields.current);
+      pendingFields.current = null;
+      showSaved();
+    }
+  }, [onUpdate]);
+
+  function showSaved() {
+    setSaveStatus('saved');
+    if (savedIndicatorTimer.current) clearTimeout(savedIndicatorTimer.current);
+    savedIndicatorTimer.current = setTimeout(() => setSaveStatus('idle'), 1500);
+  }
+
+  // Debounced save for text fields
+  function debounceSave(fields: Partial<GraphNode>) {
+    if (!nodeIdRef.current) return;
+    pendingFields.current = { ...pendingFields.current, ...fields };
+    setSaveStatus('saving');
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => {
+      if (pendingFields.current && nodeIdRef.current) {
+        onUpdate(nodeIdRef.current, pendingFields.current);
+        pendingFields.current = null;
+        debounceTimer.current = null;
+        showSaved();
+      }
+    }, DEBOUNCE_MS);
+  }
+
+  // Immediate save for discrete fields
+  function immediateSave(fields: Partial<GraphNode>) {
+    if (!nodeIdRef.current) return;
+    // Flush any pending text changes first
+    flush();
+    onUpdate(nodeIdRef.current, fields);
+    showSaved();
+  }
 
   useLayoutEffect(() => {
     if (isOpen) {
@@ -61,24 +112,41 @@ export function NodeDetailPanel({
     }
   }, [isOpen]);
 
+  // Sync local state from node prop & flush on node switch
   useEffect(() => {
+    // Flush pending changes for the previous node
+    if (nodeIdRef.current && nodeIdRef.current !== node?.id) {
+      flush();
+    }
+
     if (node) {
+      nodeIdRef.current = node.id;
       setTitle(node.title);
       setDescription(node.description ?? '');
       setType(node.type);
       setStatus(node.status);
-      setDirty(false);
+      setSaveStatus('idle');
+    } else {
+      nodeIdRef.current = null;
     }
-  }, [node]);
+  }, [node, flush]);
 
-  function handleSave() {
-    if (!node) return;
-    onUpdate(node.id, { title, description, type, status });
-    setDirty(false);
-  }
+  // Flush on unmount (panel close)
+  useEffect(() => {
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      if (pendingFields.current && nodeIdRef.current) {
+        onUpdate(nodeIdRef.current, pendingFields.current);
+        pendingFields.current = null;
+      }
+      if (savedIndicatorTimer.current) clearTimeout(savedIndicatorTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  function markDirty() {
-    setDirty(true);
+  function handleClose() {
+    flush();
+    onClose();
   }
 
   const isGroup = node?.type === 'GROUP';
@@ -91,10 +159,23 @@ export function NodeDetailPanel({
     <div className="flex h-full flex-col">
       {/* Detail header with close button */}
       <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2">
-        <h3 className="text-sm font-semibold text-gray-900">
-          {isGroup ? 'Group Details' : 'Node Details'}
-        </h3>
-        <button onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-gray-900">
+            {isGroup ? 'Group Details' : 'Node Details'}
+          </h3>
+          {saveStatus === 'saving' && (
+            <span className="flex items-center gap-1 text-[10px] text-gray-400">
+              <Loader2 className="h-3 w-3 animate-spin" />
+            </span>
+          )}
+          {saveStatus === 'saved' && (
+            <span className="flex items-center gap-1 text-[10px] text-green-500">
+              <Check className="h-3 w-3" />
+              Saved
+            </span>
+          )}
+        </div>
+        <button onClick={handleClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -107,7 +188,10 @@ export function NodeDetailPanel({
           <input
             type="text"
             value={title}
-            onChange={(e) => { setTitle(e.target.value); markDirty(); }}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              debounceSave({ title: e.target.value });
+            }}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-thask-primary focus:outline-none focus:ring-2 focus:ring-thask-primary/20"
           />
         </div>
@@ -122,7 +206,11 @@ export function NodeDetailPanel({
           ) : (
             <select
               value={type}
-              onChange={(e) => { setType(e.target.value as NodeType); markDirty(); }}
+              onChange={(e) => {
+                const newType = e.target.value as NodeType;
+                setType(newType);
+                immediateSave({ type: newType });
+              }}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-thask-primary focus:outline-none"
             >
               {NODE_TYPES.map((t) => (
@@ -139,7 +227,10 @@ export function NodeDetailPanel({
             {NODE_STATUSES.map((s) => (
               <button
                 key={s}
-                onClick={() => { setStatus(s); markDirty(); }}
+                onClick={() => {
+                  setStatus(s);
+                  immediateSave({ status: s });
+                }}
                 className={cn(
                   'rounded-full px-3 py-1 text-xs font-medium transition-colors',
                   status === s ? STATUS_COLORS[s] : 'bg-gray-50 text-gray-400 hover:bg-gray-100',
@@ -204,7 +295,10 @@ export function NodeDetailPanel({
           <label className="mb-1 block text-xs font-medium text-gray-500">Description</label>
           <textarea
             value={description}
-            onChange={(e) => { setDescription(e.target.value); markDirty(); }}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              debounceSave({ description: e.target.value });
+            }}
             rows={3}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-thask-primary focus:outline-none focus:ring-2 focus:ring-thask-primary/20"
             placeholder="Add a description..."
@@ -257,27 +351,14 @@ export function NodeDetailPanel({
         </div>
       </div>
 
-      {/* Action buttons */}
-      <div className="flex items-center justify-between border-t border-gray-200 px-4 py-2">
+      {/* Delete button */}
+      <div className="flex items-center border-t border-gray-200 px-4 py-2">
         <button
           onClick={() => onDelete(node.id)}
           className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
         >
           <Trash2 className="h-4 w-4" />
           Delete
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={!dirty}
-          className={cn(
-            'flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium',
-            dirty
-              ? 'bg-thask-primary text-white hover:bg-blue-600'
-              : 'bg-gray-100 text-gray-400 cursor-not-allowed',
-          )}
-        >
-          <Save className="h-4 w-4" />
-          Save
         </button>
       </div>
     </div>,
