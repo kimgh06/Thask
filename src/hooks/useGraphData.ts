@@ -173,6 +173,7 @@ export function useGraphData(projectId: string) {
       );
       return { prev };
     },
+    onSuccess: () => invalidateGraph(),
     onError: (_err, _vars, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(['nodes', projectId], ctx.prev);
     },
@@ -291,7 +292,8 @@ export function useGraphData(projectId: string) {
   function executeDeleteNode(nodeId: string) {
     const node = nodes.find((n) => n.id === nodeId);
     const nodeEdges = edges.filter((e) => e.sourceId === nodeId || e.targetId === nodeId);
-    if (node) pushUndo({ type: 'deleteNode', node, edges: nodeEdges });
+    const childNodeIds = nodes.filter((n) => n.parentId === nodeId).map((n) => n.id);
+    if (node) pushUndo({ type: 'deleteNode', node, edges: nodeEdges, childNodeIds });
     setConfirmDelete(null);
     selectNode(null);
     deleteNodeMutation.mutate(nodeId);

@@ -50,9 +50,13 @@ export function GraphMinimap({ getCy, width = 200, height = 150 }: GraphMinimapP
     ctx.fillStyle = '#f8fafc';
     ctx.fillRect(0, 0, width, height);
 
-    // Visible nodes only (exclude handles and hidden nodes)
+    // Visible nodes only (exclude handles, collapsed children, filtered nodes)
     const visibleNodes = cy.nodes().filter(
-      (n) => !HANDLE_IDS.has(n.id()) && n.style('display') !== 'none',
+      (n) =>
+        !HANDLE_IDS.has(n.id()) &&
+        !n.hasClass('collapsed-child') &&
+        !n.hasClass('filter-hidden') &&
+        n.style('display') !== 'none',
     );
 
     if (visibleNodes.length === 0) {
@@ -62,7 +66,7 @@ export function GraphMinimap({ getCy, width = 200, height = 150 }: GraphMinimapP
 
     // Bounding box of all visible nodes
     const bb = visibleNodes.boundingBox({});
-    const pad = 20;
+    const pad = 30;
     const graphW = bb.w + pad * 2;
     const graphH = bb.h + pad * 2;
 
@@ -71,11 +75,17 @@ export function GraphMinimap({ getCy, width = 200, height = 150 }: GraphMinimapP
     const offsetY = (height - graphH * scale) / 2 - (bb.y1 - pad) * scale;
     transformRef.current = { scale, offsetX, offsetY };
 
-    // Draw edges
+    // Draw edges (skip collapsed/filtered)
     cy.edges().forEach((edge) => {
-      if (edge.style('display') === 'none') return;
-      const sp = edge.source().position();
-      const tp = edge.target().position();
+      if (edge.hasClass('collapsed-edge')) return;
+      const src = edge.source();
+      const tgt = edge.target();
+      if (src.hasClass('collapsed-child') || tgt.hasClass('collapsed-child')) return;
+      if (src.hasClass('filter-hidden') || tgt.hasClass('filter-hidden')) return;
+      if (HANDLE_IDS.has(src.id()) || HANDLE_IDS.has(tgt.id())) return;
+
+      const sp = src.position();
+      const tp = tgt.position();
       ctx.strokeStyle = '#cbd5e1';
       ctx.lineWidth = 0.5;
       ctx.beginPath();
@@ -89,43 +99,85 @@ export function GraphMinimap({ getCy, width = 200, height = 150 }: GraphMinimapP
       const pos = node.position();
       const nx = pos.x * scale + offsetX;
       const ny = pos.y * scale + offsetY;
-      const nw = Math.max(4, node.width() * scale);
-      const nh = Math.max(4, node.height() * scale);
+      const nw = Math.max(8, node.width() * scale);
+      const nh = Math.max(8, node.height() * scale);
+      const nodeType = node.data('nodeType') as string;
 
-      ctx.fillStyle = NODE_COLORS[node.data('nodeType') as string] ?? '#94a3b8';
-      ctx.fillRect(nx - nw / 2, ny - nh / 2, nw, nh);
+      if (nodeType === 'GROUP') {
+        // GROUP: dashed outline only (matches main graph style)
+        ctx.strokeStyle = NODE_COLORS.GROUP ?? '#64748b';
+        ctx.setLineDash([3, 2]);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(nx - nw / 2, ny - nh / 2, nw, nh);
+        ctx.setLineDash([]);
+      } else {
+        // Regular nodes: filled rounded rectangle
+        ctx.fillStyle = NODE_COLORS[nodeType] ?? '#94a3b8';
+        ctx.beginPath();
+        ctx.roundRect(nx - nw / 2, ny - nh / 2, nw, nh, 2);
+        ctx.fill();
+      }
     });
 
-    // Draw viewport rectangle
+    // Draw viewport rectangle with clamping
     const ext = cy.extent();
-    const vx = ext.x1 * scale + offsetX;
-    const vy = ext.y1 * scale + offsetY;
-    const vw = (ext.x2 - ext.x1) * scale;
-    const vh = (ext.y2 - ext.y1) * scale;
+    const rawVx = ext.x1 * scale + offsetX;
+    const rawVy = ext.y1 * scale + offsetY;
+    const rawVw = (ext.x2 - ext.x1) * scale;
+    const rawVh = (ext.y2 - ext.y1) * scale;
 
-    ctx.strokeStyle = '#3b82f6';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(vx, vy, vw, vh);
-    ctx.fillStyle = 'rgba(59, 130, 246, 0.08)';
-    ctx.fillRect(vx, vy, vw, vh);
+    const vx = Math.max(0, rawVx);
+    const vy = Math.max(0, rawVy);
+    const vw = Math.min(width - vx, rawVw - (vx - rawVx));
+    const vh = Math.min(height - vy, rawVh - (vy - rawVy));
+
+    if (vw > 0 && vh > 0) {
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(vx, vy, vw, vh);
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.12)';
+      ctx.fillRect(vx, vy, vw, vh);
+    }
   }, [getCy, width, height]);
 
-  // Redraw on cy events
+  // Bind cy events with polling for cy readiness
   useEffect(() => {
-    const cy = getCy();
-    if (!cy) return;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let cleanup: (() => void) | null = null;
 
-    function scheduleRedraw() {
-      cancelAnimationFrame(animFrameRef.current);
-      animFrameRef.current = requestAnimationFrame(draw);
+    function bindAndDraw(cy: Core) {
+      function scheduleRedraw() {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = requestAnimationFrame(draw);
+      }
+
+      cy.on('viewport add remove position layoutstop', scheduleRedraw);
+      scheduleRedraw();
+
+      cleanup = () => {
+        cy.off('viewport add remove position layoutstop', scheduleRedraw);
+        cancelAnimationFrame(animFrameRef.current);
+      };
     }
 
-    cy.on('viewport add remove position layoutstop', scheduleRedraw);
-    scheduleRedraw();
+    const cy = getCy();
+    if (cy) {
+      bindAndDraw(cy);
+    } else {
+      // Poll until cy is ready
+      pollTimer = setInterval(() => {
+        const ready = getCy();
+        if (ready) {
+          if (pollTimer) clearInterval(pollTimer);
+          pollTimer = null;
+          bindAndDraw(ready);
+        }
+      }, 100);
+    }
 
     return () => {
-      cy.off('viewport add remove position layoutstop', scheduleRedraw);
-      cancelAnimationFrame(animFrameRef.current);
+      if (pollTimer) clearInterval(pollTimer);
+      cleanup?.();
     };
   }, [getCy, draw]);
 

@@ -409,119 +409,150 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         cb.onToggleGroupCollapse?.(evt.target.id());
       });
 
-      // --- Resize handle for GROUP nodes ---
-      cy.add({
-        group: 'nodes',
-        data: { id: RESIZE_HANDLE_ID },
-        classes: 'resize-handle',
-        position: { x: 0, y: 0 },
-      });
-      const resizeHandle = cy.getElementById(RESIZE_HANDLE_ID);
-      resizeHandle.style('display', 'none');
-      resizeHandle.ungrabify();
-      resizeHandle.unselectify();
-
-      let resizeTarget: cytoscape.NodeSingular | null = null;
-      let isResizing = false;
-      let resizeStartPos = { x: 0, y: 0 };
-      let resizeStartDims = { w: 0, h: 0 };
-      let resizeStartCenter = { x: 0, y: 0 };
-
       // Temporary unparent state — keeps GROUP fixed while child is dragged
       let dragOriginalParent: string | null = null;
       let dragOriginalMinDims: { w: number | undefined; h: number | undefined } | null = null;
       let dragDescendantIds: Set<string> | null = null;
 
-      function showResizeHandle(groupNode: cytoscape.NodeSingular) {
-        if (isResizing || eh.active) return;
-        if (groupNode.hasClass('group-collapsed')) return;
-        resizeTarget = groupNode;
-        const bb = groupNode.boundingBox({});
-        resizeHandle.position({ x: bb.x2, y: bb.y2 });
-        resizeHandle.style('display', 'element');
+      // --- 8-directional resize for GROUP nodes ---
+      type ResizeZone = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+      const ZONE_CURSORS: Record<ResizeZone, string> = {
+        nw: 'nwse-resize', se: 'nwse-resize',
+        ne: 'nesw-resize', sw: 'nesw-resize',
+        n: 'ns-resize', s: 'ns-resize',
+        e: 'ew-resize', w: 'ew-resize',
+      };
+
+      let resizeTarget: cytoscape.NodeSingular | null = null;
+      let isResizing = false;
+      let resizeZone: ResizeZone | null = null;
+      let resizeStartPos = { x: 0, y: 0 };
+      let resizeStartBB = { x1: 0, y1: 0, x2: 0, y2: 0 };
+
+      function detectResizeZone(e: MouseEvent, node: cytoscape.NodeSingular): ResizeZone | null {
+        if (node.hasClass('group-collapsed') || node.hasClass('filter-hidden')) return null;
+        const bb = node.renderedBoundingBox({});
+        const mx = e.offsetX;
+        const my = e.offsetY;
+        const T = 10;
+
+        const inX = mx >= bb.x1 - T && mx <= bb.x2 + T;
+        const inY = my >= bb.y1 - T && my <= bb.y2 + T;
+        if (!inX || !inY) return null;
+
+        const nearTop = Math.abs(my - bb.y1) <= T;
+        const nearBottom = Math.abs(my - bb.y2) <= T;
+        const nearLeft = Math.abs(mx - bb.x1) <= T;
+        const nearRight = Math.abs(mx - bb.x2) <= T;
+
+        if (nearTop && nearLeft) return 'nw';
+        if (nearTop && nearRight) return 'ne';
+        if (nearBottom && nearLeft) return 'sw';
+        if (nearBottom && nearRight) return 'se';
+        if (nearTop) return 'n';
+        if (nearBottom) return 's';
+        if (nearLeft) return 'w';
+        if (nearRight) return 'e';
+        return null;
       }
-
-      function hideResizeHandle() {
-        if (isResizing) return;
-        resizeHandle.style('display', 'none');
-        resizeTarget = null;
-      }
-
-      cy.on('select', 'node[nodeType="GROUP"]', (e) => {
-        showResizeHandle(e.target);
-      });
-      cy.on('unselect', 'node[nodeType="GROUP"]', () => {
-        if (!isResizing) hideResizeHandle();
-      });
-
-      // Update resize handle position during GROUP drag
-      cy.on('drag', 'node[nodeType="GROUP"]', (e) => {
-        if (!resizeTarget || resizeTarget.id() !== e.target.id()) return;
-        if (isResizing) return;
-        const bb = e.target.boundingBox({});
-        resizeHandle.position({ x: bb.x2, y: bb.y2 });
-      });
 
       const container = cy.container()!;
 
-      function isNearResizeHandle(e: MouseEvent): boolean {
-        if (!resizeTarget || resizeHandle.style('display') === 'none') return false;
-        const handleRenderedPos = resizeHandle.renderedPosition();
-        const dx = e.offsetX - handleRenderedPos.x;
-        const dy = e.offsetY - handleRenderedPos.y;
-        return Math.sqrt(dx * dx + dy * dy) <= 14;
-      }
-
       function onResizeMouseDown(e: MouseEvent) {
-        if (!resizeTarget || !isNearResizeHandle(e)) return;
+        if (!resizeTarget || eh.active) return;
+        const zone = detectResizeZone(e, resizeTarget);
+        if (!zone) return;
 
         e.preventDefault();
         e.stopPropagation();
         isResizing = true;
-        container.style.cursor = 'nwse-resize';
+        resizeZone = zone;
+        container.style.cursor = ZONE_CURSORS[zone];
         cy.panningEnabled(false);
         cy.boxSelectionEnabled(false);
         resizeTarget.ungrabify();
         resizeTarget.addClass('resizing');
 
         const bb = resizeTarget.boundingBox({});
-        resizeStartDims = { w: bb.x2 - bb.x1, h: bb.y2 - bb.y1 };
+        resizeStartBB = { x1: bb.x1, y1: bb.y1, x2: bb.x2, y2: bb.y2 };
         resizeStartPos = { x: e.clientX, y: e.clientY };
-        resizeStartCenter = { ...resizeTarget.position() };
       }
 
       function onResizeMouseMove(e: MouseEvent) {
         if (!isResizing) {
-          // Cursor feedback on hover
-          container.style.cursor = isNearResizeHandle(e) ? 'nwse-resize' : '';
+          if (eh.active) return;
+          // Scan all visible GROUP nodes for resize zone proximity
+          let foundTarget: cytoscape.NodeSingular | null = null;
+          let foundZone: ResizeZone | null = null;
+          cy.nodes('[nodeType="GROUP"]').forEach((g) => {
+            if (foundZone) return;
+            const zone = detectResizeZone(e, g);
+            if (zone) {
+              foundTarget = g;
+              foundZone = zone;
+            }
+          });
+          resizeTarget = foundTarget;
+          container.style.cursor = foundZone ? ZONE_CURSORS[foundZone] : '';
           return;
         }
-        if (!resizeTarget) return;
+        if (!resizeTarget || !resizeZone) return;
+
         const zoom = cy.zoom();
         const deltaX = (e.clientX - resizeStartPos.x) / zoom;
         const deltaY = (e.clientY - resizeStartPos.y) / zoom;
-        // 2x delta because width/height expand from center (half goes each direction)
-        const newW = Math.max(80, resizeStartDims.w + 2 * deltaX);
-        const newH = Math.max(50, resizeStartDims.h + 2 * deltaY);
+
+        const moveLeft = resizeZone.includes('w');
+        const moveRight = resizeZone.includes('e');
+        const moveTop = resizeZone.includes('n');
+        const moveBottom = resizeZone.includes('s');
+
+        let { x1, y1, x2, y2 } = resizeStartBB;
+        if (moveLeft) x1 += deltaX;
+        if (moveRight) x2 += deltaX;
+        if (moveTop) y1 += deltaY;
+        if (moveBottom) y2 += deltaY;
+
+        // Enforce minimum dimensions
+        const MIN_W = 80;
+        const MIN_H = 50;
+        if (x2 - x1 < MIN_W) {
+          if (moveLeft) x1 = x2 - MIN_W;
+          else x2 = x1 + MIN_W;
+        }
+        if (y2 - y1 < MIN_H) {
+          if (moveTop) y1 = y2 - MIN_H;
+          else y2 = y1 + MIN_H;
+        }
+
+        const newW = x2 - x1;
+        const newH = y2 - y1;
+        const newCenterX = (x1 + x2) / 2;
+        const newCenterY = (y1 + y2) / 2;
 
         if (resizeTarget.isParent()) {
           resizeTarget.data('minWidth', newW);
           resizeTarget.data('minHeight', newH);
+          // Shift children so parent bounding box matches desired position
+          const actualBB = resizeTarget.boundingBox({});
+          const shiftX = newCenterX - (actualBB.x1 + actualBB.x2) / 2;
+          const shiftY = newCenterY - (actualBB.y1 + actualBB.y2) / 2;
+          if (Math.abs(shiftX) > 0.5 || Math.abs(shiftY) > 0.5) {
+            resizeTarget.children().forEach((child) => {
+              const pos = child.position();
+              child.position({ x: pos.x + shiftX, y: pos.y + shiftY });
+            });
+          }
         } else {
           resizeTarget.style({ width: newW, height: newH });
-          // Shift position to anchor top-left corner
-          resizeTarget.position({
-            x: resizeStartCenter.x + (newW - resizeStartDims.w) / 2,
-            y: resizeStartCenter.y + (newH - resizeStartDims.h) / 2,
-          });
+          resizeTarget.position({ x: newCenterX, y: newCenterY });
         }
-        const bb = resizeTarget.boundingBox({});
-        resizeHandle.position({ x: bb.x2, y: bb.y2 });
       }
 
       function onResizeEnd() {
         if (!isResizing || !resizeTarget) return;
         isResizing = false;
+        resizeZone = null;
         container.style.cursor = '';
         cy.panningEnabled(true);
         cy.boxSelectionEnabled(true);
@@ -532,8 +563,6 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         const finalW = bb.x2 - bb.x1;
         const finalH = bb.y2 - bb.y1;
         callbacksRef.current.onNodeResize?.(resizeTarget.id(), finalW, finalH);
-
-        resizeHandle.position({ x: bb.x2, y: bb.y2 });
       }
 
       container.addEventListener('mousedown', onResizeMouseDown);
@@ -655,12 +684,13 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
       // Apply collapse state with child count label
       cy.nodes('[nodeType="GROUP"]').forEach((g) => {
         const childCount = g.data('childCount') ?? 0;
+        const title = g.data('title') as string ?? '';
         if (collapsedGroupIds.includes(g.id())) {
           g.addClass('group-collapsed');
-          g.data('label', `${g.data('label').replace(/ \(\d+\)$/, '')} (${childCount})`);
+          g.data('label', childCount > 0 ? `${title} (${childCount})` : title);
         } else {
           g.removeClass('group-collapsed');
-          g.data('label', g.data('label').replace(/ \(\d+\)$/, ''));
+          g.data('label', title);
         }
       });
       cy.nodes().forEach((n) => {
@@ -669,6 +699,14 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
           n.addClass('collapsed-child');
         } else {
           n.removeClass('collapsed-child');
+        }
+      });
+      // Hide/show edges connected to collapsed children
+      cy.edges().forEach((e) => {
+        if (e.source().hasClass('collapsed-child') || e.target().hasClass('collapsed-child')) {
+          e.addClass('collapsed-edge');
+        } else {
+          e.removeClass('collapsed-edge');
         }
       });
 

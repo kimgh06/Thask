@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { CytoscapeCanvas, type CytoscapeCanvasHandle } from '@/components/graph/CytoscapeCanvas';
 import { GraphToolbar } from '@/components/graph/GraphToolbar';
@@ -23,6 +23,7 @@ export default function ProjectGraphPage() {
   const params = useParams<{ teamSlug: string; projectId: string }>();
   const { teamSlug, projectId } = params;
   const graphRef = useRef<CytoscapeCanvasHandle>(null);
+  const getMinimapCy = useCallback(() => graphRef.current?.getCy() ?? null, []);
   const [showAddModal, setShowAddModal] = useState(false);
 
   const { data: teamMembers = [] } = useQuery({
@@ -131,9 +132,9 @@ export default function ProjectGraphPage() {
         const statusMatch = activeStatusFilters.length === 0 || activeStatusFilters.includes(nodeData.status);
 
         if (typeMatch && statusMatch) {
-          cyNode.style('display', 'element');
+          cyNode.removeClass('filter-hidden');
         } else {
-          cyNode.style('display', 'none');
+          cyNode.addClass('filter-hidden');
         }
       });
     });
@@ -222,7 +223,7 @@ export default function ProjectGraphPage() {
           onToggleGroupCollapse={toggleGroupCollapsed}
           onNodeResize={resizeNode}
         />
-        <GraphMinimap getCy={() => graphRef.current?.getCy() ?? null} />
+        <GraphMinimap getCy={getMinimapCy} />
       </div>
 
       {edgeColorPopover.visible && (

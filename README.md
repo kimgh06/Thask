@@ -1,19 +1,35 @@
 <div align="center">
 
-<img src="public/icon.svg" alt="Thask" width="120" />
+<br />
+
+<img src="public/mascot.png" alt="Thask Mascot" width="180" />
+
+<br />
+
+<img src="public/icon.svg" alt="Thask" width="40" />
 
 # Thask
 
-### Thask it, done.
+*Thask it, done.*
 
 **Visualize product flows, tasks, and bugs as a linked node graph.**
+<br />
 Built for QA risk management and change impact analysis.
 
+<br />
+<br />
+
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+&nbsp;
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
+&nbsp;
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+&nbsp;
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+&nbsp;
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+
+<br />
 
 <!-- TODO: Add hero screenshot/GIF here -->
 <!-- ![Thask Graph Editor](docs/images/hero.png) -->

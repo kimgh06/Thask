@@ -89,7 +89,8 @@ export function useUndoRedo(projectId: string) {
             const nodeJson = await nodeRes.json();
             const newId = nodeJson.data?.id as string | undefined;
 
-            if (newId && entry.edges.length > 0) {
+            if (newId) {
+              // Restore edges with updated node ID
               for (const edge of entry.edges) {
                 const sourceId =
                   edge.sourceId === entry.node.id ? newId : edge.sourceId;
@@ -106,8 +107,18 @@ export function useUndoRedo(projectId: string) {
                   }),
                 });
               }
+              // Restore child-parent relationships for GROUP nodes
+              if (entry.childNodeIds.length > 0) {
+                for (const childId of entry.childNodeIds) {
+                  await fetch(`/api/projects/${projectId}/nodes/${childId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ parentId: newId }),
+                  });
+                }
+              }
+              entry.node = { ...entry.node, id: newId };
             }
-            if (newId) entry.node = { ...entry.node, id: newId };
             invalidateGraph();
           } else {
             await fetch(
@@ -116,7 +127,12 @@ export function useUndoRedo(projectId: string) {
             );
             queryClient.setQueryData<GraphNode[]>(
               ['nodes', projectId],
-              (old) => (old ?? []).filter((n) => n.id !== entry.node.id),
+              (old) =>
+                (old ?? [])
+                  .filter((n) => n.id !== entry.node.id)
+                  .map((n) =>
+                    n.parentId === entry.node.id ? { ...n, parentId: null } : n,
+                  ),
             );
             queryClient.setQueryData<GraphEdge[]>(
               ['edges', projectId],

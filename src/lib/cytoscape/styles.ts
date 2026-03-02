@@ -76,30 +76,30 @@ export const cytoscapeStylesheet: StylesheetStyle[] = [
     } as Record<string, string | number>,
   },
 
-  // Status colors (override border)
+  // Status colors (override border) — exclude GROUP nodes to keep their dashed style
   {
-    selector: 'node[status="PASS"]',
+    selector: 'node[status="PASS"][nodeType!="GROUP"]',
     style: {
       'border-color': STATUS_COLORS.PASS,
       'background-color': '#f0fdf4',
     },
   },
   {
-    selector: 'node[status="FAIL"]',
+    selector: 'node[status="FAIL"][nodeType!="GROUP"]',
     style: {
       'border-color': STATUS_COLORS.FAIL,
       'background-color': '#fef2f2',
     },
   },
   {
-    selector: 'node[status="IN_PROGRESS"]',
+    selector: 'node[status="IN_PROGRESS"][nodeType!="GROUP"]',
     style: {
       'border-color': STATUS_COLORS.IN_PROGRESS,
       'background-color': '#fefce8',
     },
   },
   {
-    selector: 'node[status="BLOCKED"]',
+    selector: 'node[status="BLOCKED"][nodeType!="GROUP"]',
     style: {
       'border-color': STATUS_COLORS.BLOCKED,
       'background-color': '#f3f4f6',
@@ -173,22 +173,6 @@ export const cytoscapeStylesheet: StylesheetStyle[] = [
       'border-width': 3,
       'background-opacity': 0.15,
       'background-color': '#3b82f6',
-    } as Record<string, string | number>,
-  },
-
-  // Resize handle (bottom-right corner grapple)
-  {
-    selector: '.resize-handle',
-    style: {
-      'background-color': '#3b82f6',
-      width: 10,
-      height: 10,
-      shape: 'rectangle',
-      'overlay-opacity': 0,
-      'border-width': 1,
-      'border-color': '#1d4ed8',
-      label: '',
-      'z-index': 998,
     } as Record<string, string | number>,
   },
 
@@ -332,9 +316,25 @@ export const cytoscapeStylesheet: StylesheetStyle[] = [
     } as Record<string, string | number>,
   },
 
+  // Filtered out by type/status filter
+  {
+    selector: 'node.filter-hidden',
+    style: {
+      display: 'none',
+    },
+  },
+
   // Children of collapsed group: hidden
   {
     selector: 'node.collapsed-child',
+    style: {
+      display: 'none',
+    },
+  },
+
+  // Edges connected to collapsed children: hidden
+  {
+    selector: 'edge.collapsed-edge',
     style: {
       display: 'none',
     },

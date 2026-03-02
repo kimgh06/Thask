@@ -10,6 +10,7 @@ export type UndoEntry =
       type: 'deleteNode';
       node: GraphNode;
       edges: GraphEdge[];
+      childNodeIds: string[];
     }
   | {
       type: 'updateNode';
