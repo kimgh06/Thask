@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { EdgeType } from '@/types/graph';
 
 const EDGE_TYPE_OPTIONS: { value: EdgeType; label: string; color: string }[] = [
@@ -13,13 +13,25 @@ const EDGE_TYPE_OPTIONS: { value: EdgeType; label: string; color: string }[] = [
 
 interface EdgeColorPopoverProps {
   position: { x: number; y: number };
+  currentLabel?: string;
   onSelect: (edgeType: EdgeType) => void;
+  onUpdateLabel?: (label: string) => void;
   onDelete: () => void;
   onCancel: () => void;
 }
 
-export function EdgeColorPopover({ position, onSelect, onDelete, onCancel }: EdgeColorPopoverProps) {
+export function EdgeColorPopover({ position, currentLabel = '', onSelect, onUpdateLabel, onDelete, onCancel }: EdgeColorPopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const [label, setLabel] = useState(currentLabel);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleLabelChange(value: string) {
+    setLabel(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      onUpdateLabel?.(value);
+    }, 400);
+  }
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -46,8 +58,19 @@ export function EdgeColorPopover({ position, onSelect, onDelete, onCancel }: Edg
       className="fixed z-50 w-48 rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
       style={{ left: position.x, top: position.y }}
     >
+      <div className="px-3 py-1.5">
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => handleLabelChange(e.target.value)}
+          placeholder="Edge label..."
+          className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:border-thask-primary focus:outline-none"
+          onClick={(e) => e.stopPropagation()}
+        />
+      </div>
+      <div className="mx-2 border-t border-gray-200" />
       <div className="px-3 py-1.5 text-xs font-semibold text-gray-400 uppercase">
-        Edge Color
+        Edge Type
       </div>
       {EDGE_TYPE_OPTIONS.map((opt) => (
         <button

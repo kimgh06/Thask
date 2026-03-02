@@ -25,14 +25,17 @@ export interface CytoscapeCanvasHandle {
   fitToView: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  focusNode: (nodeId: string) => void;
 }
 
 interface CytoscapeCanvasProps {
   nodes: GraphNode[];
   edges: GraphEdge[];
   collapsedGroupIds?: string[];
+  selectedNodeIds?: string[];
   onNodeSelect?: (nodeId: string | null) => void;
-  onNodeDragEnd?: (nodeId: string, x: number, y: number) => void;
+  onNodeToggleSelect?: (nodeId: string) => void;
+  onNodeDragEnd?: (positions: Array<{ id: string; x: number; y: number }>) => void;
   onConnectEnd?: (sourceId: string, targetId: string, renderedPosition: { x: number; y: number }) => void;
   onEdgeClick?: (edgeId: string, renderedPosition: { x: number; y: number }) => void;
   onNodeDropOnGroup?: (nodeId: string, groupId: string | null) => void;
@@ -42,7 +45,7 @@ interface CytoscapeCanvasProps {
 
 export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvasProps>(
   function CytoscapeCanvas(
-    { nodes, edges, collapsedGroupIds = [], onNodeSelect, onNodeDragEnd, onConnectEnd, onEdgeClick, onNodeDropOnGroup, onToggleGroupCollapse, onNodeResize },
+    { nodes, edges, collapsedGroupIds = [], selectedNodeIds = [], onNodeSelect, onNodeToggleSelect, onNodeDragEnd, onConnectEnd, onEdgeClick, onNodeDropOnGroup, onToggleGroupCollapse, onNodeResize },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -51,8 +54,8 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
     const initialLayoutDone = useRef(false);
 
     // Store latest callbacks in refs
-    const callbacksRef = useRef({ onNodeSelect, onNodeDragEnd, onConnectEnd, onEdgeClick, onNodeDropOnGroup, onToggleGroupCollapse, onNodeResize });
-    callbacksRef.current = { onNodeSelect, onNodeDragEnd, onConnectEnd, onEdgeClick, onNodeDropOnGroup, onToggleGroupCollapse, onNodeResize };
+    const callbacksRef = useRef({ onNodeSelect, onNodeToggleSelect, onNodeDragEnd, onConnectEnd, onEdgeClick, onNodeDropOnGroup, onToggleGroupCollapse, onNodeResize });
+    callbacksRef.current = { onNodeSelect, onNodeToggleSelect, onNodeDragEnd, onConnectEnd, onEdgeClick, onNodeDropOnGroup, onToggleGroupCollapse, onNodeResize };
 
     const runLayout = useCallback(() => {
       const cy = cyRef.current;
@@ -71,6 +74,16 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
       zoomOut: () => {
         const cy = cyRef.current;
         if (cy) cy.zoom({ level: cy.zoom() / 1.2, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
+      },
+      focusNode: (nodeId: string) => {
+        const cy = cyRef.current;
+        if (!cy) return;
+        const node = cy.getElementById(nodeId);
+        if (!node.length) return;
+        cy.animate({ center: { eles: node }, zoom: 1.5 }, { duration: 400 });
+        cy.nodes().removeClass('search-highlight');
+        node.addClass('search-highlight');
+        setTimeout(() => node.removeClass('search-highlight'), 2000);
       },
     }));
 
@@ -102,6 +115,10 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         disableBrowserGestures: true,
       });
       eh.enable();
+      // Allow edge creation from compound parent nodes (GROUP with children)
+      // Default canStartOn blocks isParent() nodes
+      (eh as ReturnType<Core['edgehandles']> & { canStartOn: (n: cytoscape.NodeSingular) => boolean }).canStartOn =
+        (node) => node.isNode() && node.id() !== HANDLE_ID && node.id() !== RESIZE_HANDLE_ID;
       ehRef.current = eh;
 
       // --- Custom hover handle ---
@@ -169,9 +186,9 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
       cy.on('mousemove', 'node', (e) => {
         const node = e.target;
         if (node.id() === HANDLE_ID || node.id() === RESIZE_HANDLE_ID) return;
-        if (node.data('nodeType') === 'GROUP') return;
         if (eh.active) return;
         if (node.grabbed()) return;
+        if (isResizing) return;
         positionHandleNearestSide(node, e.position);
       });
 
@@ -237,7 +254,7 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
 
       // Start edge drawing when handle is tapped/dragged
       cy.on('tapstart', `.eh-custom-handle`, () => {
-        if (hoverSource && eh.canStartOn(hoverSource)) {
+        if (hoverSource) {
           handleNode.style('display', 'none');
           eh.start(hoverSource);
         }
@@ -259,11 +276,15 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         cb.onConnectEnd?.(sourceNode.id(), targetNode.id(), { x: renderedPos.x, y: renderedPos.y });
       });
 
-      // Node selection
+      // Node selection (Shift+click = toggle multi-select)
       cy.on('tap', 'node', (evt: EventObject) => {
         if (evt.target.id() === HANDLE_ID || evt.target.id() === RESIZE_HANDLE_ID) return;
         const cb = callbacksRef.current;
-        cb.onNodeSelect?.(evt.target.id());
+        if (evt.originalEvent.shiftKey) {
+          cb.onNodeToggleSelect?.(evt.target.id());
+        } else {
+          cb.onNodeSelect?.(evt.target.id());
+        }
       });
 
       cy.on('tap', (evt: EventObject) => {
@@ -303,8 +324,21 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         cy.nodes('.drop-target').removeClass('drop-target');
         const cb = callbacksRef.current;
         const node = evt.target;
-        const nodePos = node.position();
-        cb.onNodeDragEnd?.(node.id(), nodePos.x, nodePos.y);
+
+        // Collect positions: compound parent → all descendants; otherwise → single node
+        const positionsToSave: Array<{ id: string; x: number; y: number }> = [];
+        if (node.isParent()) {
+          node.descendants().forEach((d: cytoscape.NodeSingular) => {
+            const p = d.position();
+            positionsToSave.push({ id: d.id(), x: p.x, y: p.y });
+          });
+        } else {
+          const p = node.position();
+          positionsToSave.push({ id: node.id(), x: p.x, y: p.y });
+        }
+        if (positionsToSave.length > 0) {
+          cb.onNodeDragEnd?.(positionsToSave);
+        }
 
         // Find GROUP node under cursor drop position (skip self, collapsed, descendants)
         const dropPos = evt.position;
@@ -648,6 +682,19 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         initialLayoutDone.current = true;
       }
     }, [nodes, edges, collapsedGroupIds]);
+
+    // Apply multi-select highlighting
+    useEffect(() => {
+      const cy = cyRef.current;
+      if (!cy) return;
+      cy.nodes().removeClass('multi-selected');
+      if (selectedNodeIds.length > 1) {
+        selectedNodeIds.forEach((id) => {
+          const node = cy.getElementById(id);
+          if (node.length) node.addClass('multi-selected');
+        });
+      }
+    }, [selectedNodeIds]);
 
     return (
       <div

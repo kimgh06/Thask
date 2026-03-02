@@ -7,11 +7,17 @@ import { cn } from '@/lib/utils';
 import type { GraphNode, NodeType, NodeStatus, NodeHistoryEntry } from '@/types/graph';
 import { NODE_TYPES, NODE_STATUSES } from '@/types/graph';
 
+interface TeamMember {
+  userId: string;
+  displayName: string;
+}
+
 interface NodeDetailPanelProps {
   node: GraphNode | null;
   allNodes: GraphNode[];
   history: NodeHistoryEntry[];
   connectedNodeIds: string[];
+  teamMembers?: TeamMember[];
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (nodeId: string, data: Partial<GraphNode>) => void;
@@ -41,6 +47,7 @@ export function NodeDetailPanel({
   allNodes,
   history,
   connectedNodeIds,
+  teamMembers = [],
   isOpen,
   onClose,
   onUpdate,
@@ -52,6 +59,7 @@ export function NodeDetailPanel({
   const [type, setType] = useState<NodeType>('TASK');
   const [status, setStatus] = useState<NodeStatus>('IN_PROGRESS');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [tagInput, setTagInput] = useState('');
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -242,6 +250,26 @@ export function NodeDetailPanel({
           </div>
         </div>
 
+        {/* Assignee */}
+        {teamMembers.length > 0 && (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">Assignee</label>
+            <select
+              value={node.assigneeId ?? ''}
+              onChange={(e) => {
+                const val = e.target.value || null;
+                immediateSave({ assigneeId: val });
+              }}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-thask-primary focus:outline-none"
+            >
+              <option value="">Unassigned</option>
+              {teamMembers.map((m) => (
+                <option key={m.userId} value={m.userId}>{m.displayName}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Group membership */}
         {node.parentId && (
           <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
@@ -290,6 +318,47 @@ export function NodeDetailPanel({
           </div>
         )}
 
+        {/* Tags */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">Tags</label>
+          <div className="flex flex-wrap gap-1.5 mb-1.5">
+            {(node.tags ?? []).map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700"
+              >
+                {tag}
+                <button
+                  onClick={() => {
+                    const updated = (node.tags ?? []).filter((t) => t !== tag);
+                    immediateSave({ tags: updated });
+                  }}
+                  className="ml-0.5 text-slate-400 hover:text-red-500"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+          <input
+            type="text"
+            value={tagInput}
+            onChange={(e) => setTagInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && tagInput.trim()) {
+                e.preventDefault();
+                const current = node.tags ?? [];
+                if (!current.includes(tagInput.trim())) {
+                  immediateSave({ tags: [...current, tagInput.trim()] });
+                }
+                setTagInput('');
+              }
+            }}
+            placeholder="Add tag + Enter"
+            className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-xs focus:border-thask-primary focus:outline-none"
+          />
+        </div>
+
         {/* Description */}
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-500">Description</label>
@@ -312,11 +381,23 @@ export function NodeDetailPanel({
           </label>
           {connectedNodeIds.length > 0 ? (
             <div className="space-y-1">
-              {connectedNodeIds.map((id) => (
-                <div key={id} className="rounded bg-gray-50 px-2 py-1 text-xs text-gray-600 font-mono">
-                  {id.slice(0, 8)}...
-                </div>
-              ))}
+              {connectedNodeIds.map((id) => {
+                const connNode = allNodes.find((n) => n.id === id);
+                return (
+                  <button
+                    key={id}
+                    onClick={() => onSelectNode?.(id)}
+                    className="flex w-full items-center gap-2 rounded-lg bg-gray-50 px-3 py-1.5 text-left text-xs hover:bg-gray-100"
+                  >
+                    <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                      {connNode?.type ?? '?'}
+                    </span>
+                    <span className="truncate text-gray-700">
+                      {connNode?.title ?? id.slice(0, 8)}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           ) : (
             <p className="text-xs text-gray-400">No connections yet.</p>

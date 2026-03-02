@@ -72,7 +72,7 @@ export const cytoscapeStylesheet: StylesheetStyle[] = [
       'border-color': '#94a3b8',
       'border-width': 2,
       'background-opacity': 0.08,
-      'text-valign': 'center',
+      'text-valign': 'top',
     } as Record<string, string | number>,
   },
 
@@ -114,6 +114,30 @@ export const cytoscapeStylesheet: StylesheetStyle[] = [
       'border-color': '#3b82f6',
       'overlay-color': '#3b82f6',
       'overlay-opacity': 0.15,
+    },
+  },
+
+  // Search highlight (zoom-to-node pulse)
+  {
+    selector: 'node.search-highlight',
+    style: {
+      'border-width': 5,
+      'border-color': '#f59e0b',
+      'overlay-color': '#f59e0b',
+      'overlay-opacity': 0.25,
+      'overlay-padding': 10,
+      'z-index': 999,
+    } as Record<string, string | number>,
+  },
+
+  // Multi-selected nodes
+  {
+    selector: 'node.multi-selected',
+    style: {
+      'border-width': 4,
+      'border-color': '#6366f1',
+      'overlay-color': '#6366f1',
+      'overlay-opacity': 0.12,
     },
   },
 

@@ -1,118 +1,121 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { CytoscapeCanvas, type CytoscapeCanvasHandle } from '@/components/graph/CytoscapeCanvas';
 import { GraphToolbar } from '@/components/graph/GraphToolbar';
 import { AddNodeModal } from '@/components/graph/AddNodeModal';
 import { EdgeColorPopover } from '@/components/graph/EdgeColorPopover';
+import { GraphMinimap } from '@/components/graph/GraphMinimap';
 import { NodeDetailPanel } from '@/components/panels/NodeDetailPanel';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useGraphStore } from '@/stores/useGraphStore';
+import { useGraphData } from '@/hooks/useGraphData';
+import { useNodeDetail } from '@/hooks/useNodeDetail';
+import { useEdgePopover } from '@/hooks/useEdgePopover';
+import { useUndoRedo } from '@/hooks/useUndoRedo';
 import { activateImpactMode, deactivateImpactMode } from '@/lib/cytoscape/impact';
-import type { GraphNode, GraphEdge, NodeType, EdgeType, NodeHistoryEntry } from '@/types/graph';
+import type { GraphNode, EdgeType } from '@/types/graph';
+import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 
 export default function ProjectGraphPage() {
   const params = useParams<{ teamSlug: string; projectId: string }>();
-  const projectId = params.projectId;
+  const { teamSlug, projectId } = params;
   const graphRef = useRef<CytoscapeCanvasHandle>(null);
-
-  const [nodes, setNodes] = useState<GraphNode[]>([]);
-  const [edges, setEdges] = useState<GraphEdge[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // Detail panel state
-  const [selectedNodeDetail, setSelectedNodeDetail] = useState<GraphNode | null>(null);
-  const [nodeHistory, setNodeHistory] = useState<NodeHistoryEntry[]>([]);
-  const [connectedNodeIds, setConnectedNodeIds] = useState<string[]>([]);
-
-  // Confirm dialog state
-  const [confirmDelete, setConfirmDelete] = useState<{
-    nodeId: string;
-    title: string;
-    message: string;
-  } | null>(null);
-
-  // Edge color popover state (for changing existing edge color)
-  const [edgeColorPopover, setEdgeColorPopover] = useState<{
-    visible: boolean;
-    position: { x: number; y: number };
-    edgeId: string;
-  }>({ visible: false, position: { x: 0, y: 0 }, edgeId: '' });
+  const { data: teamMembers = [] } = useQuery({
+    queryKey: ['teamMembers', teamSlug],
+    queryFn: async () => {
+      const res = await fetch(`/api/teams/${teamSlug}/members`);
+      if (!res.ok) return [];
+      const json = await res.json();
+      return json.data ?? [];
+    },
+  });
 
   const {
-    selectedNodeId,
-    isDetailPanelOpen,
-    isImpactModeActive,
-    selectNode,
+    selectedNodeId, selectedNodeIds, isDetailPanelOpen, isImpactModeActive,
+    selectNode, toggleNodeSelection, selectAllNodes, clearSelection,
     toggleDetailPanel,
-    activeNodeTypeFilters,
-    activeStatusFilters,
     activateImpactMode: storeActivateImpact,
     deactivateImpactMode: storeDeactivateImpact,
-    collapsedGroupIds,
-    toggleGroupCollapsed,
+    collapsedGroupIds, toggleGroupCollapsed,
+    activeNodeTypeFilters, activeStatusFilters,
   } = useGraphStore();
 
-  // Fetch graph data
-  const fetchGraph = useCallback(async () => {
-    try {
-      const [nodesRes, edgesRes] = await Promise.all([
-        fetch(`/api/projects/${projectId}/nodes`),
-        fetch(`/api/projects/${projectId}/edges`),
-      ]);
-      const nodesJson = await nodesRes.json();
-      const edgesJson = await edgesRes.json();
-      if (nodesRes.ok) setNodes(nodesJson.data || []);
-      if (edgesRes.ok) setEdges(edgesJson.data || []);
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId]);
+  const {
+    nodes, edges, loading, filteredNodes,
+    addNode, addGroup, updateNode,
+    requestDeleteNode, executeDeleteNode, confirmDelete, setConfirmDelete,
+    savePositions, resizeNode, dropNodeOnGroup,
+    connectNodes, updateEdgeType, updateEdgeLabel, deleteEdge,
+  } = useGraphData(projectId);
 
-  useEffect(() => {
-    fetchGraph();
-  }, [fetchGraph]);
+  const { selectedNodeDetail, nodeHistory, connectedNodeIds } = useNodeDetail(
+    projectId, selectedNodeId, nodes, edges,
+  );
 
-  // Keyboard shortcuts: ESC (close popover), Delete/Backspace (delete selected)
+  const { edgeColorPopover, showPopover, hidePopover } = useEdgePopover(graphRef);
+  const { undo, redo, canUndo, canRedo } = useUndoRedo(projectId);
+
+  // Keyboard shortcuts
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape' && edgeColorPopover.visible) {
-        setEdgeColorPopover((p) => ({ ...p, visible: false }));
+      const tag = (e.target as HTMLElement)?.tagName;
+      const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+      // Ctrl+Z: undo, Ctrl+Shift+Z / Ctrl+Y: redo
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey && !isInput) {
+        e.preventDefault();
+        undo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && ((e.key === 'z' && e.shiftKey) || e.key === 'y') && !isInput) {
+        e.preventDefault();
+        redo();
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        if (edgeColorPopover.visible) { hidePopover(); return; }
+        if (selectedNodeIds.length > 0) { clearSelection(); return; }
+      }
+
+      // Ctrl+A: select all nodes
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !isInput) {
+        e.preventDefault();
+        selectAllNodes(filteredNodes.map((n) => n.id));
         return;
       }
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        // Don't trigger when typing in inputs
-        const tag = (e.target as HTMLElement)?.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-
+        if (isInput) return;
         e.preventDefault();
 
-        // Edge popover showing → delete edge
         if (edgeColorPopover.visible && edgeColorPopover.edgeId) {
-          handleEdgeDelete();
+          deleteEdge(edgeColorPopover.edgeId);
+          hidePopover();
           return;
         }
 
-        // Node selected → delete node
+        // Bulk delete for multi-select
+        if (selectedNodeIds.length > 1) {
+          selectedNodeIds.forEach((id) => requestDeleteNode(id));
+          clearSelection();
+          return;
+        }
+
         if (selectedNodeId) {
-          handleDeleteNode(selectedNodeId);
+          requestDeleteNode(selectedNodeId);
         }
       }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNodeId, edgeColorPopover]);
-
-  // Filter nodes for display
-  const filteredNodes = nodes.filter((n) => {
-    if (activeNodeTypeFilters.length > 0 && !activeNodeTypeFilters.includes(n.type)) return false;
-    if (activeStatusFilters.length > 0 && !activeStatusFilters.includes(n.status)) return false;
-    return true;
-  });
+  }, [selectedNodeId, selectedNodeIds, edgeColorPopover, filteredNodes, undo, redo]);
 
   // Apply filters to cytoscape visibility
   useEffect(() => {
@@ -136,159 +139,7 @@ export default function ProjectGraphPage() {
     });
   }, [activeNodeTypeFilters, activeStatusFilters, nodes]);
 
-  // Node selection — show basic data instantly, fetch history async
-  useEffect(() => {
-    if (!selectedNodeId) {
-      setSelectedNodeDetail(null);
-      setNodeHistory([]);
-      setConnectedNodeIds([]);
-      return;
-    }
-
-    // Instant: basic data from already-loaded nodes array
-    const basicNode = nodes.find((n) => n.id === selectedNodeId);
-    if (basicNode) setSelectedNodeDetail(basicNode);
-
-    // Instant: connected nodes from already-loaded edges array
-    const connected = new Set<string>();
-    edges.forEach((e) => {
-      if (e.sourceId === selectedNodeId) connected.add(e.targetId);
-      if (e.targetId === selectedNodeId) connected.add(e.sourceId);
-    });
-    setConnectedNodeIds(Array.from(connected));
-
-    // Async: only history needs a fetch
-    async function fetchHistory() {
-      const res = await fetch(`/api/projects/${projectId}/nodes/${selectedNodeId}`);
-      if (res.ok) {
-        const json = await res.json();
-        setNodeHistory(json.data.history || []);
-      }
-    }
-
-    fetchHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNodeId, projectId]);
-
-  // Handlers
-  function handleNodeSelect(nodeId: string | null) {
-    selectNode(nodeId);
-  }
-
-  async function handleAddNode(data: { title: string; type: NodeType }) {
-    const res = await fetch(`/api/projects/${projectId}/nodes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (res.ok) {
-      await fetchGraph();
-    }
-  }
-
-  async function handleAddGroup() {
-    const cy = graphRef.current?.getCy();
-    const center = cy ? cy.extent() : null;
-    const positionX = center ? (center.x1 + center.x2) / 2 : 0;
-    const positionY = center ? (center.y1 + center.y2) / 2 : 0;
-
-    const res = await fetch(`/api/projects/${projectId}/nodes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'New Group', type: 'GROUP', positionX, positionY }),
-    });
-    if (res.ok) {
-      const json = await res.json();
-      await fetchGraph();
-      if (json.data?.id) selectNode(json.data.id);
-    }
-  }
-
-  function handleUpdateNode(nodeId: string, data: Partial<GraphNode>) {
-    // Optimistic update
-    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, ...data } : n)));
-    selectNode(nodeId);
-    fetch(`/api/projects/${projectId}/nodes/${nodeId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-  }
-
-  function handleDeleteNode(nodeId: string) {
-    const node = nodes.find((n) => n.id === nodeId);
-    if (!node) return;
-
-    const edgeCount = edges.filter((e) => e.sourceId === nodeId || e.targetId === nodeId).length;
-    const childCount = nodes.filter((n) => n.parentId === nodeId).length;
-
-    // GROUP with children → always confirm
-    if (node.type === 'GROUP' && childCount > 0) {
-      const edgeNote = edgeCount > 0 ? ` ${edgeCount} connected edge(s) will also be deleted.` : '';
-      setConfirmDelete({
-        nodeId,
-        title: 'Delete Group',
-        message: `This group contains ${childCount} node(s). They will be removed from the group (preserved).${edgeNote}`,
-      });
-      return;
-    }
-
-    // Node with edges → confirm
-    if (edgeCount > 0) {
-      setConfirmDelete({
-        nodeId,
-        title: `Delete ${node.type === 'GROUP' ? 'Group' : 'Node'}`,
-        message: `"${node.title}" and ${edgeCount} connected edge(s) will be deleted.`,
-      });
-      return;
-    }
-
-    // No edges, no children → delete immediately
-    executeDeleteNode(nodeId);
-  }
-
-  function executeDeleteNode(nodeId: string) {
-    setConfirmDelete(null);
-    selectNode(null);
-    // Optimistic: remove node, unparent children, remove connected edges
-    setNodes((prev) =>
-      prev
-        .filter((n) => n.id !== nodeId)
-        .map((n) => (n.parentId === nodeId ? { ...n, parentId: null } : n)),
-    );
-    setEdges((prev) => prev.filter((e) => e.sourceId !== nodeId && e.targetId !== nodeId));
-    fetch(`/api/projects/${projectId}/nodes/${nodeId}`, { method: 'DELETE' });
-  }
-
-  function handleNodeDragEnd(nodeId: string, x: number, y: number) {
-    fetch(`/api/projects/${projectId}/nodes/positions`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ positions: [{ id: nodeId, x, y }] }),
-    });
-  }
-
-  function handleNodeResize(nodeId: string, width: number, height: number) {
-    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, width, height } : n)));
-    const node = nodes.find((n) => n.id === nodeId);
-    if (!node) return;
-    fetch(`/api/projects/${projectId}/nodes/positions`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ positions: [{ id: nodeId, x: node.positionX, y: node.positionY, width, height }] }),
-    });
-  }
-
-  function handleNodeDropOnGroup(nodeId: string, groupId: string | null) {
-    // Optimistic update
-    setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, parentId: groupId } : n)));
-    fetch(`/api/projects/${projectId}/nodes/${nodeId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parentId: groupId }),
-    });
-  }
-
+  // Impact mode
   async function handleToggleImpact() {
     const cy = graphRef.current?.getCy();
     if (!cy) return;
@@ -308,56 +159,24 @@ export default function ProjectGraphPage() {
     }
   }
 
-  // Called by edgehandles ehcomplete — instantly create edge with default type
-  async function handleConnectEnd(sourceId: string, targetId: string) {
-    const res = await fetch(`/api/projects/${projectId}/edges`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceId, targetId }),
-    });
-    if (res.ok) {
-      await fetchGraph();
-    }
-  }
-
-  // Edge click — show color popover to change edge type
-  function handleEdgeClick(edgeId: string, renderedPosition: { x: number; y: number }) {
-    const container = graphRef.current?.getCy()?.container();
-    const rect = container?.getBoundingClientRect();
-    const pageX = (rect?.left ?? 0) + renderedPosition.x;
-    const pageY = (rect?.top ?? 0) + renderedPosition.y;
-
-    setEdgeColorPopover({
-      visible: true,
-      position: { x: pageX + 10, y: pageY - 10 },
-      edgeId,
-    });
+  function handleAddGroup() {
+    const cy = graphRef.current?.getCy();
+    const center = cy ? cy.extent() : null;
+    const positionX = center ? (center.x1 + center.x2) / 2 : 0;
+    const positionY = center ? (center.y1 + center.y2) / 2 : 0;
+    addGroup(positionX, positionY);
   }
 
   function handleEdgeColorSelect(edgeType: EdgeType) {
     if (!edgeColorPopover.edgeId) return;
-    const edgeId = edgeColorPopover.edgeId;
-    setEdgeColorPopover((p) => ({ ...p, visible: false }));
-    // Optimistic update
-    setEdges((prev) => prev.map((e) => (e.id === edgeId ? { ...e, edgeType } : e)));
-    fetch(`/api/projects/${projectId}/edges/${edgeId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ edgeType }),
-    });
+    updateEdgeType(edgeColorPopover.edgeId, edgeType);
+    hidePopover();
   }
 
   function handleEdgeDelete() {
     if (!edgeColorPopover.edgeId) return;
-    const edgeId = edgeColorPopover.edgeId;
-    setEdgeColorPopover((p) => ({ ...p, visible: false }));
-    // Optimistic update
-    setEdges((prev) => prev.filter((e) => e.id !== edgeId));
-    fetch(`/api/projects/${projectId}/edges/${edgeId}`, { method: 'DELETE' });
-  }
-
-  function handleEdgeColorCancel() {
-    setEdgeColorPopover((p) => ({ ...p, visible: false }));
+    deleteEdge(edgeColorPopover.edgeId);
+    hidePopover();
   }
 
   if (loading) {
@@ -379,6 +198,12 @@ export default function ProjectGraphPage() {
         onRunLayout={() => graphRef.current?.runLayout()}
         onToggleImpact={handleToggleImpact}
         isImpactActive={isImpactModeActive}
+        nodes={nodes}
+        onFocusNode={(nodeId) => graphRef.current?.focusNode(nodeId)}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
 
       <div className="relative flex-1">
@@ -387,22 +212,27 @@ export default function ProjectGraphPage() {
           nodes={filteredNodes}
           edges={edges}
           collapsedGroupIds={collapsedGroupIds}
-          onNodeSelect={handleNodeSelect}
-          onNodeDragEnd={handleNodeDragEnd}
-          onConnectEnd={handleConnectEnd}
-          onEdgeClick={handleEdgeClick}
-          onNodeDropOnGroup={handleNodeDropOnGroup}
+          selectedNodeIds={selectedNodeIds}
+          onNodeSelect={selectNode}
+          onNodeToggleSelect={toggleNodeSelection}
+          onNodeDragEnd={savePositions}
+          onConnectEnd={connectNodes}
+          onEdgeClick={showPopover}
+          onNodeDropOnGroup={dropNodeOnGroup}
           onToggleGroupCollapse={toggleGroupCollapsed}
-          onNodeResize={handleNodeResize}
+          onNodeResize={resizeNode}
         />
+        <GraphMinimap getCy={() => graphRef.current?.getCy() ?? null} />
       </div>
 
       {edgeColorPopover.visible && (
         <EdgeColorPopover
           position={edgeColorPopover.position}
+          currentLabel={edges.find((e) => e.id === edgeColorPopover.edgeId)?.label ?? ''}
           onSelect={handleEdgeColorSelect}
+          onUpdateLabel={(label) => edgeColorPopover.edgeId && updateEdgeLabel(edgeColorPopover.edgeId, label)}
           onDelete={handleEdgeDelete}
-          onCancel={handleEdgeColorCancel}
+          onCancel={hidePopover}
         />
       )}
 
@@ -411,16 +241,17 @@ export default function ProjectGraphPage() {
         allNodes={nodes}
         history={nodeHistory}
         connectedNodeIds={connectedNodeIds}
+        teamMembers={teamMembers}
         isOpen={isDetailPanelOpen}
         onClose={() => toggleDetailPanel(false)}
-        onUpdate={handleUpdateNode}
-        onDelete={handleDeleteNode}
+        onUpdate={updateNode}
+        onDelete={requestDeleteNode}
         onSelectNode={(id) => selectNode(id)}
       />
 
       {showAddModal && (
         <AddNodeModal
-          onSubmit={handleAddNode}
+          onSubmit={addNode}
           onClose={() => setShowAddModal(false)}
         />
       )}

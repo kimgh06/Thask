@@ -5,6 +5,7 @@ import type { NodeType, NodeStatus } from '@/types/graph';
 
 interface GraphState {
   selectedNodeId: string | null;
+  selectedNodeIds: string[];
   isDetailPanelOpen: boolean;
   activeNodeTypeFilters: NodeType[];
   activeStatusFilters: NodeStatus[];
@@ -13,6 +14,9 @@ interface GraphState {
   impactSubgraphIds: string[];
   collapsedGroupIds: string[];
   selectNode: (id: string | null) => void;
+  toggleNodeSelection: (id: string) => void;
+  selectAllNodes: (ids: string[]) => void;
+  clearSelection: () => void;
   toggleDetailPanel: (open?: boolean) => void;
   setNodeTypeFilter: (types: NodeType[]) => void;
   setStatusFilter: (statuses: NodeStatus[]) => void;
@@ -23,6 +27,7 @@ interface GraphState {
 
 export const useGraphStore = create<GraphState>()((set) => ({
   selectedNodeId: null,
+  selectedNodeIds: [],
   isDetailPanelOpen: false,
   activeNodeTypeFilters: [],
   activeStatusFilters: [],
@@ -33,8 +38,27 @@ export const useGraphStore = create<GraphState>()((set) => ({
   selectNode: (id) =>
     set({
       selectedNodeId: id,
+      selectedNodeIds: id ? [id] : [],
       isDetailPanelOpen: id !== null,
     }),
+
+  toggleNodeSelection: (id) =>
+    set((state) => {
+      const ids = state.selectedNodeIds.includes(id)
+        ? state.selectedNodeIds.filter((i) => i !== id)
+        : [...state.selectedNodeIds, id];
+      return {
+        selectedNodeIds: ids,
+        selectedNodeId: ids.length === 1 ? ids[0]! : state.selectedNodeId,
+        isDetailPanelOpen: ids.length === 1,
+      };
+    }),
+
+  selectAllNodes: (ids) =>
+    set({ selectedNodeIds: ids, isDetailPanelOpen: false }),
+
+  clearSelection: () =>
+    set({ selectedNodeIds: [], selectedNodeId: null, isDetailPanelOpen: false }),
 
   toggleDetailPanel: (open) =>
     set((state) => ({

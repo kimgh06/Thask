@@ -3,7 +3,9 @@ import { db } from '@/lib/db';
 import { nodes, edges, nodeHistory, projects, teamMembers, users } from '@/lib/db/schema';
 import { requireAuth, isAuthError } from '@/lib/auth/guard';
 import { updateNodeSchema } from '@/lib/validators';
-import { eq, and, or, desc } from 'drizzle-orm';
+import { eq, and, or, desc, inArray } from 'drizzle-orm';
+import { computeWaterfall } from '@/lib/waterfall';
+import type { WaterfallNode, WaterfallEdge } from '@/lib/waterfall';
 
 async function verifyProjectAccess(projectId: string, userId: string) {
   const result = await db
@@ -133,7 +135,55 @@ export async function PATCH(
       }
     }
 
-    return NextResponse.json({ data: updated });
+    // Waterfall: propagate status changes through connected nodes
+    let propagated: { nodeId: string; oldStatus: string; newStatus: string }[] = [];
+
+    if (
+      changes.status &&
+      changes.status !== existing.status &&
+      (changes.status === 'PASS' || changes.status === 'FAIL')
+    ) {
+      const allNodes = await db
+        .select({ id: nodes.id, status: nodes.status, parentId: nodes.parentId })
+        .from(nodes)
+        .where(eq(nodes.projectId, projectId));
+
+      const allEdges = await db
+        .select({ sourceId: edges.sourceId, targetId: edges.targetId, edgeType: edges.edgeType })
+        .from(edges)
+        .where(eq(edges.projectId, projectId));
+
+      const waterfallChanges = computeWaterfall(
+        nodeId,
+        changes.status,
+        allNodes as WaterfallNode[],
+        allEdges as WaterfallEdge[],
+      );
+
+      if (waterfallChanges.length > 0) {
+        // Apply each propagated status change
+        for (const wc of waterfallChanges) {
+          await db
+            .update(nodes)
+            .set({ status: wc.newStatus, updatedAt: new Date() })
+            .where(eq(nodes.id, wc.nodeId));
+
+          await db.insert(nodeHistory).values({
+            nodeId: wc.nodeId,
+            projectId,
+            userId: auth.userId,
+            action: 'status_changed',
+            fieldName: 'status',
+            oldValue: wc.oldStatus,
+            newValue: wc.newStatus,
+          });
+        }
+
+        propagated = waterfallChanges;
+      }
+    }
+
+    return NextResponse.json({ data: updated, propagated });
   } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
@@ -156,6 +206,11 @@ export async function DELETE(
     .update(nodes)
     .set({ parentId: null, updatedAt: new Date() })
     .where(and(eq(nodes.parentId, nodeId), eq(nodes.projectId, projectId)));
+
+  // Explicitly delete connected edges (DB CASCADE would handle this, but explicit for clarity)
+  await db
+    .delete(edges)
+    .where(and(eq(edges.projectId, projectId), or(eq(edges.sourceId, nodeId), eq(edges.targetId, nodeId))));
 
   await db
     .delete(nodes)
