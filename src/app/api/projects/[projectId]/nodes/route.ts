@@ -30,11 +30,11 @@ export async function GET(
     return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
 
+  const allNodes = await db.select().from(nodes).where(eq(nodes.projectId, projectId));
+
   const url = new URL(request.url);
   const typeFilter = url.searchParams.get('type');
   const statusFilter = url.searchParams.get('status');
-
-  const allNodes = await db.select().from(nodes).where(eq(nodes.projectId, projectId));
 
   let filtered = allNodes;
   if (typeFilter) {

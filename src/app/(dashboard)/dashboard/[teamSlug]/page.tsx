@@ -1,10 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Plus, ArrowLeft } from 'lucide-react';
+import { Plus, ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import type { Project } from '@/types/auth';
+import { DropdownMenu } from '@/components/ui/DropdownMenu';
+import { EditProjectModal } from '@/components/ui/EditProjectModal';
+import { DangerConfirmDialog } from '@/components/ui/DangerConfirmDialog';
 
 export default function TeamProjectsPage() {
   const params = useParams<{ teamSlug: string }>();
@@ -16,12 +19,11 @@ export default function TeamProjectsPage() {
   const [projectDesc, setProjectDesc] = useState('');
   const [creating, setCreating] = useState(false);
 
-  useEffect(() => {
-    fetchProjects();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [deletingProject, setDeletingProject] = useState<Project | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  async function fetchProjects() {
+  const fetchProjects = useCallback(async () => {
     try {
       const res = await fetch(`/api/teams/${params.teamSlug}/projects`);
       const json = await res.json();
@@ -29,7 +31,11 @@ export default function TeamProjectsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [params.teamSlug]);
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -46,6 +52,40 @@ export default function TeamProjectsPage() {
       }
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleEditProject(data: { name: string; description?: string }) {
+    if (!editingProject) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/teams/${params.teamSlug}/projects/${editingProject.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        setEditingProject(null);
+        await fetchProjects();
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteProject() {
+    if (!deletingProject) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/teams/${params.teamSlug}/projects/${deletingProject.id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setDeletingProject(null);
+        await fetchProjects();
+      }
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -129,21 +169,62 @@ export default function TeamProjectsPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {projects.map((project) => (
-            <Link
+            <div
               key={project.id}
-              href={`/dashboard/${params.teamSlug}/${project.id}`}
-              className="rounded-lg border border-gray-200 bg-white p-5 transition-all hover:border-thask-primary hover:shadow-md"
+              className="group relative rounded-lg border border-gray-200 bg-white p-5 transition-all hover:border-thask-primary hover:shadow-md"
             >
-              <div className="text-lg font-medium text-gray-900">{project.name}</div>
-              {project.description && (
-                <div className="mt-1 text-sm text-gray-500">{project.description}</div>
-              )}
-              <div className="mt-3 text-xs text-gray-400">
-                Created {new Date(project.createdAt).toLocaleDateString()}
+              <Link href={`/dashboard/${params.teamSlug}/${project.id}`} className="block">
+                <div className="pr-8 text-lg font-medium text-gray-900">{project.name}</div>
+                {project.description && (
+                  <div className="mt-1 text-sm text-gray-500">{project.description}</div>
+                )}
+                <div className="mt-3 text-xs text-gray-400">
+                  Created {new Date(project.createdAt).toLocaleDateString()}
+                </div>
+              </Link>
+              <div className="absolute right-4 top-4">
+                <DropdownMenu
+                  items={[
+                    {
+                      label: 'Edit',
+                      icon: <Pencil className="h-4 w-4" />,
+                      onClick: () => setEditingProject(project),
+                    },
+                    {
+                      label: 'Delete',
+                      icon: <Trash2 className="h-4 w-4" />,
+                      variant: 'danger',
+                      separator: true,
+                      onClick: () => setDeletingProject(project),
+                    },
+                  ]}
+                />
               </div>
-            </Link>
+            </div>
           ))}
         </div>
+      )}
+
+      {/* Edit Project Modal */}
+      {editingProject && (
+        <EditProjectModal
+          name={editingProject.name}
+          description={editingProject.description}
+          onSave={handleEditProject}
+          onCancel={() => setEditingProject(null)}
+          saving={saving}
+        />
+      )}
+
+      {/* Delete Project Dialog */}
+      {deletingProject && (
+        <DangerConfirmDialog
+          title="Delete Project"
+          message={`This will permanently delete "${deletingProject.name}" and all its nodes, edges, and history.`}
+          confirmText={deletingProject.name}
+          onConfirm={handleDeleteProject}
+          onCancel={() => setDeletingProject(null)}
+        />
       )}
     </div>
   );

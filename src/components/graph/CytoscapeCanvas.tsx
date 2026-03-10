@@ -17,8 +17,7 @@ if (!extensionsRegistered) {
   extensionsRegistered = true;
 }
 
-const HANDLE_ID = '__eh-handle__';
-const RESIZE_HANDLE_ID = '__resize-handle__';
+const PORT_SIZE = 20;
 
 export interface CytoscapeCanvasHandle {
   getCy: () => Core | null;
@@ -50,6 +49,7 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
+    const portOverlayRef = useRef<HTMLDivElement>(null);
     const cyRef = useRef<Core | null>(null);
     const ehRef = useRef<ReturnType<Core['edgehandles']> | null>(null);
     const initialLayoutDone = useRef(false);
@@ -105,114 +105,117 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
 
       // Initialize edgehandles (non-drawMode; we trigger start() manually)
       const eh = cy.edgehandles({
-        canConnect: (sourceNode, targetNode) =>
-          !sourceNode.same(targetNode) && targetNode.id() !== HANDLE_ID && targetNode.id() !== RESIZE_HANDLE_ID,
+        canConnect: (sourceNode, targetNode) => !sourceNode.same(targetNode),
         edgeParams: () => ({}),
-        hoverDelay: 150,
+        hoverDelay: 0,
         snap: true,
         snapThreshold: 50,
         snapFrequency: 15,
         noEdgeEventsInDraw: true,
         disableBrowserGestures: true,
+        handleNodes: 'DONOTMATCHANYTHING',
       });
       eh.enable();
       ehRef.current = eh;
 
-      // --- Custom hover handle ---
-      // Add an invisible handle node used as a drag point
-      cy.add({
-        group: 'nodes',
-        data: { id: HANDLE_ID },
-        classes: 'eh-custom-handle',
-        position: { x: 0, y: 0 },
-      });
-      const handleNode = cy.getElementById(HANDLE_ID);
-      // Apply styles directly (override base node 80x80)
-      handleNode.style({
-        'width': 14,
-        'height': 14,
-        'shape': 'ellipse',
-        'background-color': '#3b82f6',
-        'border-width': 2,
-        'border-color': '#1d4ed8',
-        'overlay-opacity': 0,
-        'label': '',
-        'display': 'none',
-      });
-      handleNode.ungrabify();
-      handleNode.unselectify();
+      // --- HTML port overlay for edge creation ---
+      const overlay = portOverlayRef.current;
+      let portSource: cytoscape.NodeSingular | null = null;
+      let portHideTimer: ReturnType<typeof setTimeout> | null = null;
 
-      let hoverSource: cytoscape.NodeSingular | null = null;
-      let handleHovered = false;
-      let hideTimeout: ReturnType<typeof setTimeout> | null = null;
-
-      function positionHandleNearestSide(node: cytoscape.NodeSingular, mousePos: { x: number; y: number }) {
-        if (hideTimeout) { clearTimeout(hideTimeout); hideTimeout = null; }
-        hoverSource = node;
-        const bb = node.boundingBox({});
-        const cx = (bb.x1 + bb.x2) / 2;
-        const cy2 = (bb.y1 + bb.y2) / 2;
-
-        // Distance from mouse to each side
-        const dTop = Math.abs(mousePos.y - bb.y1);
-        const dBottom = Math.abs(mousePos.y - bb.y2);
-        const dLeft = Math.abs(mousePos.x - bb.x1);
-        const dRight = Math.abs(mousePos.x - bb.x2);
-        const min = Math.min(dTop, dBottom, dLeft, dRight);
-
-        let hx: number, hy: number;
-        if (min === dTop) { hx = cx; hy = bb.y1 - 4; }
-        else if (min === dBottom) { hx = cx; hy = bb.y2 + 4; }
-        else if (min === dLeft) { hx = bb.x1 - 4; hy = cy2; }
-        else { hx = bb.x2 + 4; hy = cy2; }
-
-        handleNode.position({ x: hx, y: hy });
-        handleNode.style('display', 'element');
+      function showPorts(node: cytoscape.NodeSingular) {
+        if (!overlay) return;
+        portSource = node;
+        if (portHideTimer) { clearTimeout(portHideTimer); portHideTimer = null; }
+        positionPorts(node);
+        overlay.style.display = 'block';
       }
 
-      function hideHandle(delay = 200) {
-        hideTimeout = setTimeout(() => {
-          if (!handleHovered && !eh.active) {
-            handleNode.style('display', 'none');
-            hoverSource = null;
-          }
+      function hidePorts(delay = 150) {
+        portHideTimer = setTimeout(() => {
+          if (overlay) overlay.style.display = 'none';
+          portSource = null;
         }, delay);
       }
 
-      // Position handle on nearest side based on mouse position
-      cy.on('mousemove', 'node', (e) => {
+      function positionPorts(node: cytoscape.NodeSingular) {
+        if (!overlay) return;
+        const rbb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
+        const cxR = (rbb.x1 + rbb.x2) / 2;
+        const cyR = (rbb.y1 + rbb.y2) / 2;
+        const half = PORT_SIZE / 2;
+
+        const positions = [
+          { cls: 'port-top', x: cxR - half, y: rbb.y1 - PORT_SIZE },
+          { cls: 'port-right', x: rbb.x2, y: cyR - half },
+          { cls: 'port-bottom', x: cxR - half, y: rbb.y2 },
+          { cls: 'port-left', x: rbb.x1 - PORT_SIZE, y: cyR - half },
+        ];
+
+        for (const p of positions) {
+          const el = overlay.querySelector(`.${p.cls}`) as HTMLElement | null;
+          if (el) {
+            el.style.left = `${p.x}px`;
+            el.style.top = `${p.y}px`;
+          }
+        }
+      }
+
+      // Port mousedown: start edge drawing
+      if (overlay) {
+        overlay.addEventListener('mousedown', (e: MouseEvent) => {
+          if (!(e.target as HTMLElement).classList.contains('port-dot')) return;
+          e.preventDefault();
+          e.stopPropagation();
+          if (portSource) {
+            if (overlay) overlay.style.display = 'none';
+            eh.start(portSource);
+            // Cytoscape never saw tapstart, so tapend won't fire.
+            // Listen for mouseup to manually stop edgehandles.
+            const onMouseUp = () => {
+              document.removeEventListener('mouseup', onMouseUp);
+              eh.stop();
+            };
+            document.addEventListener('mouseup', onMouseUp);
+          }
+        });
+        // Keep ports visible while hovering overlay
+        overlay.addEventListener('mouseenter', () => {
+          if (portHideTimer) { clearTimeout(portHideTimer); portHideTimer = null; }
+        });
+        overlay.addEventListener('mouseleave', () => {
+          if (!eh.active) hidePorts(100);
+        });
+      }
+
+      // Show ports when hovering a node
+      cy.on('mouseover', 'node', (e) => {
         const node = e.target;
-        if (node.id() === HANDLE_ID || node.id() === RESIZE_HANDLE_ID) return;
-        if (eh.active) return;
-        if (node.grabbed()) return;
-        if (isResizing) return;
-        positionHandleNearestSide(node, e.position);
+        if (eh.active || node.grabbed() || isResizing) return;
+        if (node.data('nodeType') === 'GROUP' && !node.hasClass('group-collapsed')) return;
+        showPorts(node);
       });
 
-      cy.on('mouseout', 'node', (e) => {
-        const node = e.target;
-        if (node.id() === HANDLE_ID) return;
-        if (eh.active) return;
-        hideHandle();
+      cy.on('mouseout', 'node', () => {
+        if (!eh.active) hidePorts();
       });
 
-      // Track handle hover state
-      cy.on('mouseover', `.eh-custom-handle`, () => {
-        handleHovered = true;
-        if (hideTimeout) { clearTimeout(hideTimeout); hideTimeout = null; }
+      // Reposition ports on pan/zoom
+      cy.on('pan zoom', () => {
+        if (portSource && overlay?.style.display === 'block') positionPorts(portSource);
       });
 
-      cy.on('mouseout', `.eh-custom-handle`, () => {
-        handleHovered = false;
-        if (!eh.active) hideHandle();
+      // After edge drawing ends, clean up
+      cy.on('ehstop ehcancel', () => {
+        if (overlay) overlay.style.display = 'none';
+        portSource = null;
       });
 
-      // Hide edge handle when node drag starts + setup GROUP drag state
+      // Hide ports when node drag starts + setup GROUP drag state
       cy.on('grab', 'node', (e) => {
         const node = e.target;
-        if (node.id() === HANDLE_ID || node.id() === RESIZE_HANDLE_ID) return;
-        handleNode.style('display', 'none');
-        hoverSource = null;
+        if (overlay) overlay.style.display = 'none';
+        portSource = null;
 
         if (node.data('nodeType') === 'GROUP') {
           // GROUP grabbed: collect all descendants + their position offsets
@@ -234,21 +237,6 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         }
       });
 
-      // Start edge drawing when handle is tapped/dragged
-      cy.on('tapstart', `.eh-custom-handle`, () => {
-        if (hoverSource) {
-          handleNode.style('display', 'none');
-          eh.start(hoverSource);
-        }
-      });
-
-      // After edge drawing ends, clean up
-      cy.on('ehstop ehcancel', () => {
-        handleNode.style('display', 'none');
-        hoverSource = null;
-        handleHovered = false;
-      });
-
       // On edge complete: remove temp edge, call callback
       cy.on('ehcomplete', (_event, sourceNode, targetNode, addedEdge) => {
         addedEdge.remove();
@@ -260,7 +248,6 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
 
       // Node selection (Shift+click = toggle multi-select)
       cy.on('tap', 'node', (evt: EventObject) => {
-        if (evt.target.id() === HANDLE_ID || evt.target.id() === RESIZE_HANDLE_ID) return;
         const cb = callbacksRef.current;
         if (evt.originalEvent.shiftKey) {
           cb.onNodeToggleSelect?.(evt.target.id());
@@ -279,7 +266,6 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
       // Highlight GROUP nodes when dragging a node over them + move GROUP children in lockstep
       cy.on('drag', 'node', (evt: EventObject) => {
         const node = evt.target;
-        if (node.id() === HANDLE_ID || node.id() === RESIZE_HANDLE_ID) return;
         const cursorPos = evt.position;
 
         // Drop-target highlight: find innermost (smallest) GROUP under cursor
@@ -317,7 +303,6 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
       });
 
       cy.on('dragfree', 'node', (evt: EventObject) => {
-        if (evt.target.id() === HANDLE_ID || evt.target.id() === RESIZE_HANDLE_ID) return;
         cy.nodes('.drop-target').removeClass('drop-target');
         const cb = callbacksRef.current;
         const node = evt.target;
@@ -341,7 +326,7 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
 
           // Find innermost GROUP under drop position
           const groupNodes = cy.nodes().filter(
-            (n) => n.data('nodeType') === 'GROUP' && n.id() !== node.id() && n.id() !== HANDLE_ID && !n.hasClass('group-collapsed') && !dragDescendantIds?.has(n.id()),
+            (n) => n.data('nodeType') === 'GROUP' && n.id() !== node.id() && !n.hasClass('group-collapsed') && !dragDescendantIds?.has(n.id()),
           );
           let targetGroup: string | null = null;
           let targetGroupArea = Infinity;
@@ -589,7 +574,7 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
       container.addEventListener('mouseleave', onResizeEnd);
 
       return () => {
-        if (hideTimeout) clearTimeout(hideTimeout);
+        if (portHideTimer) clearTimeout(portHideTimer);
         container.removeEventListener('mousedown', onResizeMouseDown);
         container.removeEventListener('mousemove', onResizeMouseMove);
         container.removeEventListener('mouseup', onResizeEnd);
@@ -614,9 +599,8 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
         const newNodeIds = new Set(nodes.map((n) => n.id));
         const newEdgeIds = new Set(edges.map((e) => e.id));
 
-        // Remove stale elements (skip handle node)
+        // Remove stale elements
         cy.nodes().forEach((n) => {
-          if (n.id() === HANDLE_ID || n.id() === RESIZE_HANDLE_ID) return;
           if (!newNodeIds.has(n.id())) n.remove();
         });
         cy.edges().forEach((e) => {
@@ -645,8 +629,8 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
           if (node.type === 'GROUP') {
             const childCount = nodes.filter((n) => n.parentId === node.id).length;
             data.childCount = childCount;
-            data.width = node.width || 160;
-            data.height = node.height || 100;
+            data.width = Math.max(node.width ?? 160, 160);
+            data.height = Math.max(node.height ?? 100, 100);
           }
 
           if (existing.length) {
@@ -759,11 +743,41 @@ export const CytoscapeCanvas = forwardRef<CytoscapeCanvasHandle, CytoscapeCanvas
     }, [selectedNodeIds]);
 
     return (
-      <div
-        ref={containerRef}
-        className="h-full w-full"
-        style={{ minHeight: '400px' }}
-      />
+      <div className="relative h-full w-full" style={{ minHeight: '400px' }}>
+        <div
+          ref={containerRef}
+          className="h-full w-full"
+        />
+        {/* Port overlay for edge creation — 4 dots around hovered node */}
+        <div
+          ref={portOverlayRef}
+          style={{ display: 'none', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
+        >
+          {['port-top', 'port-right', 'port-bottom', 'port-left'].map((cls) => (
+            <div
+              key={cls}
+              className={`port-dot ${cls}`}
+              style={{
+                position: 'absolute',
+                width: PORT_SIZE,
+                height: PORT_SIZE,
+                borderRadius: '50%',
+                background: '#3b82f6',
+                border: '2px solid #1d4ed8',
+                cursor: 'crosshair',
+                pointerEvents: 'auto',
+                transition: 'transform 0.1s ease',
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.transform = 'scale(1.3)';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.transform = 'scale(1)';
+              }}
+            />
+          ))}
+        </div>
+      </div>
     );
   },
 );

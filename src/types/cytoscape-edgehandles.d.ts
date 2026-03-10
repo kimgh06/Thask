@@ -13,6 +13,7 @@ declare module 'cytoscape-edgehandles' {
     snapFrequency?: number;
     noEdgeEventsInDraw?: boolean;
     disableBrowserGestures?: boolean;
+    handleNodes?: string;
   }
 
   interface EdgeHandlesInstance {

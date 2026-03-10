@@ -210,21 +210,6 @@ export const cytoscapeStylesheet: StylesheetStyle[] = [
     style: { 'line-color': '#8b5cf6', 'target-arrow-color': '#8b5cf6', 'line-style': 'dashed' },
   },
 
-  // Custom hover handle dot for edge creation
-  {
-    selector: '.eh-custom-handle',
-    style: {
-      'background-color': '#3b82f6',
-      width: 16,
-      height: 16,
-      shape: 'ellipse',
-      'overlay-opacity': 0,
-      'border-width': 3,
-      'border-color': '#1d4ed8',
-      label: '',
-      'z-index': 999,
-    } as Record<string, string | number>,
-  },
   // Edgehandles: ghost edge (follows cursor during drag)
   {
     selector: '.eh-ghost-edge',
@@ -241,7 +226,7 @@ export const cytoscapeStylesheet: StylesheetStyle[] = [
   },
   // Edgehandles: preview edge (snapped to valid target)
   {
-    selector: '.eh-preview',
+    selector: 'edge.eh-preview',
     style: {
       'line-color': '#3b82f6',
       'target-arrow-color': '#3b82f6',
