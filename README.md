@@ -187,14 +187,57 @@ See [.env.example](.env.example) for a ready-to-copy template.
 
 ---
 
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) — Layers, data flow, directory structure
+- [Database](docs/DATABASE.md) — ER diagram, tables, indexes, relations
+- [API Reference](docs/API.md) — 22 endpoints with request/response examples
+- [Graph Engine](docs/GRAPH.md) — Node types, edge types, GROUP, impact mode, undo/redo
+- [Keyboard Shortcuts](docs/SHORTCUTS.md) — All shortcuts and interactions
+
+---
+
 ## Roadmap
 
-- [ ] Real-time collaboration (WebSocket)
-- [ ] Export graph as image / PDF
-- [ ] Node search & keyboard shortcuts
-- [ ] API token auth for CI/CD integration
+### v0.1 — Foundation (Done)
+- [x] Graph CRUD (nodes, edges, groups)
+- [x] 7 node types & 4 statuses with visual styling
+- [x] fCOSE auto-layout & manual positioning
+- [x] Drag-and-drop grouping & compound nodes
+- [x] Node search & keyboard shortcuts
+- [x] Undo/Redo (10 action types, 50-depth stack)
+- [x] QA impact analysis (BFS-based)
+- [x] Status waterfall propagation
+- [x] Session-based auth & team management
+- [x] Docker Compose one-command deploy
+
+### v0.2 — Collaboration & Export
+- [ ] Real-time collaboration (WebSocket / SSE)
+- [ ] Graph snapshot — export as PNG / SVG
+- [ ] PDF report generation (impact summary)
+- [ ] Activity feed (recent changes across team)
+- [ ] Comment threads on nodes
+
+### v0.3 — Automation & Integration
+- [ ] API token auth for CI/CD pipelines
+- [ ] Webhook triggers on status change
+- [ ] GitHub / GitLab issue sync
+- [ ] Slack / Discord notifications
+- [ ] Bulk import / export (JSON, CSV)
+
+### v0.4 — UX & Templates
 - [ ] Graph templates (preset flow patterns)
 - [ ] Dark mode
+- [ ] Custom node colors & icons
+- [ ] Minimap improvements (click-to-navigate)
+- [ ] Mobile responsive layout
+
+### Future
+- [ ] Version history & graph diffing
+- [ ] Role-based permissions (view-only, edit, admin)
+- [ ] Plugin system for custom node types
+- [ ] AI-assisted impact prediction
+- [ ] Self-hosted SSO (SAML / OIDC)
 
 ---
 
