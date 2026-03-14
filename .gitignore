@@ -3,6 +3,7 @@ node_modules/
 
 # Go
 backend/bin/
+backend/server
 
 # SvelteKit
 frontend/build/
