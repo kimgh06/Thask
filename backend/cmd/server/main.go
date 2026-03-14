@@ -65,7 +65,10 @@ func main() {
 	e.Validator = handler.NewValidator()
 
 	// Global middleware
-	e.Use(echoMw.Logger())
+	e.Use(echoMw.LoggerWithConfig(echoMw.LoggerConfig{
+		Format: "\033[36m${time_rfc3339}\033[0m ${method} ${uri} \033[32m${status}\033[0m ${latency_human}\n",
+		Output: os.Stdout,
+	}))
 	e.Use(echoMw.Recover())
 	e.Use(echoMw.CORSWithConfig(echoMw.CORSConfig{
 		AllowOrigins:     []string{cfg.FrontendURL},

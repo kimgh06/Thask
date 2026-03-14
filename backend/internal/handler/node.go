@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -174,7 +175,17 @@ func (h *NodeHandler) Update(c echo.Context) error {
 		fields["tags"] = req.Tags
 	}
 	if req.ParentID != nil {
-		fields["parent_id"] = *req.ParentID
+		newParentID := *req.ParentID
+		if newParentID != "" {
+			// Prevent circular parent references
+			if newParentID == nodeID {
+				return c.JSON(http.StatusBadRequest, dto.Err("Node cannot be its own parent"))
+			}
+			if err := h.detectParentCycle(ctx, projectID, nodeID, newParentID); err != nil {
+				return c.JSON(http.StatusBadRequest, dto.Err(err.Error()))
+			}
+		}
+		fields["parent_id"] = newParentID
 	}
 	if req.Width != nil {
 		fields["width"] = *req.Width
@@ -274,6 +285,25 @@ func (h *NodeHandler) BatchUpdatePositions(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
+}
+
+// detectParentCycle walks up the parent chain from targetParentID.
+// If it reaches nodeID, setting nodeID's parent to targetParentID would create a cycle.
+func (h *NodeHandler) detectParentCycle(ctx context.Context, projectID, nodeID, targetParentID string) error {
+	visited := map[string]bool{nodeID: true}
+	cur := targetParentID
+	for cur != "" {
+		if visited[cur] {
+			return fmt.Errorf("Cannot set parent: would create circular reference")
+		}
+		visited[cur] = true
+		parent, err := h.nodeRepo.FindByID(ctx, cur, projectID)
+		if err != nil || parent.ParentID == nil {
+			break
+		}
+		cur = *parent.ParentID
+	}
+	return nil
 }
 
 func strPtr(s string) *string { return &s }

@@ -1,5 +1,19 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import {
+		Plus,
+		Group,
+		ZoomIn,
+		ZoomOut,
+		Maximize,
+		LayoutGrid,
+		Undo2,
+		Redo2,
+		Filter,
+		Search,
+		X,
+		Zap,
+	} from 'lucide-svelte';
 	import type { GraphNode, NodeType, NodeStatus } from '$lib/types';
 
 	interface Props {
@@ -122,158 +136,165 @@
 </script>
 
 <div
-	class="flex flex-col gap-1 p-2 rounded-lg border shadow-lg"
-	style="background: var(--color-surface); border-color: var(--color-border);"
+	class="flex flex-col gap-1 p-2 rounded-xl shadow-xl"
+	style="background: rgba(30,41,59,0.85); backdrop-filter: blur(12px); border: 1px solid var(--color-border);"
 >
 	<!-- Main toolbar row -->
-	<div class="flex items-center gap-1 flex-wrap">
-		<!-- Add buttons -->
+	<div class="flex items-center gap-0.5">
+
+		<!-- Group 1: Add Node, Add Group -->
 		<button
 			onclick={onAddNode}
-			class="px-2 py-1 rounded text-xs font-medium transition-colors"
+			class="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-colors"
 			style="background: var(--color-primary); color: white;"
 			title="Add Node"
 		>
-			+ Node
+			<Plus size={16} />
+			Node
 		</button>
 		<button
 			onclick={onAddGroup}
-			class="px-2 py-1 rounded text-xs font-medium transition-colors"
-			style="background: var(--color-surface-hover); color: var(--color-text); border: 1px solid var(--color-border);"
+			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
 			title="Add Group"
 		>
-			+ Group
+			<Group size={16} />
 		</button>
 
-		<div class="w-px h-5 mx-1" style="background: var(--color-border);"></div>
+		<div class="w-px h-5 mx-1 flex-shrink-0" style="background: var(--color-border);"></div>
 
-		<!-- Zoom controls -->
+		<!-- Group 2: Zoom In, Zoom Out, Fit View, Layout -->
 		<button
 			onclick={onZoomIn}
-			class="w-7 h-7 flex items-center justify-center rounded text-sm font-medium transition-colors"
-			style="background: var(--color-surface-hover); color: var(--color-text);"
+			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
 			title="Zoom In"
 		>
-			+
+			<ZoomIn size={16} />
 		</button>
 		<button
 			onclick={onZoomOut}
-			class="w-7 h-7 flex items-center justify-center rounded text-sm font-medium transition-colors"
-			style="background: var(--color-surface-hover); color: var(--color-text);"
+			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
 			title="Zoom Out"
 		>
-			−
+			<ZoomOut size={16} />
 		</button>
 		<button
 			onclick={onFitView}
-			class="px-2 py-1 rounded text-xs font-medium transition-colors"
-			style="background: var(--color-surface-hover); color: var(--color-text);"
+			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
 			title="Fit View"
 		>
-			Fit
+			<Maximize size={16} />
 		</button>
 		<button
 			onclick={onRunLayout}
-			class="px-2 py-1 rounded text-xs font-medium transition-colors"
-			style="background: var(--color-surface-hover); color: var(--color-text);"
+			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
 			title="Auto Layout"
 		>
-			Layout
+			<LayoutGrid size={16} />
 		</button>
 
-		<div class="w-px h-5 mx-1" style="background: var(--color-border);"></div>
+		<div class="w-px h-5 mx-1 flex-shrink-0" style="background: var(--color-border);"></div>
 
-		<!-- Undo/Redo -->
+		<!-- Group 3: Undo, Redo -->
 		<button
 			onclick={onUndo}
 			disabled={!canUndo}
-			class="w-7 h-7 flex items-center justify-center rounded text-sm transition-colors"
-			style="background: var(--color-surface-hover); color: {canUndo ? 'var(--color-text)' : 'var(--color-text-muted)'}; opacity: {canUndo ? '1' : '0.5'};"
+			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
+			style="opacity: {canUndo ? '1' : '0.35'};"
 			title="Undo (Ctrl+Z)"
 		>
-			↩
+			<Undo2 size={16} />
 		</button>
 		<button
 			onclick={onRedo}
 			disabled={!canRedo}
-			class="w-7 h-7 flex items-center justify-center rounded text-sm transition-colors"
-			style="background: var(--color-surface-hover); color: {canRedo ? 'var(--color-text)' : 'var(--color-text-muted)'}; opacity: {canRedo ? '1' : '0.5'};"
+			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
+			style="opacity: {canRedo ? '1' : '0.35'};"
 			title="Redo (Ctrl+Y)"
 		>
-			↪
+			<Redo2 size={16} />
 		</button>
 
-		<div class="w-px h-5 mx-1" style="background: var(--color-border);"></div>
+		<div class="w-px h-5 mx-1 flex-shrink-0" style="background: var(--color-border);"></div>
 
-		<!-- Filter toggle -->
+		<!-- Group 4: Filter, Search, Impact -->
 		<button
 			onclick={() => (showFilters = !showFilters)}
-			class="px-2 py-1 rounded text-xs font-medium transition-colors"
-			style="background: {showFilters ? 'var(--color-primary)' : 'var(--color-surface-hover)'}; color: {showFilters ? 'white' : 'var(--color-text)'};"
+			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors relative"
+			style="background: {showFilters ? 'var(--color-primary)' : 'var(--color-surface-hover)'}; color: {showFilters ? 'white' : 'var(--color-text-muted)'};"
 			title="Toggle Filters"
 		>
-			Filter {activeTypeFilter || activeStatusFilter ? '●' : ''}
+			<Filter size={16} />
+			{#if activeTypeFilter || activeStatusFilter}
+				<span
+					class="absolute top-1 right-1 w-1.5 h-1.5 rounded-full"
+					style="background: var(--color-primary);"
+				></span>
+			{/if}
 		</button>
 
-		<!-- Search -->
 		{#if showSearch}
-			<div class="flex items-center gap-1">
+			<div class="flex items-center gap-1 ml-0.5">
 				<input
 					bind:this={searchInput}
 					bind:value={searchQuery}
 					onkeydown={handleSearchKeydown}
 					placeholder="Search nodes..."
-					class="px-2 py-1 rounded text-xs outline-none"
-					style="background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-primary); width: 150px;"
+					class="px-2 py-1 rounded-lg text-xs outline-none transition-all"
+					style="background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-primary); width: 150px; height: 32px;"
 				/>
 				{#if searchResultsText}
-					<span class="text-xs" style="color: var(--color-text-muted);">{searchResultsText}</span>
+					<span class="text-xs whitespace-nowrap" style="color: var(--color-text-muted);"
+						>{searchResultsText}</span
+					>
 				{/if}
 				<button
 					onclick={closeSearch}
-					class="w-5 h-5 flex items-center justify-center rounded text-xs"
-					style="color: var(--color-text-muted);"
+					class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
 					title="Close Search (Esc)"
 				>
-					✕
+					<X size={16} />
 				</button>
 			</div>
 		{:else}
 			<button
 				onclick={openSearch}
-				class="px-2 py-1 rounded text-xs font-medium transition-colors"
-				style="background: var(--color-surface-hover); color: var(--color-text-muted);"
+				class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
 				title="Search (Ctrl+F)"
 			>
-				Search
+				<Search size={16} />
 			</button>
 		{/if}
 
-		<!-- Impact Mode -->
 		<button
 			onclick={onToggleImpact}
-			class="px-2 py-1 rounded text-xs font-medium transition-colors"
-			style="background: {isImpactActive ? '#f59e0b' : 'var(--color-surface-hover)'}; color: {isImpactActive ? '#000' : 'var(--color-text)'};"
+			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors {isImpactActive ? 'impact-active' : 'btn-muted'}"
 			title="Toggle Impact Mode"
 		>
-			Impact
+			<Zap size={16} />
 		</button>
 	</div>
 
-	<!-- Filter bar -->
+	<!-- Filter bar (slides in smoothly) -->
 	{#if showFilters}
 		<div
-			class="flex flex-col gap-1 pt-1 mt-1 border-t"
+			class="flex flex-col gap-1 pt-1.5 mt-0.5 border-t filter-slide-in"
 			style="border-color: var(--color-border);"
 		>
 			<!-- Node type filters -->
 			<div class="flex items-center gap-1 flex-wrap">
-				<span class="text-xs mr-1" style="color: var(--color-text-muted);">Type:</span>
+				<span class="text-xs mr-1 flex-shrink-0" style="color: var(--color-text-muted);">Type:</span
+				>
 				{#each NODE_TYPES as type}
 					<button
 						onclick={() => (activeTypeFilter = activeTypeFilter === type ? null : type)}
-						class="px-2 py-0.5 rounded text-xs font-medium transition-colors"
-						style="background: {activeTypeFilter === type ? 'var(--color-primary)' : 'var(--color-bg)'}; color: {activeTypeFilter === type ? 'white' : 'var(--color-text-muted)'}; border: 1px solid var(--color-border);"
+						class="px-2 py-0.5 rounded-md text-xs font-medium transition-colors"
+						style="background: {activeTypeFilter === type
+							? 'var(--color-primary)'
+							: 'var(--color-bg)'}; color: {activeTypeFilter === type
+							? 'white'
+							: 'var(--color-text-muted)'}; border: 1px solid {activeTypeFilter === type
+							? 'var(--color-primary)'
+							: 'var(--color-border)'};"
 					>
 						{type}
 					</button>
@@ -281,17 +302,22 @@
 			</div>
 			<!-- Status filters -->
 			<div class="flex items-center gap-1 flex-wrap">
-				<span class="text-xs mr-1" style="color: var(--color-text-muted);">Status:</span>
+				<span class="text-xs mr-1 flex-shrink-0" style="color: var(--color-text-muted);">Status:</span
+				>
 				{#each STATUS_OPTIONS as opt}
 					<button
-						onclick={() => (activeStatusFilter = activeStatusFilter === opt.value ? null : opt.value)}
-						class="px-2 py-0.5 rounded text-xs font-medium transition-colors flex items-center gap-1"
-						style="background: {activeStatusFilter === opt.value ? opt.color + '33' : 'var(--color-bg)'}; color: {activeStatusFilter === opt.value ? opt.color : 'var(--color-text-muted)'}; border: 1px solid {activeStatusFilter === opt.value ? opt.color : 'var(--color-border)'};"
+						onclick={() =>
+							(activeStatusFilter = activeStatusFilter === opt.value ? null : opt.value)}
+						class="px-2 py-0.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1"
+						style="background: {activeStatusFilter === opt.value
+							? opt.color + '33'
+							: 'var(--color-bg)'}; color: {activeStatusFilter === opt.value
+							? opt.color
+							: 'var(--color-text-muted)'}; border: 1px solid {activeStatusFilter === opt.value
+							? opt.color
+							: 'var(--color-border)'};"
 					>
-						<span
-							class="w-2 h-2 rounded-full inline-block"
-							style="background: {opt.color};"
-						></span>
+						<span class="w-2 h-2 rounded-full inline-block" style="background: {opt.color};"></span>
 						{opt.value}
 					</button>
 				{/each}
@@ -299,3 +325,45 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	.btn-muted {
+		background: var(--color-surface-hover);
+		color: var(--color-text-muted);
+	}
+
+	.btn-muted:hover {
+		color: var(--color-text);
+	}
+
+	.impact-active {
+		background: #f59e0b;
+		color: #000;
+		animation: pulse 2s ease-in-out infinite;
+	}
+
+	@keyframes pulse {
+		0%,
+		100% {
+			box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+		}
+		50% {
+			box-shadow: 0 0 0 6px rgba(245, 158, 11, 0);
+		}
+	}
+
+	.filter-slide-in {
+		animation: slideDown 0.15s ease-out;
+	}
+
+	@keyframes slideDown {
+		from {
+			opacity: 0;
+			transform: translateY(-4px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+</style>

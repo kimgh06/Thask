@@ -1,10 +1,10 @@
 import type { StylesheetStyle } from 'cytoscape';
 
 const STATUS_COLORS = {
-  PASS: '#22c55e',
-  FAIL: '#ef4444',
-  IN_PROGRESS: '#eab308',
-  BLOCKED: '#9ca3af',
+  PASS: '#34d399',
+  FAIL: '#f87171',
+  IN_PROGRESS: '#818cf8',
+  BLOCKED: '#fbbf24',
 };
 
 const NODE_SHAPES: Record<string, string> = {
@@ -18,13 +18,13 @@ const NODE_SHAPES: Record<string, string> = {
 };
 
 const NODE_COLORS: Record<string, string> = {
-  FLOW: '#3b82f6',
-  BRANCH: '#8b5cf6',
-  TASK: '#06b6d4',
-  BUG: '#ef4444',
-  API: '#f97316',
-  UI: '#10b981',
-  GROUP: '#64748b',
+  FLOW: '#60a5fa',
+  BRANCH: '#a78bfa',
+  TASK: '#22d3ee',
+  BUG: '#f87171',
+  API: '#fb923c',
+  UI: '#34d399',
+  GROUP: '#94a3b8',
 };
 
 export function getGraphStyles(): StylesheetStyle[] {
@@ -36,19 +36,19 @@ export function getGraphStyles(): StylesheetStyle[] {
         label: 'data(label)',
         'text-valign': 'center',
         'text-halign': 'center',
-        'font-size': 13,
-        'font-weight': 500,
+        'font-size': 12,
+        'font-weight': 600,
         'font-family': 'Inter, system-ui, sans-serif',
         'text-wrap': 'wrap',
-        'text-max-width': '110px',
-        color: '#1f2937',
-        'text-outline-color': '#ffffff',
+        'text-max-width': '100px',
+        color: '#e2e8f0',
+        'text-outline-color': '#1e293b',
         'text-outline-width': 2,
-        width: 80,
-        height: 80,
-        'border-width': 3,
-        'border-color': '#d1d5db',
-        'background-color': '#f9fafb',
+        width: 72,
+        height: 72,
+        'border-width': 2,
+        'border-color': '#475569',
+        'background-color': '#1e293b',
         'overlay-padding': 4,
         'z-index': 10,
       },
@@ -59,8 +59,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: `node[nodeType="${type}"]`,
       style: {
         shape,
-        'border-color': NODE_COLORS[type] ?? '#d1d5db',
-        'background-color': `${NODE_COLORS[type]}15`,
+        'border-color': NODE_COLORS[type] ?? '#475569',
+        'background-color': `${NODE_COLORS[type]}20`,
       } as Record<string, string>,
     })),
 
@@ -72,15 +72,16 @@ export function getGraphStyles(): StylesheetStyle[] {
         height: 'data(height)',
         shape: 'round-rectangle',
         'border-style': 'dashed',
-        'border-color': '#94a3b8',
-        'border-width': 2,
-        'background-opacity': 0.08,
-        'background-color': '#64748b',
+        'border-color': '#475569',
+        'border-width': 1.5,
+        'background-opacity': 0.06,
+        'background-color': '#94a3b8',
         'text-valign': 'top',
         'text-halign': 'center',
-        'font-size': 14,
+        'font-size': 13,
         'font-weight': 600,
-        'z-index': 0,
+        color: '#94a3b8',
+        'z-index': 'data(depth)',
       } as Record<string, string | number>,
     },
 
@@ -89,39 +90,40 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'node[status="PASS"][nodeType!="GROUP"]',
       style: {
         'border-color': STATUS_COLORS.PASS,
-        'background-color': '#f0fdf4',
+        'background-color': `${STATUS_COLORS.PASS}18`,
       },
     },
     {
       selector: 'node[status="FAIL"][nodeType!="GROUP"]',
       style: {
         'border-color': STATUS_COLORS.FAIL,
-        'background-color': '#fef2f2',
+        'background-color': `${STATUS_COLORS.FAIL}18`,
       },
     },
     {
       selector: 'node[status="IN_PROGRESS"][nodeType!="GROUP"]',
       style: {
         'border-color': STATUS_COLORS.IN_PROGRESS,
-        'background-color': '#fefce8',
+        'background-color': `${STATUS_COLORS.IN_PROGRESS}18`,
       },
     },
     {
       selector: 'node[status="BLOCKED"][nodeType!="GROUP"]',
       style: {
         'border-color': STATUS_COLORS.BLOCKED,
-        'background-color': '#f3f4f6',
+        'background-color': `${STATUS_COLORS.BLOCKED}18`,
       },
     },
 
-    // Selected node
+    // Selected node — glow effect
     {
       selector: 'node:selected',
       style: {
-        'border-width': 4,
-        'border-color': '#3b82f6',
-        'overlay-color': '#3b82f6',
-        'overlay-opacity': 0.15,
+        'border-width': 3,
+        'border-color': '#818cf8',
+        'overlay-color': '#818cf8',
+        'overlay-opacity': 0.12,
+        'overlay-padding': 6,
       },
     },
 
@@ -142,10 +144,10 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node.multi-selected',
       style: {
-        'border-width': 4,
-        'border-color': '#6366f1',
-        'overlay-color': '#6366f1',
-        'overlay-opacity': 0.12,
+        'border-width': 3,
+        'border-color': '#a78bfa',
+        'overlay-color': '#a78bfa',
+        'overlay-opacity': 0.1,
       },
     },
 
@@ -153,10 +155,11 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node.drop-target',
       style: {
-        'border-color': '#3b82f6',
-        'border-width': 3,
-        'background-opacity': 0.15,
-        'background-color': '#3b82f6',
+        'border-color': '#818cf8',
+        'border-width': 2.5,
+        'border-style': 'solid',
+        'background-opacity': 0.12,
+        'background-color': '#818cf8',
       } as Record<string, string | number>,
     },
 
@@ -174,18 +177,18 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'edge',
       style: {
-        width: 2,
-        'line-color': '#d1d5db',
-        'target-arrow-color': '#d1d5db',
+        width: 1.5,
+        'line-color': '#475569',
+        'target-arrow-color': '#475569',
         'target-arrow-shape': 'triangle',
         'curve-style': 'bezier',
-        'arrow-scale': 1.2,
+        'arrow-scale': 1,
         label: 'data(label)',
         'font-size': 10,
         'text-rotation': 'autorotate',
-        color: '#9ca3af',
-        'text-outline-color': '#ffffff',
-        'text-outline-width': 1.5,
+        color: '#64748b',
+        'text-outline-color': '#0f172a',
+        'text-outline-width': 2,
       },
     },
 
@@ -215,13 +218,13 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: '.eh-ghost-edge',
       style: {
-        'line-color': '#93c5fd',
-        'target-arrow-color': '#93c5fd',
+        'line-color': '#818cf8',
+        'target-arrow-color': '#818cf8',
         'target-arrow-shape': 'triangle',
         'line-style': 'dashed',
-        width: 2,
+        width: 1.5,
         'curve-style': 'bezier',
-        opacity: 0.8,
+        opacity: 0.7,
         label: '',
       },
     },
@@ -229,8 +232,8 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'edge.eh-preview',
       style: {
-        'line-color': '#3b82f6',
-        'target-arrow-color': '#3b82f6',
+        'line-color': '#818cf8',
+        'target-arrow-color': '#818cf8',
         'target-arrow-shape': 'triangle',
         'line-style': 'solid',
         width: 2,
@@ -250,10 +253,10 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: '.eh-source',
       style: {
-        'border-width': 4,
-        'border-color': '#3b82f6',
-        'overlay-color': '#3b82f6',
-        'overlay-opacity': 0.12,
+        'border-width': 3,
+        'border-color': '#818cf8',
+        'overlay-color': '#818cf8',
+        'overlay-opacity': 0.1,
         'overlay-padding': 6,
       },
     },
@@ -261,10 +264,10 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: '.eh-target',
       style: {
-        'border-width': 4,
-        'border-color': '#22c55e',
-        'overlay-color': '#22c55e',
-        'overlay-opacity': 0.12,
+        'border-width': 3,
+        'border-color': '#34d399',
+        'overlay-color': '#34d399',
+        'overlay-opacity': 0.1,
       },
     },
 
@@ -275,13 +278,14 @@ export function getGraphStyles(): StylesheetStyle[] {
         width: 130,
         height: 44,
         padding: 0,
-        'font-size': 12,
+        'font-size': 11,
         'text-valign': 'center',
         'border-style': 'solid',
-        'border-width': 2,
-        'border-color': '#94a3b8',
-        'background-opacity': 0.2,
-        'background-color': '#64748b',
+        'border-width': 1.5,
+        'border-color': '#475569',
+        'background-opacity': 0.15,
+        'background-color': '#334155',
+        color: '#94a3b8',
       } as Record<string, string | number>,
     },
 
@@ -323,10 +327,10 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node.impact-changed',
       style: {
-        'border-width': 5,
-        'border-color': '#f97316',
-        'overlay-color': '#f97316',
-        'overlay-opacity': 0.2,
+        'border-width': 3,
+        'border-color': '#fb923c',
+        'overlay-color': '#fb923c',
+        'overlay-opacity': 0.15,
         'overlay-padding': 8,
       },
     },
@@ -335,10 +339,10 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node.impact-affected',
       style: {
-        'border-width': 4,
-        'border-color': '#fb923c',
-        'overlay-color': '#fb923c',
-        'overlay-opacity': 0.12,
+        'border-width': 2.5,
+        'border-color': '#fdba74',
+        'overlay-color': '#fdba74',
+        'overlay-opacity': 0.1,
       },
     },
   ];

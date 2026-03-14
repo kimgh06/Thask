@@ -19,3 +19,10 @@ body {
 	color: var(--color-text);
 	font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
+
+/* Dot grid background for the graph canvas */
+.cytoscape-canvas-bg {
+	background-color: var(--color-bg);
+	background-image: radial-gradient(circle, #1e293b 1px, transparent 1px);
+	background-size: 24px 24px;
+}

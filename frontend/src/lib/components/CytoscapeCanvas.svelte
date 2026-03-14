@@ -22,17 +22,41 @@
 		nodes: GraphNode[];
 		edges: GraphEdge[];
 		projectId: string;
+		onUpdateNodeParent?: (nodeId: string, parentId: string | null) => void;
+		onZoomChange?: (zoom: number) => void;
+		onCreateEdge?: (sourceId: string, targetId: string) => void;
 	}
 
-	let { nodes, edges, projectId }: Props = $props();
+	let { nodes, edges, projectId, onUpdateNodeParent, onZoomChange, onCreateEdge }: Props = $props();
 
 	let container: HTMLDivElement;
 	let cy: cytoscape.Core | null = $state(null);
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let eh: any = null;
 	let initialLayoutDone = false;
+	let activeTimeouts: ReturnType<typeof setTimeout>[] = [];
 
-	function buildNodeData(node: GraphNode): Record<string, unknown> {
+	function trackTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
+		const id = setTimeout(() => {
+			activeTimeouts = activeTimeouts.filter((t) => t !== id);
+			fn();
+		}, ms);
+		activeTimeouts.push(id);
+		return id;
+	}
+
+	function computeDepth(nodeId: string | null, nodeMap: Map<string, GraphNode>, visited = new Set<string>()): number {
+		if (!nodeId) return 0;
+		if (visited.has(nodeId)) return 0;
+		visited.add(nodeId);
+		const n = nodeMap.get(nodeId);
+		if (!n || !n.parentId) return 0;
+		return computeDepth(n.parentId, nodeMap, visited) + 1;
+	}
+
+	function buildNodeData(node: GraphNode, nodeList: GraphNode[]): Record<string, unknown> {
+		const nodeMap = new Map(nodeList.map((n) => [n.id, n]));
+		const depth = computeDepth(node.id, nodeMap);
 		const data: Record<string, unknown> = {
 			id: node.id,
 			label: node.title,
@@ -40,9 +64,10 @@
 			nodeType: node.type,
 			status: node.status,
 			parentId: node.parentId || null,
+			depth,
 		};
 		if (node.type === 'GROUP') {
-			const childCount = nodes.filter((n) => n.parentId === node.id).length;
+			const childCount = nodeList.filter((n) => n.parentId === node.id).length;
 			data.childCount = childCount;
 			data.width = Math.max(node.width ?? 160, 160);
 			data.height = Math.max(node.height ?? 100, 100);
@@ -50,14 +75,46 @@
 		return data;
 	}
 
+	/** Detect and break circular parentId references. Returns cleaned list + IDs that were fixed. */
+	function breakParentCycles(nodeList: GraphNode[]): { cleaned: GraphNode[]; brokenIds: string[] } {
+		const nodeMap = new Map(nodeList.map((n) => [n.id, n]));
+		const brokenIds: string[] = [];
+		const cleaned = nodeList.map((n) => {
+			if (!n.parentId) return n;
+			const visited = new Set<string>();
+			let cur: string | null = n.parentId;
+			while (cur) {
+				if (cur === n.id) {
+					brokenIds.push(n.id);
+					return { ...n, parentId: null };
+				}
+				if (visited.has(cur)) break;
+				visited.add(cur);
+				const parent = nodeMap.get(cur);
+				cur = parent?.parentId ?? null;
+			}
+			return n;
+		});
+		return { cleaned, brokenIds };
+	}
+
 	function syncElements() {
 		if (!cy) return;
 
-		const hasPositions = nodes.some((n) => n.positionX !== 0 || n.positionY !== 0);
+		// Auto-break circular parent references and fix DB
+		const { cleaned: safeNodes, brokenIds } = breakParentCycles(nodes);
+		if (brokenIds.length > 0) {
+			console.warn('[Thask] Broke circular parentId for nodes:', brokenIds);
+			for (const id of brokenIds) {
+				onUpdateNodeParent?.(id, null);
+			}
+		}
+
+		const hasPositions = safeNodes.some((n) => n.positionX !== 0 || n.positionY !== 0);
 
 		cy.batch(() => {
 			if (!cy) return;
-			const newNodeIds = new Set(nodes.map((n) => n.id));
+			const newNodeIds = new Set(safeNodes.map((n) => n.id));
 			const newEdgeIds = new Set(edges.map((e) => e.id));
 
 			// Remove stale elements
@@ -68,17 +125,25 @@
 				if (!newEdgeIds.has(e.id())) e.remove();
 			});
 
-			// Add or update nodes (parents first)
-			const sorted = [...nodes].sort((a, b) => {
-				if (!a.parentId && b.parentId) return -1;
-				if (a.parentId && !b.parentId) return 1;
-				return 0;
-			});
+			// Add or update nodes (parents first, depth-based for nested groups)
+			const nodeMap = new Map(safeNodes.map((n) => [n.id, n]));
+			const depthCache = new Map<string, number>();
+			const depthOf = (n: GraphNode, visited = new Set<string>()): number => {
+				if (!n.parentId) return 0;
+				if (visited.has(n.id)) return 0; // cycle detected
+				if (depthCache.has(n.id)) return depthCache.get(n.id)!;
+				visited.add(n.id);
+				const parent = nodeMap.get(n.parentId);
+				const d = parent ? depthOf(parent, visited) + 1 : 0;
+				depthCache.set(n.id, d);
+				return d;
+			};
+			const sorted = [...safeNodes].sort((a, b) => depthOf(a) - depthOf(b));
 
 			sorted.forEach((node) => {
 				if (!cy) return;
 				const existing = cy.getElementById(node.id);
-				const data = buildNodeData(node);
+				const data = buildNodeData(node, safeNodes);
 
 				if (existing.length) {
 					existing.data(data);
@@ -197,18 +262,10 @@
 		await api.patch(`/api/projects/${projectId}/nodes/positions`, { positions });
 	}
 
-	async function createEdge(sourceId: string, targetId: string) {
-		await api.post(`/api/projects/${projectId}/edges`, {
-			sourceId,
-			targetId,
-			edgeType: 'related',
-		});
-	}
-
 	export function runLayout() {
 		if (!cy || cy.nodes().length === 0) return;
 		cy.layout(getFcoseLayout()).run();
-		setTimeout(() => savePositions(), 1500);
+		trackTimeout(() => savePositions(), 1500);
 	}
 
 	export function fitView() {
@@ -232,7 +289,7 @@
 		cy.animate({ center: { eles: node }, zoom: 1.5 }, { duration: 400 });
 		cy.nodes().removeClass('search-highlight');
 		node.addClass('search-highlight');
-		setTimeout(() => node.removeClass('search-highlight'), 2000);
+		trackTimeout(() => { if (node.inside()) node.removeClass('search-highlight'); }, 2000);
 	}
 
 	export function getCy(): cytoscape.Core | null {
@@ -266,27 +323,26 @@
 
 		// Port overlay for edge creation
 		const PORT_SIZE = 20;
-		const overlay = portOverlay;
 		let portSource: cytoscape.NodeSingular | null = null;
 		let portHideTimer: ReturnType<typeof setTimeout> | null = null;
 
 		function showPorts(node: cytoscape.NodeSingular) {
-			if (!overlay) return;
+			if (!portOverlay) return;
 			portSource = node;
 			if (portHideTimer) { clearTimeout(portHideTimer); portHideTimer = null; }
 			positionPorts(node);
-			overlay.style.display = 'block';
+			portOverlay.style.display = 'block';
 		}
 
 		function hidePorts(delay = 150) {
 			portHideTimer = setTimeout(() => {
-				if (overlay) overlay.style.display = 'none';
+				if (portOverlay) portOverlay.style.display = 'none';
 				portSource = null;
 			}, delay);
 		}
 
 		function positionPorts(node: cytoscape.NodeSingular) {
-			if (!overlay) return;
+			if (!portOverlay) return;
 			const rbb = node.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
 			const cxR = (rbb.x1 + rbb.x2) / 2;
 			const cyR = (rbb.y1 + rbb.y2) / 2;
@@ -300,7 +356,7 @@
 			];
 
 			for (const p of positions) {
-				const el = overlay.querySelector(`.${p.cls}`) as HTMLElement | null;
+				const el = portOverlay.querySelector(`.${p.cls}`) as HTMLElement | null;
 				if (el) {
 					el.style.left = `${p.x}px`;
 					el.style.top = `${p.y}px`;
@@ -308,28 +364,26 @@
 			}
 		}
 
-		if (overlay) {
-			overlay.addEventListener('mousedown', (e: MouseEvent) => {
-				if (!(e.target as HTMLElement).classList.contains('port-dot')) return;
-				e.preventDefault();
-				e.stopPropagation();
-				if (portSource) {
-					overlay.style.display = 'none';
-					(eh as { start: (node: cytoscape.NodeSingular) => void }).start(portSource);
-					const onMouseUp = () => {
-						document.removeEventListener('mouseup', onMouseUp);
-						(eh as { stop: () => void }).stop();
-					};
-					document.addEventListener('mouseup', onMouseUp);
-				}
-			});
-			overlay.addEventListener('mouseenter', () => {
-				if (portHideTimer) { clearTimeout(portHideTimer); portHideTimer = null; }
-			});
-			overlay.addEventListener('mouseleave', () => {
-				if (!(eh as { active: boolean }).active) hidePorts(100);
-			});
-		}
+		portOverlay.addEventListener('mousedown', (e: MouseEvent) => {
+			if (!(e.target as HTMLElement).classList.contains('port-dot')) return;
+			e.preventDefault();
+			e.stopPropagation();
+			if (portSource) {
+				portOverlay.style.display = 'none';
+				(eh as { start: (node: cytoscape.NodeSingular) => void }).start(portSource);
+				const onMouseUp = () => {
+					document.removeEventListener('mouseup', onMouseUp);
+					(eh as { stop: () => void }).stop();
+				};
+				document.addEventListener('mouseup', onMouseUp);
+			}
+		});
+		portOverlay.addEventListener('mouseenter', () => {
+			if (portHideTimer) { clearTimeout(portHideTimer); portHideTimer = null; }
+		});
+		portOverlay.addEventListener('mouseleave', () => {
+			if (!(eh as { active: boolean }).active) hidePorts(100);
+		});
 
 		cy.on('mouseover', 'node', (e) => {
 			const node = e.target as cytoscape.NodeSingular;
@@ -343,11 +397,12 @@
 		});
 
 		cy.on('pan zoom', () => {
-			if (portSource && overlay?.style.display === 'block') positionPorts(portSource);
+			if (portSource && portOverlay?.style.display === 'block') positionPorts(portSource);
+			onZoomChange?.(cy!.zoom());
 		});
 
 		cy.on('ehstop ehcancel', () => {
-			if (overlay) overlay.style.display = 'none';
+			if (portOverlay) portOverlay.style.display = 'none';
 			portSource = null;
 		});
 
@@ -360,7 +415,8 @@
 
 		cy.on('grab', 'node', (e) => {
 			const node = e.target as cytoscape.NodeSingular;
-			if (overlay) overlay.style.display = 'none';
+			if (isResizing) return;
+			if (portOverlay) portOverlay.style.display = 'none';
 			portSource = null;
 
 			if (node.data('nodeType') === 'GROUP') {
@@ -384,7 +440,7 @@
 
 		cy.on('ehcomplete', (_event, sourceNode, targetNode, addedEdge) => {
 			(addedEdge as cytoscape.EdgeSingular).remove();
-			createEdge(
+			onCreateEdge?.(
 				(sourceNode as cytoscape.NodeSingular).id(),
 				(targetNode as cytoscape.NodeSingular).id(),
 			);
@@ -408,6 +464,8 @@
 			graphStore.toggleCollapsed(evt.target.id());
 		});
 
+		let currentDropTarget: string | null = null;
+
 		cy.on('drag', 'node', (evt: cytoscape.EventObject) => {
 			const node = evt.target as cytoscape.NodeSingular;
 			const cursorPos = evt.position;
@@ -429,6 +487,7 @@
 					}
 				}
 			});
+			currentDropTarget = innerTarget;
 			if (innerTarget) {
 				cy!.getElementById(innerTarget).addClass('drop-target');
 			}
@@ -444,18 +503,36 @@
 			}
 		});
 
-		let dragTimeout: ReturnType<typeof setTimeout>;
+		let dragTimeout: ReturnType<typeof setTimeout> | null = null;
 		cy.on('dragfree', 'node', (evt: cytoscape.EventObject) => {
 			cy!.nodes('.drop-target').removeClass('drop-target');
 			const node = evt.target as cytoscape.NodeSingular;
+
+			// Drop on group: update parentId (with cycle prevention)
+			const oldParentId = (node.data('parentId') as string | null) ?? null;
+			let newParentId = currentDropTarget;
+
+			// Prevent cycles: ensure the drop target is not a descendant of the dragged node
+			if (newParentId && node.data('nodeType') === 'GROUP') {
+				const descendants = getDescendantIdSet(cy!, node.id());
+				if (descendants.has(newParentId) || newParentId === node.id()) {
+					newParentId = null; // reject drop — would create cycle
+				}
+			}
+
+			if (newParentId !== oldParentId) {
+				node.data('parentId', newParentId);
+				onUpdateNodeParent?.(node.id(), newParentId);
+			}
+			currentDropTarget = null;
 
 			if (groupDragState && groupDragState.groupId === node.id()) {
 				groupDragState = null;
 			}
 			dragDescendantIds = null;
 
-			clearTimeout(dragTimeout);
-			dragTimeout = setTimeout(() => savePositions(), 500);
+			if (dragTimeout) clearTimeout(dragTimeout);
+			dragTimeout = trackTimeout(() => savePositions(), 500);
 		});
 
 		// 8-directional resize for GROUP nodes
@@ -468,6 +545,7 @@
 		};
 
 		let resizeTarget: cytoscape.NodeSingular | null = null;
+		let ungrabifiedForResize: cytoscape.NodeSingular | null = null;
 		let isResizing = false;
 		let resizeZone: ResizeZone | null = null;
 		let resizeStartPos = { x: 0, y: 0 };
@@ -514,7 +592,7 @@
 			cyContainer.style.cursor = ZONE_CURSORS[zone];
 			cy!.panningEnabled(false);
 			cy!.boxSelectionEnabled(false);
-			resizeTarget.ungrabify();
+			// Node is already ungrabified from hover detection
 			resizeTarget.addClass('resizing');
 
 			const bb = resizeTarget.boundingBox({ includeLabels: false, includeOverlays: false });
@@ -527,14 +605,37 @@
 				if ((eh as { active: boolean }).active) return;
 				let foundTarget: cytoscape.NodeSingular | null = null;
 				let foundZone: ResizeZone | null = null;
+				let foundArea = Infinity;
 				cy!.nodes('[nodeType="GROUP"]').forEach((g) => {
-					if (foundZone) return;
 					const zone = detectResizeZone(e, g);
 					if (zone) {
-						foundTarget = g;
-						foundZone = zone;
+						// Prefer innermost (smallest area) group when zones overlap
+						const bb = g.boundingBox({});
+						const area = (bb.x2 - bb.x1) * (bb.y2 - bb.y1);
+						if (area < foundArea) {
+							foundTarget = g;
+							foundZone = zone;
+							foundArea = area;
+						}
 					}
 				});
+
+				// Preemptively ungrabify when entering resize zone, restore when leaving
+				if (foundTarget && foundZone) {
+					const ft = foundTarget as cytoscape.NodeSingular;
+					if (ungrabifiedForResize && ungrabifiedForResize.id() !== ft.id()) {
+						ungrabifiedForResize.grabify();
+						ungrabifiedForResize = null;
+					}
+					if (!ungrabifiedForResize) {
+						ft.ungrabify();
+						ungrabifiedForResize = ft;
+					}
+				} else if (ungrabifiedForResize) {
+					ungrabifiedForResize.grabify();
+					ungrabifiedForResize = null;
+				}
+
 				resizeTarget = foundTarget;
 				cyContainer.style.cursor = foundZone ? ZONE_CURSORS[foundZone] : '';
 				return;
@@ -604,6 +705,7 @@
 			cy!.boxSelectionEnabled(true);
 			resizeTarget.grabify();
 			resizeTarget.removeClass('resizing');
+			ungrabifiedForResize = null;
 			savePositions();
 		}
 
@@ -625,6 +727,8 @@
 	});
 
 	onDestroy(() => {
+		activeTimeouts.forEach(clearTimeout);
+		activeTimeouts = [];
 		(eh as { destroy: () => void } | null)?.destroy();
 		cy?.destroy();
 		cy = null;
@@ -632,17 +736,19 @@
 
 	// React to data changes after mount
 	$effect(() => {
-		// Access reactive values to track them
+		// Access reactive values to track them explicitly
 		const _nodes = nodes;
 		const _edges = edges;
+		const _collapsed = graphStore.collapsedGroups;
 		if (!cy || _nodes === undefined || _edges === undefined) return;
+		void _collapsed;
 		syncElements();
 	});
 
 	let portOverlay: HTMLDivElement;
 </script>
 
-<div class="relative h-full w-full" style="min-height: 400px">
+<div class="relative h-full w-full cytoscape-canvas-bg" style="min-height: 400px">
 	<div bind:this={container} class="h-full w-full"></div>
 	<!-- Port overlay for edge creation — 4 dots around hovered node -->
 	<div
@@ -654,11 +760,11 @@
 				class="port-dot {cls}"
 				style="
 					position: absolute;
-					width: 20px;
-					height: 20px;
+					width: 18px;
+					height: 18px;
 					border-radius: 50%;
-					background: #3b82f6;
-					border: 2px solid #1d4ed8;
+					background: #818cf8;
+					border: 2px solid #6366f1;
 					cursor: crosshair;
 					pointer-events: auto;
 					transition: transform 0.1s ease;

@@ -19,7 +19,6 @@
 
 	// Modal / panel state
 	let showAddNodeModal = $state(false);
-	let showAddGroupModal = $state(false);
 
 	// Node detail state
 	let selectedNodeDetail = $state<NodeDetail | null>(null);
@@ -33,8 +32,25 @@
 	let canUndo = $state(false);
 	let canRedo = $state(false);
 
+	// Zoom level for status bar
+	let zoomLevel = $state(1);
+
 	$effect(() => {
-		loadGraph();
+		const currentProjectId = projectId;
+		if (!currentProjectId) return;
+		loading = true;
+		Promise.all([
+			api.get<GraphNode[]>(`/api/projects/${currentProjectId}/nodes`),
+			api.get<GraphEdge[]>(`/api/projects/${currentProjectId}/edges`),
+		]).then(([nodeRes, edgeRes]) => {
+			if (projectId !== currentProjectId) return; // stale response
+			nodes = nodeRes.data ?? [];
+			edges = edgeRes.data ?? [];
+			loading = false;
+		}).catch(() => {
+			if (projectId !== currentProjectId) return;
+			loading = false;
+		});
 	});
 
 	// React to node selection from graphStore
@@ -60,18 +76,6 @@
 			selectedEdge = null;
 		}
 	});
-
-	async function loadGraph() {
-		if (!projectId) return;
-		loading = true;
-		const [nodeRes, edgeRes] = await Promise.all([
-			api.get<GraphNode[]>(`/api/projects/${projectId}/nodes`),
-			api.get<GraphEdge[]>(`/api/projects/${projectId}/edges`),
-		]);
-		nodes = nodeRes.data ?? [];
-		edges = edgeRes.data ?? [];
-		loading = false;
-	}
 
 	async function fetchNodeDetail(nodeId: string) {
 		detailLoading = true;
@@ -140,6 +144,17 @@
 	}
 
 	// --- Edge CRUD ---
+	async function handleCreateEdge(sourceId: string, targetId: string) {
+		const res = await api.post<GraphEdge>(`/api/projects/${projectId}/edges`, {
+			sourceId,
+			targetId,
+			edgeType: 'related',
+		});
+		if (res.data) {
+			edges = [...edges, res.data];
+		}
+	}
+
 	async function handleEdgeTypeChange(edgeType: EdgeType) {
 		if (!selectedEdge) return;
 		const res = await api.patch<GraphEdge>(
@@ -174,11 +189,71 @@
 		}
 	}
 
+	async function handleUpdateNodeParent(nodeId: string, parentId: string | null) {
+		const res = await api.patch<GraphNode>(`/api/projects/${projectId}/nodes/${nodeId}`, { parentId });
+		if (res.data) {
+			nodes = nodes.map((n) => (n.id === nodeId ? res.data! : n));
+		}
+	}
+
 	function handleSelectNodeFromPanel(nodeId: string) {
 		graphStore.selectNode(nodeId);
 		canvas?.focusNode(nodeId);
 	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		// Skip when typing in inputs
+		const tag = (e.target as HTMLElement)?.tagName;
+		if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+		if ((e.target as HTMLElement)?.isContentEditable) return;
+
+		const mod = e.ctrlKey || e.metaKey; // Ctrl (Win/Linux) = Cmd (Mac)
+		const key = e.key.toLowerCase();
+
+		// Delete/Backspace — remove selected node or edge
+		// Mac: Backspace or Cmd+Backspace, Win: Delete or Backspace
+		if (e.key === 'Delete' || e.key === 'Backspace') {
+			e.preventDefault();
+			if (graphStore.selectedNodeId) {
+				handleDeleteNode(graphStore.selectedNodeId);
+			} else if (graphStore.selectedEdgeId) {
+				handleDeleteEdge();
+			}
+			return;
+		}
+
+		// Escape — close panel / deselect
+		if (e.key === 'Escape') {
+			if (showAddNodeModal) { showAddNodeModal = false; return; }
+			if (selectedEdge) { graphStore.clearSelection(); return; }
+			if (graphStore.selectedNodeId) { graphStore.clearSelection(); return; }
+			return;
+		}
+
+		// Mod+Z — Undo (stub)
+		if (mod && !e.shiftKey && key === 'z') { e.preventDefault(); return; }
+		// Mod+Shift+Z / Mod+Y — Redo (stub)
+		if ((mod && e.shiftKey && key === 'z') || (mod && key === 'y')) { e.preventDefault(); return; }
+		// Mod+A — Select all (prevent browser default, future use)
+		if (mod && key === 'a') { e.preventDefault(); return; }
+
+		// Single-key shortcuts (only when no modifier)
+		if (mod || e.altKey) return;
+
+		switch (key) {
+			case 'n': showAddNodeModal = true; break;
+			case 'g': handleAddGroup(); break;
+			case '+': case '=': canvas?.zoomIn(); break;
+			case '-': canvas?.zoomOut(); break;
+			case '0': canvas?.fitView(); break;
+			case 'l': canvas?.runLayout(); break;
+			case 'i': graphStore.toggleImpactMode(); break;
+			default: return; // don't prevent default for unhandled keys
+		}
+	}
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <div class="h-full flex flex-col">
 	<!-- Canvas area -->
@@ -193,6 +268,9 @@
 				{nodes}
 				{edges}
 				{projectId}
+				onUpdateNodeParent={handleUpdateNodeParent}
+				onCreateEdge={handleCreateEdge}
+				onZoomChange={(z) => (zoomLevel = z)}
 			/>
 
 			<!-- Floating toolbar -->
@@ -215,10 +293,14 @@
 				/>
 			</div>
 
-			<!-- Node count badge -->
-			<div class="absolute bottom-3 left-3 z-10 text-xs px-2 py-1 rounded"
-				style="background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border);">
-				{nodes.length} nodes, {edges.length} edges
+			<!-- Status bar -->
+			<div class="absolute bottom-3 left-3 z-10 flex items-center gap-3 text-xs px-3 py-1.5 rounded-lg"
+				style="background: rgba(30,41,59,0.85); backdrop-filter: blur(12px); color: var(--color-text-muted); border: 1px solid var(--color-border);">
+				<span>{nodes.length} nodes</span>
+				<span style="color: var(--color-border);">&middot;</span>
+				<span>{edges.length} edges</span>
+				<span style="color: var(--color-border);">&middot;</span>
+				<span>{Math.round(zoomLevel * 100)}%</span>
 			</div>
 		{/if}
 	</div>

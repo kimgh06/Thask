@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { GraphNode, NodeType, NodeStatus, NodeHistoryEntry } from '$lib/types';
+	import { X, Trash2, Clock, Tag, Link2, History, FileText, MoreHorizontal } from 'lucide-svelte';
 
 	interface Props {
 		node: GraphNode | null;
@@ -62,6 +63,7 @@
 	let newTag = $state('');
 	let showTypeDropdown = $state(false);
 	let showStatusDropdown = $state(false);
+	let showMoreMenu = $state(false);
 
 	// Sync local state when node changes
 	$effect(() => {
@@ -78,6 +80,7 @@
 			activeTab = 'details';
 			showTypeDropdown = false;
 			showStatusDropdown = false;
+			showMoreMenu = false;
 		}
 	});
 
@@ -133,6 +136,7 @@
 
 	function handleDelete() {
 		if (!node) return;
+		showMoreMenu = false;
 		if (confirm(`Delete node "${node.title}"? This cannot be undone.`)) {
 			ondelete(node.id);
 		}
@@ -176,40 +180,73 @@
 	>
 		<!-- Header -->
 		<div
-			class="flex-shrink-0 p-4 flex flex-col gap-2 border-b"
+			class="flex-shrink-0 px-3 py-2.5 flex flex-col gap-2 border-b"
 			style="border-color: var(--color-border);"
 		>
-			<div class="flex items-start justify-between gap-2">
+			<div class="flex items-center gap-1.5">
 				<!-- Title (editable) -->
 				<input
 					bind:value={localTitle}
 					onblur={saveTitle}
 					onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
-					class="flex-1 text-base font-semibold bg-transparent outline-none rounded px-1 -mx-1"
+					class="flex-1 text-sm font-semibold bg-transparent outline-none rounded px-1 -mx-1"
 					style="color: var(--color-text); min-width: 0;"
 				/>
+
+				<!-- More menu button -->
+				<div class="relative flex-shrink-0">
+					<button
+						onclick={() => { showMoreMenu = !showMoreMenu; showTypeDropdown = false; showStatusDropdown = false; }}
+						class="w-6 h-6 flex items-center justify-center rounded transition-colors"
+						style="color: var(--color-text-muted);"
+						onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--color-text)'; (e.currentTarget as HTMLElement).style.background = 'var(--color-surface-hover)'; }}
+						onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--color-text-muted)'; (e.currentTarget as HTMLElement).style.background = ''; }}
+						aria-label="More options"
+					>
+						<MoreHorizontal size={15} />
+					</button>
+					{#if showMoreMenu}
+						<div
+							class="absolute right-0 top-full mt-1 rounded-lg shadow-xl z-50 py-1 min-w-[140px]"
+							style="background: var(--color-surface); border: 1px solid var(--color-border);"
+						>
+							<button
+								onclick={handleDelete}
+								class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors"
+								style="color: #ef4444;"
+								onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-surface-hover)'; }}
+								onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.background = ''; }}
+							>
+								<Trash2 size={13} />
+								Delete Node
+							</button>
+						</div>
+					{/if}
+				</div>
+
 				<!-- Close button -->
 				<button
 					onclick={onclose}
-					class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded text-sm transition-colors"
+					class="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors"
 					style="color: var(--color-text-muted);"
-					onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--color-text)'; }}
-					onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--color-text-muted)'; }}
+					onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--color-text)'; (e.currentTarget as HTMLElement).style.background = 'var(--color-surface-hover)'; }}
+					onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--color-text-muted)'; (e.currentTarget as HTMLElement).style.background = ''; }}
 					aria-label="Close panel"
 				>
-					✕
+					<X size={16} />
 				</button>
 			</div>
 
 			<!-- Type + Status badges -->
-			<div class="flex items-center gap-2">
+			<div class="flex items-center gap-1.5">
 				<!-- Type dropdown -->
 				<div class="relative">
 					<button
-						onclick={() => { showTypeDropdown = !showTypeDropdown; showStatusDropdown = false; }}
-						class="px-2 py-0.5 rounded text-xs font-medium"
+						onclick={() => { showTypeDropdown = !showTypeDropdown; showStatusDropdown = false; showMoreMenu = false; }}
+						class="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium"
 						style="background: {TYPE_COLORS[node.type]}22; color: {TYPE_COLORS[node.type]}; border: 1px solid {TYPE_COLORS[node.type]}44;"
 					>
+						<span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background: {TYPE_COLORS[node.type]};"></span>
 						{node.type}
 					</button>
 					{#if showTypeDropdown}
@@ -236,10 +273,11 @@
 				<!-- Status dropdown -->
 				<div class="relative">
 					<button
-						onclick={() => { showStatusDropdown = !showStatusDropdown; showTypeDropdown = false; }}
-						class="px-2 py-0.5 rounded text-xs font-medium"
+						onclick={() => { showStatusDropdown = !showStatusDropdown; showTypeDropdown = false; showMoreMenu = false; }}
+						class="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium"
 						style="background: {STATUS_COLORS[node.status]}22; color: {STATUS_COLORS[node.status]}; border: 1px solid {STATUS_COLORS[node.status]}44;"
 					>
+						<span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background: {STATUS_COLORS[node.status]};"></span>
 						{STATUS_LABELS[node.status]}
 					</button>
 					{#if showStatusDropdown}
@@ -267,22 +305,55 @@
 
 		<!-- Tabs -->
 		<div class="flex-shrink-0 flex border-b" style="border-color: var(--color-border);">
-			{#each (['details', 'relations', 'history'] as Tab[]) as tab}
-				<button
-					onclick={() => (activeTab = tab)}
-					class="flex-1 py-2 text-xs font-medium capitalize transition-colors"
-					style="
-						color: {activeTab === tab ? 'var(--color-primary)' : 'var(--color-text-muted)'};
-						border-bottom: 2px solid {activeTab === tab ? 'var(--color-primary)' : 'transparent'};
-					"
-				>
-					{tab}
-				</button>
-			{/each}
+			<button
+				onclick={() => (activeTab = 'details')}
+				class="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium transition-colors"
+				style="
+					color: {activeTab === 'details' ? 'var(--color-primary)' : 'var(--color-text-muted)'};
+					border-bottom: 2px solid {activeTab === 'details' ? 'var(--color-primary)' : 'transparent'};
+				"
+			>
+				<FileText size={12} />
+				Details
+			</button>
+			<button
+				onclick={() => (activeTab = 'relations')}
+				class="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium transition-colors"
+				style="
+					color: {activeTab === 'relations' ? 'var(--color-primary)' : 'var(--color-text-muted)'};
+					border-bottom: 2px solid {activeTab === 'relations' ? 'var(--color-primary)' : 'transparent'};
+				"
+			>
+				<Link2 size={12} />
+				Relations
+				{#if connectedNodes.length > 0}
+					<span
+						class="px-1.5 py-0.5 rounded-full text-[10px] font-medium leading-none"
+						style="background: var(--color-surface-hover); color: var(--color-text-muted);"
+					>{connectedNodes.length}</span>
+				{/if}
+			</button>
+			<button
+				onclick={() => (activeTab = 'history')}
+				class="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium transition-colors"
+				style="
+					color: {activeTab === 'history' ? 'var(--color-primary)' : 'var(--color-text-muted)'};
+					border-bottom: 2px solid {activeTab === 'history' ? 'var(--color-primary)' : 'transparent'};
+				"
+			>
+				<History size={12} />
+				History
+				{#if history.length > 0}
+					<span
+						class="px-1.5 py-0.5 rounded-full text-[10px] font-medium leading-none"
+						style="background: var(--color-surface-hover); color: var(--color-text-muted);"
+					>{history.length}</span>
+				{/if}
+			</button>
 		</div>
 
 		<!-- Tab content (scrollable) -->
-		<div class="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+		<div class="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
 			{#if activeTab === 'details'}
 				<!-- Description -->
 				<div class="flex flex-col gap-1">
@@ -295,29 +366,32 @@
 						onblur={saveDescription}
 						placeholder="Add a description..."
 						rows="4"
-						class="px-3 py-2 rounded-lg text-sm outline-none resize-none"
+						class="px-3 py-2 rounded-lg text-xs outline-none resize-none"
 						style="background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border);"
 					></textarea>
 				</div>
 
 				<!-- Tags -->
-				<div class="flex flex-col gap-2">
-					<span class="text-xs font-medium" style="color: var(--color-text-muted);">Tags</span>
+				<div class="flex flex-col gap-1.5">
+					<span class="text-xs font-medium flex items-center gap-1" style="color: var(--color-text-muted);">
+						<Tag size={11} />
+						Tags
+					</span>
 					{#if localTags.length > 0}
 						<div class="flex flex-wrap gap-1">
 							{#each localTags as tag}
 								<span
-									class="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+									class="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium"
 									style="background: var(--color-surface-hover); color: var(--color-text);"
 								>
 									{tag}
 									<button
 										onclick={() => removeTag(tag)}
-										class="ml-0.5 leading-none"
+										class="leading-none opacity-60 hover:opacity-100"
 										style="color: var(--color-text-muted);"
 										aria-label="Remove tag {tag}"
 									>
-										✕
+										<X size={10} />
 									</button>
 								</span>
 							{/each}
@@ -341,20 +415,29 @@
 					</div>
 				</div>
 
-				<!-- Metadata -->
-				<div class="flex flex-col gap-1">
-					<span class="text-xs font-medium" style="color: var(--color-text-muted);">Created</span>
-					<span class="text-xs" style="color: var(--color-text-muted);">{formatDate(node.createdAt)}</span>
-				</div>
-				<div class="flex flex-col gap-1">
-					<span class="text-xs font-medium" style="color: var(--color-text-muted);">Updated</span>
-					<span class="text-xs" style="color: var(--color-text-muted);">{formatDate(node.updatedAt)}</span>
+				<!-- Metadata: 2-column grid -->
+				<div class="grid grid-cols-2 gap-2">
+					<div class="flex flex-col gap-0.5">
+						<span class="text-[10px] font-medium flex items-center gap-1" style="color: var(--color-text-muted);">
+							<Clock size={10} />
+							Created
+						</span>
+						<span class="text-[11px]" style="color: var(--color-text-muted);">{formatDate(node.createdAt)}</span>
+					</div>
+					<div class="flex flex-col gap-0.5">
+						<span class="text-[10px] font-medium flex items-center gap-1" style="color: var(--color-text-muted);">
+							<Clock size={10} />
+							Updated
+						</span>
+						<span class="text-[11px]" style="color: var(--color-text-muted);">{formatDate(node.updatedAt)}</span>
+					</div>
 				</div>
 
 			{:else if activeTab === 'relations'}
 				<!-- Connected nodes -->
 				<div class="flex flex-col gap-2">
-					<span class="text-xs font-medium" style="color: var(--color-text-muted);">
+					<span class="text-xs font-medium flex items-center gap-1.5" style="color: var(--color-text-muted);">
+						<Link2 size={12} />
 						Connected Nodes ({connectedNodes.length})
 					</span>
 					{#if connectedNodes.length === 0}
@@ -399,6 +482,10 @@
 				{/if}
 
 			{:else if activeTab === 'history'}
+				<div class="flex items-center gap-1.5 mb-1">
+					<History size={12} style="color: var(--color-text-muted);" />
+					<span class="text-xs font-medium" style="color: var(--color-text-muted);">Change History</span>
+				</div>
 				{#if history.length === 0}
 					<p class="text-xs" style="color: var(--color-text-muted);">No history available.</p>
 				{:else}
@@ -428,25 +515,15 @@
 										{/if}
 									</div>
 								{/if}
-								<span class="text-xs" style="color: var(--color-text-muted);">{formatDate(entry.createdAt)}</span>
+								<span class="text-[11px] flex items-center gap-1" style="color: var(--color-text-muted);">
+									<Clock size={10} />
+									{formatDate(entry.createdAt)}
+								</span>
 							</div>
 						{/each}
 					</div>
 				{/if}
 			{/if}
-		</div>
-
-		<!-- Delete button -->
-		<div class="flex-shrink-0 p-4 border-t" style="border-color: var(--color-border);">
-			<button
-				onclick={handleDelete}
-				class="w-full py-2 px-4 rounded-lg text-sm font-medium transition-colors"
-				style="background: #ef444411; color: #ef4444; border: 1px solid #ef444433;"
-				onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.background = '#ef444422'; }}
-				onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.background = '#ef444411'; }}
-			>
-				Delete Node
-			</button>
 		</div>
 	</aside>
 {/if}
