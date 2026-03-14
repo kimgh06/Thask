@@ -9,7 +9,8 @@
 	import AddNodeModal from '$lib/components/AddNodeModal.svelte';
 	import EdgeColorPopover from '$lib/components/EdgeColorPopover.svelte';
 	import NodeDetailPanel from '$lib/components/NodeDetailPanel.svelte';
-	import type { GraphNode, GraphEdge, NodeDetail, NodeType, NodeStatus, EdgeType, NodeUpdateResult, StatusChange, ImpactResult } from '$lib/types';
+	import type { GraphNode, GraphEdge, NodeDetail, NodeType, NodeStatus, EdgeType, NodeUpdateResult, StatusChange } from '$lib/types';
+	import { computeLocalImpact } from '$lib/cytoscape/impact';
 	import { createKeydownHandler } from '$lib/shortcuts';
 
 	let nodes = $state<GraphNode[]>([]);
@@ -85,24 +86,18 @@
 		}
 	});
 
-	// React to impact mode toggle
+	// React to impact mode toggle — local BFS from selected node
 	$effect(() => {
 		const active = graphStore.impactMode;
-		if (active && projectId) {
-			fetchImpactData();
+		const selectedId = graphStore.selectedNodeId;
+		if (active && selectedId) {
+			const { impactedIds, impactEdgeIds } = computeLocalImpact(edges, selectedId);
+			const failIds = nodes.filter((n) => n.status === 'FAIL' || n.type === 'BUG').map((n) => n.id);
+			canvas?.applyImpactClasses([selectedId], impactedIds, failIds, impactEdgeIds);
 		} else {
 			canvas?.clearImpactClasses();
 		}
 	});
-
-	async function fetchImpactData() {
-		const res = await api.get<ImpactResult>(`/api/projects/${projectId}/impact?depth=2`);
-		if (res.data && graphStore.impactMode) {
-			const changedIds = res.data.changedNodes.map((n) => n.id);
-			const affectedIds = res.data.impactedNodes.map((n) => n.id);
-			canvas?.applyImpactClasses(changedIds, affectedIds);
-		}
-	}
 
 	async function fetchNodeDetail(nodeId: string) {
 		detailLoading = true;
@@ -288,7 +283,7 @@
 		zoomOut: () => canvas?.zoomOut(),
 		fitView: () => canvas?.fitView(),
 		runLayout: () => canvas?.runLayout(),
-		toggleImpact: () => graphStore.toggleImpactMode(),
+		toggleImpact: () => { if (graphStore.selectedNodeId || graphStore.impactMode) graphStore.toggleImpactMode(); },
 	});
 </script>
 
@@ -312,8 +307,8 @@
 				onZoomChange={(z) => (zoomLevel = z)}
 			/>
 
-			<!-- Floating toolbar -->
-			<div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-10">
+			<!-- Floating toolbar (z-40 to stay above NodeDetailPanel backdrop at z-30) -->
+			<div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-40">
 				<GraphToolbar
 					onAddNode={() => (showAddNodeModal = true)}
 					onAddGroup={handleAddGroup}
@@ -323,6 +318,7 @@
 					onRunLayout={() => canvas?.runLayout()}
 					onToggleImpact={() => graphStore.toggleImpactMode()}
 					isImpactActive={graphStore.impactMode}
+					canImpact={!!graphStore.selectedNodeId}
 					{nodes}
 					onFocusNode={(id) => canvas?.focusNode(id)}
 					onUndo={() => undoStack.undo()}
@@ -337,7 +333,7 @@
 			</div>
 
 			<!-- Status bar -->
-			<div class="absolute top-3 right-3 z-10 flex items-center gap-3 text-xs px-3 py-1.5 rounded-lg"
+			<div class="absolute top-3 right-3 z-40 flex items-center gap-3 text-xs px-3 py-1.5 rounded-lg"
 				style="background: rgba(30,41,59,0.85); backdrop-filter: blur(12px); color: var(--color-text-muted); border: 1px solid var(--color-border);">
 				<span>{nodes.length} nodes</span>
 				<span style="color: var(--color-border);">&middot;</span>

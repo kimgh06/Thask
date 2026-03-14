@@ -31,11 +31,18 @@ test-e2e:
 	cd frontend && npx playwright test
 
 # Docker
-up:
+up: .env
 	docker compose up --build
 
 down:
 	docker compose down
+
+.env:
+	@if [ ! -f .env ]; then \
+		cp .env.example .env; \
+		sed -i '' "s/^SESSION_SECRET=$$/SESSION_SECRET=$$(openssl rand -hex 32)/" .env; \
+		echo "Created .env with generated SESSION_SECRET"; \
+	fi
 
 # Database
 db-up:

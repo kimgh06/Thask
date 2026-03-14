@@ -16,13 +16,31 @@ func ComputeImpact(changedIDs []string, allEdges []model.Edge, depth int) []stri
 		var next []string
 		for _, edge := range allEdges {
 			for _, fid := range frontier {
-				if edge.SourceID == fid && !impacted[edge.TargetID] {
-					impacted[edge.TargetID] = true
-					next = append(next, edge.TargetID)
+				var candidate string
+				switch edge.EdgeType {
+				case model.EdgeTypeBlocks, model.EdgeTypeTriggers:
+					// forward: source changed → target affected
+					if edge.SourceID == fid {
+						candidate = edge.TargetID
+					}
+				case model.EdgeTypeDependsOn:
+					// backward: A depends_on B, B changed → A affected
+					if edge.TargetID == fid {
+						candidate = edge.SourceID
+					}
+				case model.EdgeTypeRelated:
+					// bidirectional
+					if edge.SourceID == fid {
+						candidate = edge.TargetID
+					} else if edge.TargetID == fid {
+						candidate = edge.SourceID
+					}
+				case model.EdgeTypeParentChild:
+					continue // structural, not causal
 				}
-				if edge.TargetID == fid && !impacted[edge.SourceID] {
-					impacted[edge.SourceID] = true
-					next = append(next, edge.SourceID)
+				if candidate != "" && !impacted[candidate] {
+					impacted[candidate] = true
+					next = append(next, candidate)
 				}
 			}
 		}

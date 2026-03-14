@@ -133,15 +133,15 @@
 			const node = cy!.getElementById(change.nodeId);
 			if (!node.length) return;
 			trackTimeout(() => {
-				node.addClass('impact-affected');
-				trackTimeout(() => node.removeClass('impact-affected'), 2000);
+				node.addClass('cascade-flash');
+				trackTimeout(() => node.removeClass('cascade-flash'), 2000);
 			}, i * 150);
 		});
 	}
 
-	export function applyImpactClasses(changedIds: string[], affectedIds: string[]) {
+	export function applyImpactClasses(changedIds: string[], affectedIds: string[], failIds: string[], edgeIds: string[]) {
 		if (!cy) return;
-		activateImpactMode(cy, changedIds, affectedIds);
+		activateImpactMode(cy, changedIds, affectedIds, failIds, edgeIds);
 	}
 
 	export function clearImpactClasses() {

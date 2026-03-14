@@ -26,7 +26,7 @@
 	];
 
 	const techStack = [
-		{ name: 'Go 1.23', color: '#00ADD8' },
+		{ name: 'Go 1.26', color: '#00ADD8' },
 		{ name: 'SvelteKit', color: '#FF3E00' },
 		{ name: 'Cytoscape.js', color: '#F7DF1E' },
 		{ name: 'Tailwind v4', color: '#38BDF8' },
@@ -341,7 +341,8 @@
 					<span class="terminal-title">terminal</span>
 				</div>
 				<div class="terminal-body">
-					<p><span class="terminal-prompt">$</span> docker compose up</p>
+					<p><span class="terminal-prompt">$</span> make up</p>
+					<p class="terminal-output">Created .env with generated SESSION_SECRET</p>
 					<p class="terminal-output terminal-success">&#10003; postgres &rarr; :7242</p>
 					<p class="terminal-output terminal-success">&#10003; backend  &rarr; :7244</p>
 					<p class="terminal-output terminal-success">&#10003; frontend &rarr; :7243</p>

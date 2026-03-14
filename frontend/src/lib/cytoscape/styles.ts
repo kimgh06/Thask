@@ -356,12 +356,14 @@ export function getGraphStyles(): StylesheetStyle[] {
       style: { opacity: 0.08 },
     },
 
-    // QA Impact Mode: highlighted (changed)
+    // QA Impact Mode: highlighted (changed) — [status] raises specificity to override status colors
     {
-      selector: 'node.impact-changed',
+      selector: 'node[status].impact-changed',
       style: {
         'border-width': 3,
         'border-color': '#fb923c',
+        'background-color': '#fb923c',
+        'background-opacity': 0.15,
         'overlay-color': '#fb923c',
         'overlay-opacity': 0.15,
         'overlay-padding': 8,
@@ -370,12 +372,49 @@ export function getGraphStyles(): StylesheetStyle[] {
 
     // QA Impact Mode: impacted (connected)
     {
-      selector: 'node.impact-affected',
+      selector: 'node[status].impact-affected',
       style: {
         'border-width': 2.5,
         'border-color': '#fdba74',
+        'background-color': '#fdba74',
+        'background-opacity': 0.1,
         'overlay-color': '#fdba74',
         'overlay-opacity': 0.1,
+      },
+    },
+
+    // Status cascade flash (sky-blue, separate from impact mode orange)
+    {
+      selector: 'node[status].cascade-flash',
+      style: {
+        'border-width': 3,
+        'border-color': '#38bdf8',
+        'overlay-color': '#38bdf8',
+        'overlay-opacity': 0.15,
+        'overlay-padding': 6,
+      },
+    },
+
+    // QA Impact Mode: FAIL/BUG nodes (red glow)
+    {
+      selector: 'node[status].impact-fail',
+      style: {
+        'border-width': 3,
+        'border-color': '#ef4444',
+        'background-color': '#ef4444',
+        'background-opacity': 0.18,
+        'overlay-color': '#ef4444',
+        'overlay-opacity': 0.18,
+        'overlay-padding': 8,
+      },
+    },
+
+    // QA Impact Mode: impact path edges (un-dimmed + thicker)
+    {
+      selector: 'edge.impact-edge',
+      style: {
+        opacity: 0.85,
+        width: 2,
       },
     },
   ];

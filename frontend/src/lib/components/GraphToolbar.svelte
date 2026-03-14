@@ -28,6 +28,7 @@
 		onRunLayout: () => void;
 		onToggleImpact: () => void;
 		isImpactActive: boolean;
+		canImpact: boolean;
 		nodes: GraphNode[];
 		onFocusNode: (nodeId: string) => void;
 		onUndo: () => void;
@@ -49,6 +50,7 @@
 		onRunLayout,
 		onToggleImpact,
 		isImpactActive,
+		canImpact,
 		nodes,
 		onFocusNode,
 		onUndo,
@@ -310,7 +312,9 @@
 
 		<button
 			onclick={onToggleImpact}
+			disabled={!canImpact && !isImpactActive}
 			class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors {isImpactActive ? 'impact-active' : 'btn-muted'}"
+			style="opacity: {canImpact || isImpactActive ? '1' : '0.35'};"
 			data-tooltip="Impact Mode (I)"
 		>
 			<Zap size={16} />

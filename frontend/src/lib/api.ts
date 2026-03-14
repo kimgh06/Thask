@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.PUBLIC_API_URL || 'http://localhost:7244';
+const API_URL = '';
 
 interface ApiResponse<T> {
 	data?: T;

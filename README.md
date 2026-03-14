@@ -14,7 +14,7 @@ Built for QA risk management and change impact analysis.
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 &nbsp;
-[![Go](https://img.shields.io/badge/Go-1.23-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 &nbsp;
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-Svelte_5-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev/)
 &nbsp;
@@ -88,7 +88,15 @@ Five edge types with distinct colors: `depends_on`, `blocks`, `related`, `parent
 ### Docker (recommended)
 
 ```bash
-docker compose up
+make up   # auto-generates .env with SESSION_SECRET on first run
+```
+
+Or manually:
+
+```bash
+cp .env.example .env
+# Edit .env and set SESSION_SECRET (or let make generate it)
+docker compose up --build
 ```
 
 Open [http://localhost:7243](http://localhost:7243) and create an account.
@@ -119,7 +127,7 @@ make dev   # starts DB, backend, and frontend together
 
 ### Local Development (Windows)
 
-Prerequisites: [Go 1.23+](https://go.dev/dl/), [Node.js 22+](https://nodejs.org/), [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+Prerequisites: [Go 1.26+](https://go.dev/dl/), [Node.js 22+](https://nodejs.org/), [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 
 ```powershell
 # Terminal 1 — Start PostgreSQL
@@ -147,7 +155,7 @@ Open [http://localhost:7243](http://localhost:7243)
 
 | Layer | Technology |
 |---|---|
-| **Backend** | Go 1.23 (Echo v4) |
+| **Backend** | Go 1.26 (Echo v4) |
 | **Frontend** | SvelteKit + Svelte 5 (runes) |
 | **Graph Engine** | Cytoscape.js + fCOSE layout + edgehandles |
 | **Styling** | Tailwind CSS v4 |
@@ -223,7 +231,43 @@ Users ──< TeamMembers >── Teams ──< Projects ──< Nodes ──< N
 
 | Variable | Description | Default |
 |---|---|---|
-| `PUBLIC_API_URL` | Backend API URL | `http://localhost:7244` |
+| `BACKEND_URL` | Backend API URL (server-side proxy) | `http://localhost:7244` |
+
+### Docker Compose (`.env`)
+
+| Variable | Description | Default |
+|---|---|---|
+| `SESSION_SECRET` | **Required.** Random 64+ char string for session signing | — |
+| `APP_URL` | Public URL of the application | `http://localhost:7243` |
+| `BACKEND_URL` | Backend URL for frontend proxy | `http://backend:7244` |
+| `POSTGRES_PASSWORD` | PostgreSQL password | `thask_password` |
+
+### Deploying to a Custom Domain
+
+Set `APP_URL` in `.env` to your public URL:
+
+```bash
+# .env
+APP_URL=https://thask.example.com
+SESSION_SECRET=your-random-64-char-string
+```
+
+This configures CORS and CSRF protection automatically. `BACKEND_URL` does **not** need to change — the frontend server proxies API requests to the backend over the internal Docker network.
+
+```
+Browser ──https──▶ Reverse Proxy (nginx/Cloudflare)
+                        │
+                        ▼ :7243
+                   Frontend (SvelteKit)
+                        │
+                        ▼ http://backend:7244 (Docker internal)
+                   Backend (Go)
+                        │
+                        ▼ postgres:5432 (Docker internal)
+                   PostgreSQL
+```
+
+Place a reverse proxy (e.g. nginx, Caddy, Cloudflare Tunnel) in front to handle SSL termination.
 
 ---
 
@@ -249,7 +293,7 @@ Users ──< TeamMembers >── Teams ──< Projects ──< Nodes ──< N
 | `make test` | Run Go unit tests + frontend checks |
 | `make test-backend` | Run Go unit tests (verbose) |
 | `make test-e2e` | Run Playwright E2E tests |
-| `make up` | Docker Compose full stack |
+| `make up` | Docker Compose full stack (auto-generates `.env`) |
 | `make down` | Stop Docker Compose |
 | `make clean` | Remove build artifacts |
 
