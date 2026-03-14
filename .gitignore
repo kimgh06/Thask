@@ -1,11 +1,12 @@
 # Dependencies
 node_modules/
 
-# Next.js
-.next/
-out/
-build/
-dist/
+# Go
+backend/bin/
+
+# SvelteKit
+frontend/build/
+frontend/.svelte-kit/
 
 # Environment
 .env
@@ -22,21 +23,8 @@ dist/
 .DS_Store
 Thumbs.db
 
-# TypeScript
-*.tsbuildinfo
-next-env.d.ts
-
-# ESLint
-.eslintcache
-
 # Docker postgres data
 pgdata/
-
-# Vercel
-.vercel
-
-# Turbopack
-.turbo
 
 # oh-my-claudecode
 .omc/

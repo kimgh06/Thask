@@ -4,12 +4,8 @@
 
 | Shortcut | Action |
 |---|---|
-| `Delete` / `Backspace` | Delete selected node or edge |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Shift+Z` | Redo |
-| `Ctrl+G` | Group selected nodes (2+ required) |
-| `Ctrl+Shift+G` | Ungroup selected nodes from their GROUP |
-| `Escape` | Close edge color popover |
+| `Ctrl+F` | Open search bar |
+| `Escape` | Close search / popover / modal |
 | Double-click GROUP | Toggle collapse/expand |
 
 ## Node Interaction
@@ -17,26 +13,40 @@
 | Action | Behavior |
 |---|---|
 | Click node | Select node, open detail panel |
-| Ctrl+Click node | Toggle multi-selection |
 | Click canvas | Clear selection |
 | Drag node | Move node on canvas |
 | Drag node onto GROUP | Add node to group |
-| Hover node | Show edge handle |
-| Drag edge handle | Create new edge |
+| Hover node | Show edge port dots |
+| Drag from port dot | Create new edge |
 
 ## Edge Interaction
 
 | Action | Behavior |
 |---|---|
 | Click edge | Open edge type popover |
-| Select edge type | Change edge type |
+| Select edge type | Change edge type (saved immediately) |
+| Edit label | Debounced auto-save (400ms) |
 | Delete in popover | Remove edge |
 
 ## Detail Panel
 
 | Action | Behavior |
 |---|---|
-| Edit title/description | Auto-saves on blur |
+| Edit title | Auto-saves on blur |
+| Edit description | Auto-saves on blur |
 | Change type/status | Saves immediately |
 | Click connected node | Navigate to that node |
-| Click "Remove" (group) | Remove node from group |
+| Add/remove tags | Saves immediately |
+
+## Toolbar
+
+| Button | Action |
+|---|---|
+| + Node | Open Add Node modal |
+| + Group | Create a GROUP node |
+| +/- | Zoom in/out |
+| Fit | Fit all nodes in viewport |
+| Layout | Run fCOSE auto-layout |
+| Filter | Toggle type/status filter bar |
+| Search | Open search (or Ctrl+F) |
+| Impact | Toggle Impact Mode |

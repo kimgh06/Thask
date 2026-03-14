@@ -1,8 +1,12 @@
 # API Reference
 
-All endpoints return JSON: `{ data: T }` or `{ error: string }`.
+Base URL: `http://localhost:7244`
+
+All endpoints return JSON: `{ "data": T }` or `{ "error": "string" }`.
 
 Authentication: session cookie (`thask_session`). All endpoints except login/register require authentication.
+
+Backend: Go (Echo v4). Request validation via struct tags.
 
 ---
 
@@ -21,6 +25,8 @@ Create a new account.
 ```
 
 ### POST /api/auth/login
+
+Logs in and sets session cookie. Performs **session rotation** — deletes all previous sessions for the user.
 
 ```json
 // Request
@@ -73,14 +79,29 @@ Create a new team. The creator becomes `owner`.
 { "data": { "id": "uuid", "name": "My Team", "slug": "my-team", ... } }
 ```
 
-### GET /api/teams/[teamSlug]/members
+### GET /api/teams/:slug
+
+Get a team by slug.
 
 ```json
 // Response 200
-{ "data": [{ "id": "uuid", "userId": "uuid", "role": "owner", "user": {...} }] }
+{ "data": { "id": "uuid", "name": "My Team", "slug": "my-team", ... } }
 ```
 
-### POST /api/teams/[teamSlug]/members
+### DELETE /api/teams/:slug
+
+Delete a team (owner only).
+
+### GET /api/teams/:slug/members
+
+List team members. Requires team membership (authorization enforced).
+
+```json
+// Response 200
+{ "data": [{ "id": "uuid", "userId": "uuid", "role": "owner", "email": "...", "displayName": "..." }] }
+```
+
+### POST /api/teams/:slug/members
 
 Invite a user by email.
 
@@ -89,14 +110,18 @@ Invite a user by email.
 { "email": "invite@example.com", "role": "member" }
 ```
 
-### GET /api/teams/[teamSlug]/projects
+### GET /api/teams/:slug/projects
+
+List projects in a team.
 
 ```json
 // Response 200
 { "data": [{ "id": "uuid", "name": "Project", ... }] }
 ```
 
-### POST /api/teams/[teamSlug]/projects
+### POST /api/teams/:slug/projects
+
+Create a project in a team.
 
 ```json
 // Request
@@ -105,20 +130,11 @@ Invite a user by email.
 
 ---
 
-## Projects
-
-### GET /api/projects/[projectId]
-
-```json
-// Response 200
-{ "data": { "id": "uuid", "name": "Project", "teamId": "uuid", ... } }
-```
-
----
-
 ## Nodes
 
-### GET /api/projects/[projectId]/nodes
+All node endpoints require project access (verified via `ProjectAccess` middleware).
+
+### GET /api/projects/:projectId/nodes
 
 Query params: `?type=TASK&status=PASS` (optional filters)
 
@@ -127,7 +143,7 @@ Query params: `?type=TASK&status=PASS` (optional filters)
 { "data": [{ "id": "uuid", "type": "TASK", "title": "...", "status": "IN_PROGRESS", ... }] }
 ```
 
-### POST /api/projects/[projectId]/nodes
+### POST /api/projects/:projectId/nodes
 
 ```json
 // Request
@@ -144,7 +160,7 @@ Query params: `?type=TASK&status=PASS` (optional filters)
 { "data": { "id": "uuid", ... } }
 ```
 
-### GET /api/projects/[projectId]/nodes/[nodeId]
+### GET /api/projects/:projectId/nodes/:nodeId
 
 Returns node with connected edges, connected node IDs, and history.
 
@@ -160,9 +176,9 @@ Returns node with connected edges, connected node IDs, and history.
 }
 ```
 
-### PATCH /api/projects/[projectId]/nodes/[nodeId]
+### PATCH /api/projects/:projectId/nodes/:nodeId
 
-Updates a node. Records history for each changed field.
+Updates a node. Records history for each changed field. Triggers **waterfall status propagation** when status changes.
 
 ```json
 // Request (all fields optional)
@@ -177,7 +193,7 @@ Updates a node. Records history for each changed field.
 }
 ```
 
-### DELETE /api/projects/[projectId]/nodes/[nodeId]
+### DELETE /api/projects/:projectId/nodes/:nodeId
 
 Deletes the node. If it's a GROUP, children are unparented (preserved).
 
@@ -186,7 +202,7 @@ Deletes the node. If it's a GROUP, children are unparented (preserved).
 { "data": { "success": true } }
 ```
 
-### PATCH /api/projects/[projectId]/nodes/positions
+### PATCH /api/projects/:projectId/nodes/positions
 
 Batch update node positions (after drag or layout).
 
@@ -204,30 +220,30 @@ Batch update node positions (after drag or layout).
 
 ## Edges
 
-### GET /api/projects/[projectId]/edges
+### GET /api/projects/:projectId/edges
 
 ```json
 // Response 200
 { "data": [{ "id": "uuid", "sourceId": "uuid", "targetId": "uuid", "edgeType": "depends_on", "label": "" }] }
 ```
 
-### POST /api/projects/[projectId]/edges
+### POST /api/projects/:projectId/edges
 
 ```json
 // Request
 { "sourceId": "uuid", "targetId": "uuid", "edgeType": "depends_on", "label": "optional" }
 ```
 
-Constraints: no duplicate `(source, target, edgeType)`, no self-loops.
+Constraints: no self-loops (validated server-side).
 
-### PATCH /api/projects/[projectId]/edges/[edgeId]
+### PATCH /api/projects/:projectId/edges/:edgeId
 
 ```json
 // Request
 { "edgeType": "blocks", "label": "updated label" }
 ```
 
-### DELETE /api/projects/[projectId]/edges/[edgeId]
+### DELETE /api/projects/:projectId/edges/:edgeId
 
 ```json
 // Response 200
@@ -238,11 +254,11 @@ Constraints: no duplicate `(source, target, edgeType)`, no self-loops.
 
 ## Impact Analysis
 
-### GET /api/projects/[projectId]/impact
+### GET /api/projects/:projectId/impact
 
 Query params: `?since=2025-01-01T00:00:00Z&depth=2`
 
-Finds changed nodes and their downstream dependencies via BFS.
+Finds changed nodes and their downstream dependencies via bidirectional BFS.
 
 ```json
 // Response 200
@@ -260,6 +276,31 @@ Finds changed nodes and their downstream dependencies via BFS.
 |---|---|---|
 | `since` | 7 days ago | ISO date — nodes updated after this time |
 | `depth` | 2 | BFS depth for downstream search |
+
+---
+
+## Summary
+
+### GET /api/summary
+
+Returns team and project counts for the authenticated user.
+
+```json
+// Response 200
+{ "data": { "teamCount": 3, "projectCount": 7 } }
+```
+
+---
+
+## Middleware
+
+| Middleware | Scope | Description |
+|---|---|---|
+| CORS | Global | Allows frontend origin with credentials |
+| Rate Limiter | Global | 20 requests/second per client |
+| Logger | Global | Structured logging via slog |
+| Auth | Protected routes | Cookie → session validation → user context |
+| ProjectAccess | `/api/projects/:projectId/*` | Verifies team membership for the project |
 
 ---
 
@@ -283,17 +324,17 @@ Finds changed nodes and their downstream dependencies via BFS.
 
 ## Validation
 
-All inputs are validated with Zod schemas (see `src/lib/validators.ts`):
+All inputs are validated with Go struct tags (`validate`):
 
-| Schema | Fields |
+| Endpoint | Validated Fields |
 |---|---|
-| `registerSchema` | email, password (min 8), displayName |
-| `loginSchema` | email, password |
-| `createTeamSchema` | name, slug |
-| `inviteMemberSchema` | email, role |
-| `createProjectSchema` | name, description? |
-| `createNodeSchema` | type, title, description?, status?, assigneeId?, tags?, positionX?, positionY?, width?, height? |
-| `updateNodeSchema` | type?, title?, description?, status?, assigneeId?, tags?, parentId?, width?, height? |
-| `batchPositionSchema` | positions: { id, x, y, width?, height? }[] |
-| `createEdgeSchema` | sourceId, targetId, edgeType?, label? |
-| `updateEdgeSchema` | edgeType?, label? |
+| Register | email (required, email), password (min 8), displayName (required) |
+| Login | email (required), password (required) |
+| Create Team | name (required), slug (required, alphanum+hyphen) |
+| Invite Member | email (required, email), role (oneof: owner/admin/member/viewer) |
+| Create Project | name (required) |
+| Create Node | type (required), title (required) |
+| Update Node | all fields optional, validated when present |
+| Batch Positions | positions array with id, x, y required |
+| Create Edge | sourceId (required), targetId (required) |
+| Update Edge | edgeType and label optional |

@@ -14,9 +14,9 @@ Built for QA risk management and change impact analysis.
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 &nbsp;
-[![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
+[![Go](https://img.shields.io/badge/Go-1.23-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 &nbsp;
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![SvelteKit](https://img.shields.io/badge/SvelteKit-Svelte_5-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev/)
 &nbsp;
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 &nbsp;
@@ -61,19 +61,13 @@ Spreadsheets lose context. Linear issue trackers hide relationships. **Thask map
 
 Drag-and-drop nodes with **7 types** — Flow, Branch, Task, Bug, API, UI, and Group. Connect them by hovering and dragging the edge handle. Auto-layout with the fCOSE force-directed algorithm.
 
-<!-- ![Graph Editor](docs/images/graph-editor.png) -->
-
 ### QA Impact Mode
 
 Toggle Impact Mode to instantly highlight **changed nodes** and their **downstream dependencies**. Dimmed nodes are safe; glowing nodes need attention.
 
-<!-- ![Impact Mode](docs/images/impact-mode.png) -->
-
 ### Group Nodes
 
 Organize related nodes into collapsible groups. Drag nodes in and out. Resize groups freely. Double-click to collapse with a child count badge.
-
-<!-- ![Group Nodes](docs/images/group-nodes.png) -->
 
 ### Status Tracking & Filters
 
@@ -81,7 +75,7 @@ Track every node as `PASS` / `FAIL` / `IN_PROGRESS` / `BLOCKED` with color-coded
 
 ### Node Detail Panel
 
-Slide-out panel with full editing — title, description, type, status, group membership, connected nodes, and a complete change history audit log.
+Slide-out panel with full editing — title, description, type, status, tags, connected nodes, and a complete change history audit log.
 
 ### Edge Relationships
 
@@ -99,22 +93,51 @@ docker compose up
 
 Open [http://localhost:7243](http://localhost:7243) and create an account.
 
-### Local Development
+### Local Development (macOS / Linux)
 
 ```bash
 # 1. Start PostgreSQL
+make dev-db
+
+# 2. Set up backend
+cd backend
+cp .env.example .env
+go run ./cmd/server
+
+# 3. Set up frontend (in another terminal)
+cd frontend
+cp .env.example .env
+npm install
+npm run dev -- --port 7243
+```
+
+Or simply:
+
+```bash
+make dev   # starts DB, backend, and frontend together
+```
+
+### Local Development (Windows)
+
+Prerequisites: [Go 1.23+](https://go.dev/dl/), [Node.js 22+](https://nodejs.org/), [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+
+```powershell
+# Terminal 1 — Start PostgreSQL
 docker compose -f docker-compose.dev.yml up -d
 
-# 2. Install & configure
+# Terminal 2 — Start backend
+cd backend
+copy .env.example .env
+go run ./cmd/server
+
+# Terminal 3 — Start frontend
+cd frontend
+copy .env.example .env
 npm install
-cp .env.example .env
-
-# 3. Set up database
-npm run db:push
-
-# 4. Start dev server
-npm run dev
+npm run dev -- --port 7243
 ```
+
+> **Tip:** To use `make` on Windows, install via `scoop install make` or `choco install make`.
 
 Open [http://localhost:7243](http://localhost:7243)
 
@@ -124,38 +147,49 @@ Open [http://localhost:7243](http://localhost:7243)
 
 | Layer | Technology |
 |---|---|
-| **Framework** | Next.js 15 (App Router, Turbopack) |
-| **Language** | TypeScript 5.8 (strict) |
+| **Backend** | Go 1.23 (Echo v4) |
+| **Frontend** | SvelteKit + Svelte 5 (runes) |
 | **Graph Engine** | Cytoscape.js + fCOSE layout + edgehandles |
 | **Styling** | Tailwind CSS v4 |
-| **State** | Zustand (UI) + TanStack Query (server) |
-| **Database** | PostgreSQL 17 + Drizzle ORM |
+| **State** | Svelte 5 runes ($state, $derived, $effect) |
+| **Database** | PostgreSQL 17 + pgx/v5 (raw SQL) |
 | **Auth** | Session-based (bcrypt + HTTP-only cookies) |
-| **Validation** | Zod |
-| **Deploy** | Docker Compose |
+| **Testing** | Go test (unit) + Playwright (E2E) |
+| **Deploy** | Docker Compose (3 services) |
 
 ---
 
 ## Project Structure
 
 ```
-src/
-  app/
-    (auth)/          # Login & register pages
-    (dashboard)/     # Dashboard & project graph pages
-    api/             # REST API routes (auth, teams, projects, nodes, edges)
-  components/
-    auth/            # LoginForm, RegisterForm
-    graph/           # CytoscapeCanvas, GraphToolbar, AddNodeModal, EdgeColorPopover
-    layout/          # Header, Sidebar, Providers
-    panels/          # NodeDetailPanel
-    ui/              # ConfirmDialog and shared UI
-  lib/
-    auth/            # Session management, password hashing, route guards
-    cytoscape/       # Graph styles, layouts, impact mode logic
-    db/              # Drizzle schema & connection
-  stores/            # Zustand stores (auth, graph state)
-  types/             # TypeScript type definitions
+backend/
+  cmd/server/           # Go entrypoint
+  internal/
+    config/             # Environment configuration
+    dto/                # Request/response structs
+    handler/            # HTTP handlers (auth, team, node, edge, impact)
+    middleware/         # Auth & project access middleware
+    model/              # Domain models & enums
+    repository/         # Database access layer (pgx)
+    service/            # Business logic (waterfall, impact, auth)
+  migrations/           # SQL migration files
+
+frontend/
+  src/
+    routes/
+      login/            # Login page
+      register/         # Register page
+      dashboard/        # Dashboard & team pages
+        [teamSlug]/
+          [projectId]/  # Graph editor page
+    lib/
+      api.ts            # Typed API client
+      types.ts          # TypeScript type definitions
+      stores/           # Svelte 5 rune stores (auth, graph)
+      components/       # CytoscapeCanvas, GraphToolbar, AddNodeModal,
+                        # EdgeColorPopover, NodeDetailPanel
+      cytoscape/        # Styles, layouts, impact mode, group helpers
+  e2e/                  # Playwright E2E tests
 ```
 
 ---
@@ -176,14 +210,20 @@ Users ──< TeamMembers >── Teams ──< Projects ──< Nodes ──< N
 
 ## Environment Variables
 
+### Backend (`backend/.env`)
+
 | Variable | Description | Default |
 |---|---|---|
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://thask:thask_dev_password@localhost:7242/thask` |
 | `SESSION_SECRET` | Random string for session signing | — |
-| `NEXT_PUBLIC_APP_URL` | Public app URL | `http://localhost:7243` |
-| `NODE_ENV` | Environment | `development` |
+| `PORT` | Backend server port | `7244` |
+| `FRONTEND_URL` | Frontend URL for CORS | `http://localhost:7243` |
 
-See [.env.example](.env.example) for a ready-to-copy template.
+### Frontend (`frontend/.env`)
+
+| Variable | Description | Default |
+|---|---|---|
+| `PUBLIC_API_URL` | Backend API URL | `http://localhost:7244` |
 
 ---
 
@@ -191,9 +231,27 @@ See [.env.example](.env.example) for a ready-to-copy template.
 
 - [Architecture](docs/ARCHITECTURE.md) — Layers, data flow, directory structure
 - [Database](docs/DATABASE.md) — ER diagram, tables, indexes, relations
-- [API Reference](docs/API.md) — 22 endpoints with request/response examples
-- [Graph Engine](docs/GRAPH.md) — Node types, edge types, GROUP, impact mode, undo/redo
+- [API Reference](docs/API.md) — 22+ endpoints with request/response examples
+- [Graph Engine](docs/GRAPH.md) — Node types, edge types, GROUP, impact mode
 - [Keyboard Shortcuts](docs/SHORTCUTS.md) — All shortcuts and interactions
+
+---
+
+## Makefile Commands
+
+| Command | Description |
+|---|---|
+| `make dev` | Start DB + backend + frontend |
+| `make dev-db` | Start PostgreSQL only |
+| `make dev-backend` | Start Go backend |
+| `make dev-frontend` | Start SvelteKit frontend |
+| `make build` | Build backend + frontend |
+| `make test` | Run Go unit tests + frontend checks |
+| `make test-backend` | Run Go unit tests (verbose) |
+| `make test-e2e` | Run Playwright E2E tests |
+| `make up` | Docker Compose full stack |
+| `make down` | Stop Docker Compose |
+| `make clean` | Remove build artifacts |
 
 ---
 
@@ -205,11 +263,12 @@ See [.env.example](.env.example) for a ready-to-copy template.
 - [x] fCOSE auto-layout & manual positioning
 - [x] Drag-and-drop grouping & compound nodes
 - [x] Node search & keyboard shortcuts
-- [x] Undo/Redo (10 action types, 50-depth stack)
 - [x] QA impact analysis (BFS-based)
 - [x] Status waterfall propagation
 - [x] Session-based auth & team management
 - [x] Docker Compose one-command deploy
+- [x] Go backend with 18 unit tests
+- [x] Playwright E2E tests (13 tests)
 
 ### v0.2 — Collaboration & Export
 - [ ] Real-time collaboration (WebSocket / SSE)
@@ -227,9 +286,9 @@ See [.env.example](.env.example) for a ready-to-copy template.
 
 ### v0.4 — UX & Templates
 - [ ] Graph templates (preset flow patterns)
-- [ ] Dark mode
+- [ ] Light / dark mode toggle
 - [ ] Custom node colors & icons
-- [ ] Minimap improvements (click-to-navigate)
+- [ ] Minimap
 - [ ] Mobile responsive layout
 
 ### Future
@@ -244,12 +303,6 @@ See [.env.example](.env.example) for a ready-to-copy template.
 ## Contributing
 
 We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions and guidelines.
-
-```bash
-npm run lint        # Lint check
-npm run format      # Format code
-npm run type-check  # TypeScript check
-```
 
 ---
 

@@ -2,6 +2,8 @@
 
 Thask uses [Cytoscape.js](https://js.cytoscape.org/) with the **fCOSE** force-directed layout and **edgehandles** extension for interactive edge creation.
 
+Frontend: SvelteKit + Svelte 5 components.
+
 ---
 
 ## Node Types
@@ -42,27 +44,26 @@ Thask uses [Cytoscape.js](https://js.cytoscape.org/) with the **fCOSE** force-di
 Groups are compound nodes that contain other nodes.
 
 ### Creating Groups
-- **Toolbar:** Click "Add Group" button
-- **Keyboard:** Select 2+ nodes → `Ctrl+G`
+- **Toolbar:** Click "+ Group" button
 - **API:** POST node with `type: "GROUP"`
 
 ### Adding Nodes to Groups
-- **Drag & Drop:** Drag a node over a GROUP → visual drop target highlight
+- **Drag & Drop:** Drag a node over a GROUP — visual drop target highlight
 - **API:** PATCH node with `parentId: "group-id"`
 
 ### Removing from Group
-- **Detail Panel:** Click "Remove" in group membership section
-- **Keyboard:** Select nodes → `Ctrl+Shift+G`
+- **Detail Panel:** Update parentId to null
 - **API:** PATCH node with `parentId: null`
 
 ### Collapsing
 - **Double-click** a GROUP to collapse/expand
 - Collapsed groups show a child count badge
-- Children are hidden when collapsed
+- Children and their edges are hidden when collapsed
 
 ### Resizing
-- Drag the resize handle (bottom-right corner) on a GROUP node
-- Minimum size: 130×80px
+- 8-directional resize handles on GROUP nodes (corners + edges)
+- Minimum size enforced based on child node positions
+- Positions saved automatically after resize
 
 ---
 
@@ -82,7 +83,7 @@ animate: true (500ms)
 
 ### Preset (Manual)
 
-Reads stored `positionX` / `positionY` from the database. Used when loading an existing graph.
+Reads stored `positionX` / `positionY` from the database. Used when loading an existing graph that has saved positions.
 
 ---
 
@@ -93,70 +94,55 @@ Highlights nodes affected by recent changes for QA risk assessment.
 ### How It Works
 
 1. **Activation:** Toggle Impact Mode in the toolbar
-2. **API call:** `GET /api/projects/[id]/impact?since=7d&depth=2`
+2. **API call:** `GET /api/projects/:id/impact?since=7d&depth=2`
 3. **Changed nodes:** Orange glow border (5px)
 4. **Affected nodes:** Orange border (4px) — downstream via BFS
 5. **Unaffected nodes:** Dimmed to 15% opacity
-6. **Deactivation:** Toggle off → all classes removed
+6. **Deactivation:** Toggle off — all classes removed
 
 ### Status Propagation (Waterfall)
 
-When a node's status changes to PASS or FAIL, the waterfall algorithm propagates status changes downstream:
+When a node's status changes to PASS or FAIL, the waterfall algorithm propagates status changes downstream. Implemented in Go (`backend/internal/service/waterfall.go`):
 
 1. Find all edges where the changed node is the source
 2. For each target node, re-evaluate status based on all incoming edges
 3. Recurse up to depth 10 (cycle prevention)
 4. Parent GROUP nodes re-evaluate based on children's statuses
 
----
-
-## Undo/Redo
-
-Stack-based system with max 50 entries.
-
-### Supported Actions
-
-| Action | Undo Behavior | Redo Behavior |
-|---|---|---|
-| `addNode` | Delete the node | Re-add the node |
-| `deleteNode` | Re-add the node + edges | Delete again |
-| `updateNode` | Revert to old values | Apply new values |
-| `addEdge` | Delete the edge | Re-add the edge |
-| `deleteEdge` | Re-add the edge | Delete again |
-| `updateEdgeType` | Revert edge type | Apply new type |
-| `updateEdgeLabel` | Revert label | Apply new label |
-| `dropOnGroup` | Remove from group | Re-add to group |
-| `groupNodes` | Ungroup all + delete GROUP | Re-group |
-| `ungroupNodes` | Re-add to parent GROUP | Ungroup again |
-
-### Keyboard Shortcuts
-
-- `Ctrl+Z` — Undo
-- `Ctrl+Shift+Z` — Redo
+**Edge type behavior:**
+- `blocks`: FAIL on source → BLOCKED on target; source resolves → target unblocked
+- `depends_on`: all dependencies must PASS for target to be unblocked
+- `triggers`: FAIL/PASS propagates forward
 
 ---
 
 ## Interactive Features
 
-### Edge Creation
-1. Hover over a node → edge handle appears (small circle)
-2. Drag from handle to another node
+### Edge Creation (Port Overlay)
+1. Hover over a node — 4 port dots appear (top, right, bottom, left)
+2. Drag from a port dot to another node
 3. Edge is created with default type `related`
 
 ### Edge Editing
-1. Click an edge → EdgeColorPopover appears
+1. Click an edge — EdgeColorPopover appears at the edge's position
 2. Select a new edge type from the 5 options
-3. Or click delete to remove the edge
+3. Edit the label (debounced auto-save)
+4. Or click delete to remove the edge
 
 ### Node Selection
-- **Click:** Select single node → opens NodeDetailPanel
-- **Ctrl+Click:** Toggle multi-selection
+- **Click node:** Select node, opens NodeDetailPanel
 - **Click canvas:** Clear selection
+- **Click edge:** Select edge, opens EdgeColorPopover
+
+### Group Drag
+- Dragging a GROUP moves all descendant nodes together
+- Child offsets are preserved during drag
 
 ### Search & Focus
-- Type in the toolbar search bar
-- Matching nodes get a pulse highlight (orange, 2s)
-- Graph pans and zooms to the focused node
+- Click "Search" or press `Ctrl+F`
+- Type to filter — matching nodes get a pulse highlight (orange, 2s)
+- Graph animates to center on the focused node
+- Press Enter to cycle through matches
 
 ---
 
@@ -164,19 +150,16 @@ Stack-based system with max 50 entries.
 
 | File | Responsibility |
 |---|---|
-| `src/lib/cytoscape/styles.ts` | 60+ Cytoscape style rules for nodes, edges, and interaction classes |
-| `src/lib/cytoscape/layouts.ts` | fCOSE and preset layout configurations |
-| `src/lib/cytoscape/groupHelpers.ts` | `getChildNodes()`, `getDescendantNodes()`, `getDescendantIdSet()` |
-| `src/lib/cytoscape/impact.ts` | `activateImpactMode()`, `deactivateImpactMode()` |
-| `src/lib/waterfall.ts` | `computeWaterfall()` — status propagation algorithm |
-| `src/components/graph/CytoscapeCanvas.tsx` | Main canvas component with all interactions |
-| `src/components/graph/GraphToolbar.tsx` | Toolbar with zoom, layout, filters, search, undo/redo |
-| `src/components/graph/GraphMinimap.tsx` | Overview minimap |
-| `src/components/graph/AddNodeModal.tsx` | Node creation modal |
-| `src/components/graph/EdgeColorPopover.tsx` | Edge type selection popover |
-| `src/stores/useGraphStore.ts` | Selection, filters, impact mode, collapsed groups |
-| `src/stores/useUndoStore.ts` | Undo/redo stack management |
-| `src/hooks/useGraphData.ts` | React Query CRUD for nodes and edges |
-| `src/hooks/useUndoRedo.ts` | Undo/redo execution logic |
-| `src/types/graph.ts` | GraphNode, GraphEdge, NodeType, NodeStatus, EdgeType |
-| `src/types/undo.ts` | UndoEntry union type (10 actions) |
+| `frontend/src/lib/cytoscape/styles.ts` | 60+ Cytoscape style rules |
+| `frontend/src/lib/cytoscape/layouts.ts` | fCOSE and preset layout configurations |
+| `frontend/src/lib/cytoscape/groupHelpers.ts` | `getChildNodes()`, `getDescendantNodes()`, `getDescendantIdSet()` |
+| `frontend/src/lib/cytoscape/impact.ts` | `activateImpactMode()`, `deactivateImpactMode()` |
+| `backend/internal/service/waterfall.go` | `ComputeWaterfall()` — BFS status propagation |
+| `backend/internal/service/impact.go` | `ComputeImpact()` — bidirectional BFS |
+| `frontend/src/lib/components/CytoscapeCanvas.svelte` | Main canvas with all interactions |
+| `frontend/src/lib/components/GraphToolbar.svelte` | Toolbar with zoom, layout, filters, search |
+| `frontend/src/lib/components/AddNodeModal.svelte` | Node creation modal |
+| `frontend/src/lib/components/EdgeColorPopover.svelte` | Edge type/label editing popover |
+| `frontend/src/lib/components/NodeDetailPanel.svelte` | Slide-out detail panel with tabs |
+| `frontend/src/lib/stores/graph.svelte.ts` | Selection, filters, impact mode, collapsed groups |
+| `frontend/src/lib/types.ts` | GraphNode, GraphEdge, NodeType, NodeStatus, EdgeType |

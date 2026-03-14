@@ -1,35 +1,48 @@
 services:
-  app:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-    ports:
-      - "7243:3000"
-    environment:
-      DATABASE_URL: postgresql://thask:${POSTGRES_PASSWORD:-thask_password}@db:5432/thask
-      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
-      NODE_ENV: production
-      NEXT_PUBLIC_APP_URL: ${APP_URL:-http://localhost:7243}
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-
-  db:
+  postgres:
     image: postgres:17-alpine
     environment:
+      POSTGRES_DB: thask
       POSTGRES_USER: thask
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-thask_password}
-      POSTGRES_DB: thask
-    volumes:
-      - pgdata:/var/lib/postgresql/data
     ports:
       - "7242:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U thask"]
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "7244:7244"
+    environment:
+      DATABASE_URL: postgresql://thask:${POSTGRES_PASSWORD:-thask_password}@postgres:5432/thask
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-in-production}
+      PORT: "7244"
+      FRONTEND_URL: ${APP_URL:-http://localhost:7243}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "7243:7243"
+    environment:
+      PUBLIC_API_URL: http://backend:7244
+      ORIGIN: ${APP_URL:-http://localhost:7243}
+    depends_on:
+      - backend
     restart: unless-stopped
 
 volumes:
