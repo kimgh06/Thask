@@ -44,7 +44,10 @@ func (h *ImpactHandler) Analyze(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to fetch changed nodes"))
 	}
 
-	failNodes, _ := h.nodeRepo.FindFailOrBug(ctx, projectID)
+	failNodes, err2 := h.nodeRepo.FindFailOrBug(ctx, projectID)
+	if err2 != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to fetch fail/bug nodes"))
+	}
 	if failNodes == nil {
 		failNodes = []model.Node{}
 	}
@@ -58,7 +61,10 @@ func (h *ImpactHandler) Analyze(c echo.Context) error {
 		}))
 	}
 
-	allEdges, _ := h.edgeRepo.FindByProjectID(ctx, projectID)
+	allEdges, err3 := h.edgeRepo.FindByProjectID(ctx, projectID)
+	if err3 != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to fetch edges"))
+	}
 	if allEdges == nil {
 		allEdges = []model.Edge{}
 	}
@@ -69,7 +75,10 @@ func (h *ImpactHandler) Analyze(c echo.Context) error {
 	}
 
 	impactedIDs := service.ComputeImpact(changedIDs, allEdges, depth)
-	impactedNodes, _ := h.nodeRepo.FindByIDs(ctx, impactedIDs)
+	impactedNodes, err4 := h.nodeRepo.FindByIDs(ctx, impactedIDs)
+	if err4 != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to fetch impacted nodes"))
+	}
 	if impactedNodes == nil {
 		impactedNodes = []model.Node{}
 	}

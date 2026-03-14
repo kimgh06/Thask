@@ -87,6 +87,11 @@ export function deleteNodeCmd(
 	};
 }
 
+interface NodeUpdateResult {
+	node: GraphNode;
+	propagated?: { nodeId: string; oldStatus: NodeStatus; newStatus: NodeStatus }[];
+}
+
 export function updateNodeCmd(
 	ctx: NodeMutationContext,
 	nodeId: string,
@@ -96,15 +101,25 @@ export function updateNodeCmd(
 	return {
 		description: `Update node`,
 		async execute() {
-			const res = await api.patch<{ node: GraphNode }>(`/api/projects/${ctx.projectId}/nodes/${nodeId}`, newData);
+			const res = await api.patch<NodeUpdateResult>(`/api/projects/${ctx.projectId}/nodes/${nodeId}`, newData);
 			if (res.data) {
 				ctx.setNodes(ctx.getNodes().map((n) => (n.id === nodeId ? res.data!.node : n)));
+				const propagated = res.data.propagated ?? [];
+				if (propagated.length > 0) {
+					const changeMap = new Map(propagated.map((c) => [c.nodeId, c.newStatus]));
+					ctx.setNodes(ctx.getNodes().map((n) => changeMap.has(n.id) ? { ...n, status: changeMap.get(n.id)! } : n));
+				}
 			}
 		},
 		async undo() {
-			const res = await api.patch<{ node: GraphNode }>(`/api/projects/${ctx.projectId}/nodes/${nodeId}`, oldData);
+			const res = await api.patch<NodeUpdateResult>(`/api/projects/${ctx.projectId}/nodes/${nodeId}`, oldData);
 			if (res.data) {
 				ctx.setNodes(ctx.getNodes().map((n) => (n.id === nodeId ? res.data!.node : n)));
+				const propagated = res.data.propagated ?? [];
+				if (propagated.length > 0) {
+					const changeMap = new Map(propagated.map((c) => [c.nodeId, c.newStatus]));
+					ctx.setNodes(ctx.getNodes().map((n) => changeMap.has(n.id) ? { ...n, status: changeMap.get(n.id)! } : n));
+				}
 			}
 		},
 	};

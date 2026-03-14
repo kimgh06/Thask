@@ -3,7 +3,7 @@
 	import { api } from '$lib/api';
 	import { graphStore } from '$lib/stores/graph.svelte';
 	import { undoStack } from '$lib/stores/undo.svelte';
-	import { createNodeCmd, deleteNodeCmd, createEdgeCmd, deleteEdgeCmd, batchDeleteCmd } from '$lib/commands/node';
+	import { createNodeCmd, deleteNodeCmd, updateNodeCmd, createEdgeCmd, deleteEdgeCmd, batchDeleteCmd } from '$lib/commands/node';
 	import CytoscapeCanvas from '$lib/components/CytoscapeCanvas.svelte';
 	import GraphToolbar from '$lib/components/GraphToolbar.svelte';
 	import AddNodeModal from '$lib/components/AddNodeModal.svelte';
@@ -138,6 +138,15 @@
 	}
 
 	async function handleUpdateNode(nodeId: string, data: Record<string, unknown>) {
+		// Capture old values for undo
+		const oldNode = nodes.find((n) => n.id === nodeId);
+		const oldData: Record<string, unknown> = {};
+		if (oldNode) {
+			for (const key of Object.keys(data)) {
+				oldData[key] = (oldNode as unknown as Record<string, unknown>)[key];
+			}
+		}
+
 		const res = await api.patch<NodeUpdateResult>(`/api/projects/${projectId}/nodes/${nodeId}`, data);
 		if (res.data) {
 			const updated = res.data.node;
@@ -154,6 +163,9 @@
 				nodes = nodes.map((n) => changeMap.has(n.id) ? { ...n, status: changeMap.get(n.id)! } : n);
 				canvas?.animateCascade(propagated);
 			}
+
+			// Record for undo (already executed, so use record())
+			undoStack.record(updateNodeCmd(mutCtx, nodeId, oldData, data));
 		}
 	}
 
@@ -178,10 +190,30 @@
 	async function handleBatchStatus(status: NodeStatus) {
 		const ids = [...graphStore.selectedNodeIds];
 		if (ids.length === 0) return;
+		// Capture old statuses for undo
+		const oldStatuses = new Map(
+			nodes.filter((n) => ids.includes(n.id)).map((n) => [n.id, n.status]),
+		);
 		const res = await api.patch(`/api/projects/${projectId}/nodes/batch-status`, { ids, status });
 		if (!res.error) {
 			const idSet = new Set(ids);
 			nodes = nodes.map((n) => idSet.has(n.id) ? { ...n, status } : n);
+			undoStack.record({
+				description: `Set ${ids.length} nodes to ${status}`,
+				async execute() {
+					const r = await api.patch(`/api/projects/${projectId}/nodes/batch-status`, { ids, status });
+					if (!r.error) {
+						nodes = nodes.map((n) => idSet.has(n.id) ? { ...n, status } : n);
+					}
+				},
+				async undo() {
+					// Restore each node's original status
+					for (const [id, oldStatus] of oldStatuses) {
+						await api.patch(`/api/projects/${projectId}/nodes/${id}`, { status: oldStatus });
+					}
+					nodes = nodes.map((n) => oldStatuses.has(n.id) ? { ...n, status: oldStatuses.get(n.id)! } : n);
+				},
+			});
 		}
 	}
 

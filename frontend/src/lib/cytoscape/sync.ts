@@ -1,5 +1,5 @@
 import type cytoscape from 'cytoscape';
-import type { GraphNode, GraphEdge } from '$lib/types';
+import type { GraphNode, GraphEdge, NodeType, NodeStatus } from '$lib/types';
 import { getFcoseLayout, getPresetLayout } from './layouts';
 
 /** Compute nesting depth of a node via parentId chain. */
@@ -66,6 +66,8 @@ export interface SyncContext {
 	nodes: GraphNode[];
 	edges: GraphEdge[];
 	collapsedGroups: string[];
+	typeFilter: NodeType | null;
+	statusFilter: NodeStatus | null;
 	initialLayoutDone: boolean;
 	onUpdateNodeParent?: (nodeId: string, parentId: string | null) => void;
 }
@@ -177,6 +179,28 @@ export function syncElements(ctx: SyncContext): boolean {
 			e.addClass('collapsed-edge');
 		} else {
 			e.removeClass('collapsed-edge');
+		}
+	});
+
+	// Apply type/status filters
+	const { typeFilter, statusFilter } = ctx;
+	cy.nodes().forEach((n) => {
+		const nodeType = n.data('nodeType') as NodeType;
+		const status = n.data('status') as NodeStatus;
+		const hidden =
+			(typeFilter !== null && nodeType !== typeFilter) ||
+			(statusFilter !== null && status !== statusFilter);
+		if (hidden) {
+			n.addClass('filter-hidden');
+		} else {
+			n.removeClass('filter-hidden');
+		}
+	});
+	cy.edges().forEach((e) => {
+		if (e.source().hasClass('filter-hidden') || e.target().hasClass('filter-hidden')) {
+			e.addClass('filter-hidden');
+		} else {
+			e.removeClass('filter-hidden');
 		}
 	});
 

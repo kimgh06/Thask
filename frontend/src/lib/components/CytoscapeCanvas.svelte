@@ -59,6 +59,8 @@
 			nodes,
 			edges,
 			collapsedGroups: [...graphStore.collapsedGroups],
+			typeFilter: graphStore.typeFilter,
+			statusFilter: graphStore.statusFilter,
 			initialLayoutDone,
 			onUpdateNodeParent,
 		});
@@ -484,8 +486,12 @@
 		const _nodes = nodes;
 		const _edges = edges;
 		const _collapsed = graphStore.collapsedGroups;
+		const _typeFilter = graphStore.typeFilter;
+		const _statusFilter = graphStore.statusFilter;
 		if (!cy || _nodes === undefined || _edges === undefined) return;
 		void _collapsed;
+		void _typeFilter;
+		void _statusFilter;
 		syncElements();
 	});
 

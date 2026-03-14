@@ -17,6 +17,7 @@
 	} from 'lucide-svelte';
 	import type { GraphNode, NodeType, NodeStatus } from '$lib/types';
 	import { NODE_TYPES, STATUS_COLORS } from '$lib/constants';
+	import { graphStore } from '$lib/stores/graph.svelte';
 
 	interface Props {
 		onAddNode: () => void;
@@ -68,8 +69,8 @@
 	];
 
 	let showFilters = $state(false);
-	let activeTypeFilter = $state<NodeType | null>(null);
-	let activeStatusFilter = $state<NodeStatus | null>(null);
+	let activeTypeFilter = $derived(graphStore.typeFilter);
+	let activeStatusFilter = $derived(graphStore.statusFilter);
 
 	let showSearch = $state(false);
 	let searchQuery = $state('');
@@ -331,7 +332,7 @@
 				>
 				{#each NODE_TYPES as type}
 					<button
-						onclick={() => (activeTypeFilter = activeTypeFilter === type ? null : type)}
+						onclick={() => graphStore.setTypeFilter(activeTypeFilter === type ? null : type)}
 						class="px-2 py-0.5 rounded-md text-xs font-medium transition-colors"
 						style="background: {activeTypeFilter === type
 							? 'var(--color-primary)'
@@ -352,7 +353,7 @@
 				{#each STATUS_ITEMS as opt}
 					<button
 						onclick={() =>
-							(activeStatusFilter = activeStatusFilter === opt.value ? null : opt.value)}
+							graphStore.setStatusFilter(activeStatusFilter === opt.value ? null : opt.value)}
 						class="px-2 py-0.5 rounded-md text-xs font-medium transition-colors flex items-center gap-1"
 						style="background: {activeStatusFilter === opt.value
 							? opt.color + '33'
