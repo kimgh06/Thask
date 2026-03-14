@@ -71,7 +71,7 @@ func (r *NodeRepo) FindByProjectID(ctx context.Context, projectID string, nodeTy
 
 func (r *NodeRepo) Update(ctx context.Context, id string, fields map[string]any) (*model.Node, error) {
 	if len(fields) == 0 {
-		return r.FindByID(ctx, id, "")
+		return nil, fmt.Errorf("no fields to update")
 	}
 	setClauses := []string{"updated_at = now()"}
 	args := []any{}

@@ -49,9 +49,9 @@ type UpdateNodeRequest struct {
 	Title       *string  `json:"title" validate:"omitempty,min=1,max=300"`
 	Description *string  `json:"description" validate:"omitempty,max=5000"`
 	Status      *string  `json:"status" validate:"omitempty,oneof=PASS FAIL IN_PROGRESS BLOCKED"`
-	AssigneeID  *string  `json:"assigneeId" validate:"omitempty,uuid"`
+	AssigneeID  *string  `json:"assigneeId"`
 	Tags        []string `json:"tags"`
-	ParentID    *string  `json:"parentId" validate:"omitempty,uuid"`
+	ParentID    *string  `json:"parentId"`
 	Width       *float64 `json:"width" validate:"omitempty,min=80"`
 	Height      *float64 `json:"height" validate:"omitempty,min=50"`
 }

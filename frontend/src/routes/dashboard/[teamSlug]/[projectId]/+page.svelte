@@ -226,7 +226,7 @@
 	}
 
 	async function handleUpdateNodeParent(nodeId: string, parentId: string | null) {
-		const res = await api.patch<GraphNode>(`/api/projects/${projectId}/nodes/${nodeId}`, { parentId });
+		const res = await api.patch<GraphNode>(`/api/projects/${projectId}/nodes/${nodeId}`, { parentId: parentId ?? '' });
 		if (res.data) {
 			nodes = nodes.map((n) => (n.id === nodeId ? res.data! : n));
 		}

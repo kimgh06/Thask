@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
@@ -169,7 +170,11 @@ func (h *NodeHandler) Update(c echo.Context) error {
 		fields["status"] = *req.Status
 	}
 	if req.AssigneeID != nil {
-		fields["assignee_id"] = *req.AssigneeID
+		if *req.AssigneeID != "" {
+			fields["assignee_id"] = *req.AssigneeID
+		} else {
+			fields["assignee_id"] = nil
+		}
 	}
 	if req.Tags != nil {
 		fields["tags"] = req.Tags
@@ -184,8 +189,10 @@ func (h *NodeHandler) Update(c echo.Context) error {
 			if err := h.detectParentCycle(ctx, projectID, nodeID, newParentID); err != nil {
 				return c.JSON(http.StatusBadRequest, dto.Err(err.Error()))
 			}
+			fields["parent_id"] = newParentID
+		} else {
+			fields["parent_id"] = nil
 		}
-		fields["parent_id"] = newParentID
 	}
 	if req.Width != nil {
 		fields["width"] = *req.Width
@@ -194,8 +201,13 @@ func (h *NodeHandler) Update(c echo.Context) error {
 		fields["height"] = *req.Height
 	}
 
+	if len(fields) == 0 {
+		return c.JSON(http.StatusOK, dto.OK(map[string]any{"node": existing, "propagated": []service.StatusChange{}}))
+	}
+
 	updated, err := h.nodeRepo.Update(ctx, nodeID, fields)
 	if err != nil {
+		log.Printf("[ERROR] nodeRepo.Update(%s): %v | fields=%v", nodeID, err, fields)
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update node"))
 	}
 
