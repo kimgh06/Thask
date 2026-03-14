@@ -177,6 +177,29 @@ func (r *NodeRepo) UpdateStatus(ctx context.Context, id string, status model.Nod
 	return err
 }
 
+func (r *NodeRepo) BatchDelete(ctx context.Context, projectID string, ids []string) error {
+	// Unparent children
+	_, _ = r.pool.Exec(ctx,
+		`UPDATE nodes SET parent_id = NULL, updated_at = now() WHERE parent_id = ANY($1) AND project_id = $2`,
+		ids, projectID)
+	// Delete connected edges
+	_, _ = r.pool.Exec(ctx,
+		`DELETE FROM edges WHERE project_id = $1 AND (source_id = ANY($2) OR target_id = ANY($2))`,
+		projectID, ids)
+	// Delete nodes
+	_, err := r.pool.Exec(ctx,
+		`DELETE FROM nodes WHERE id = ANY($1) AND project_id = $2`,
+		ids, projectID)
+	return err
+}
+
+func (r *NodeRepo) BatchUpdateStatus(ctx context.Context, projectID string, ids []string, status model.NodeStatus) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE nodes SET status = $1, updated_at = now() WHERE id = ANY($2) AND project_id = $3`,
+		status, ids, projectID)
+	return err
+}
+
 // scanNodes is a helper to scan rows into []model.Node
 func scanNodes(rows interface{ Next() bool; Scan(dest ...any) error }) ([]model.Node, error) {
 	var nodes []model.Node

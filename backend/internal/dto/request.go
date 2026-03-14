@@ -68,6 +68,15 @@ type BatchPositionRequest struct {
 	Positions []BatchPositionItem `json:"positions" validate:"required,dive"`
 }
 
+type BatchDeleteRequest struct {
+	IDs []string `json:"ids" validate:"required,min=1,dive,uuid"`
+}
+
+type BatchStatusRequest struct {
+	IDs    []string `json:"ids" validate:"required,min=1,dive,uuid"`
+	Status string   `json:"status" validate:"required,oneof=PASS FAIL IN_PROGRESS BLOCKED"`
+}
+
 type CreateEdgeRequest struct {
 	SourceID string  `json:"sourceId" validate:"required,uuid"`
 	TargetID string  `json:"targetId" validate:"required,uuid"`

@@ -117,6 +117,8 @@ func main() {
 	projectGroup.PATCH("/nodes/:nodeId", nodeHandler.Update)
 	projectGroup.DELETE("/nodes/:nodeId", nodeHandler.Delete)
 	projectGroup.PATCH("/nodes/positions", nodeHandler.BatchUpdatePositions)
+	projectGroup.POST("/nodes/batch-delete", nodeHandler.BatchDelete)
+	projectGroup.PATCH("/nodes/batch-status", nodeHandler.BatchUpdateStatus)
 
 	// Edges
 	projectGroup.GET("/edges", edgeHandler.List)

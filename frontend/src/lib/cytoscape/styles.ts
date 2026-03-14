@@ -60,8 +60,9 @@ export function getGraphStyles(): StylesheetStyle[] {
       style: {
         shape,
         'border-color': NODE_COLORS[type] ?? '#475569',
-        'background-color': `${NODE_COLORS[type]}20`,
-      } as Record<string, string>,
+        'background-color': NODE_COLORS[type] ?? '#475569',
+        'background-opacity': 0.125,
+      } as Record<string, string | number>,
     })),
 
     // GROUP node — regular node with explicit dimensions (no compound parent)
@@ -90,28 +91,32 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'node[status="PASS"][nodeType!="GROUP"]',
       style: {
         'border-color': STATUS_COLORS.PASS,
-        'background-color': `${STATUS_COLORS.PASS}18`,
+        'background-color': STATUS_COLORS.PASS,
+        'background-opacity': 0.094,
       },
     },
     {
       selector: 'node[status="FAIL"][nodeType!="GROUP"]',
       style: {
         'border-color': STATUS_COLORS.FAIL,
-        'background-color': `${STATUS_COLORS.FAIL}18`,
+        'background-color': STATUS_COLORS.FAIL,
+        'background-opacity': 0.094,
       },
     },
     {
       selector: 'node[status="IN_PROGRESS"][nodeType!="GROUP"]',
       style: {
         'border-color': STATUS_COLORS.IN_PROGRESS,
-        'background-color': `${STATUS_COLORS.IN_PROGRESS}18`,
+        'background-color': STATUS_COLORS.IN_PROGRESS,
+        'background-opacity': 0.094,
       },
     },
     {
       selector: 'node[status="BLOCKED"][nodeType!="GROUP"]',
       style: {
         'border-color': STATUS_COLORS.BLOCKED,
-        'background-color': `${STATUS_COLORS.BLOCKED}18`,
+        'background-color': STATUS_COLORS.BLOCKED,
+        'background-opacity': 0.094,
       },
     },
 
@@ -183,12 +188,18 @@ export function getGraphStyles(): StylesheetStyle[] {
         'target-arrow-shape': 'triangle',
         'curve-style': 'bezier',
         'arrow-scale': 1,
-        label: 'data(label)',
         'font-size': 10,
         'text-rotation': 'autorotate',
         color: '#64748b',
         'text-outline-color': '#0f172a',
         'text-outline-width': 2,
+      },
+    },
+    // Edge label — only when label data exists
+    {
+      selector: 'edge[label]',
+      style: {
+        label: 'data(label)',
       },
     },
 
@@ -212,6 +223,22 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'edge[edgeType="parent_child"]',
       style: { 'line-color': '#8b5cf6', 'target-arrow-color': '#8b5cf6', 'line-style': 'dashed' },
+    },
+
+    // Edges connecting to GROUP nodes — snap to outline
+    {
+      selector: 'edge[?targetIsGroup]',
+      style: {
+        'target-endpoint': 'outside-to-node',
+        'target-distance-from-node': 2,
+      } as Record<string, string | number>,
+    },
+    {
+      selector: 'edge[?sourceIsGroup]',
+      style: {
+        'source-endpoint': 'outside-to-node',
+        'source-distance-from-node': 2,
+      } as Record<string, string | number>,
     },
 
     // Edgehandles: ghost edge (follows cursor during drag)
@@ -249,6 +276,19 @@ export function getGraphStyles(): StylesheetStyle[] {
         opacity: 0,
       },
     },
+    // When edge targets GROUP interior: hide preview, show ghost instead
+    {
+      selector: 'edge.eh-preview.eh-group-interior',
+      style: {
+        opacity: 0,
+      },
+    },
+    {
+      selector: '.eh-ghost-edge.eh-group-interior',
+      style: {
+        opacity: 0.7,
+      },
+    },
     // Edgehandles: source node highlight
     {
       selector: '.eh-source',
@@ -263,6 +303,25 @@ export function getGraphStyles(): StylesheetStyle[] {
     // Edgehandles: target node highlight
     {
       selector: '.eh-target',
+      style: {
+        'border-width': 3,
+        'border-color': '#34d399',
+        'overlay-color': '#34d399',
+        'overlay-opacity': 0.1,
+      },
+    },
+    // Suppress eh-target highlight on expanded GROUP (child gets custom highlight instead)
+    {
+      selector: 'node[nodeType="GROUP"].eh-target',
+      style: {
+        'border-color': '#475569',
+        'border-width': 1.5,
+        'overlay-opacity': 0,
+      } as Record<string, string | number>,
+    },
+    // Custom target highlight for resolved child inside GROUP
+    {
+      selector: 'node.eh-target-resolved',
       style: {
         'border-width': 3,
         'border-color': '#34d399',

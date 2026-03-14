@@ -8,7 +8,9 @@
 	import { getChildNodes, getDescendantNodes, getDescendantIdSet } from '$lib/cytoscape/groupHelpers';
 	import { graphStore } from '$lib/stores/graph.svelte';
 	import { api } from '$lib/api';
-	import type { GraphNode, GraphEdge } from '$lib/types';
+	import type { GraphNode, GraphEdge, StatusChange } from '$lib/types';
+	import { undoStack } from '$lib/stores/undo.svelte';
+	import { moveNodesCmd, type NodePosition } from '$lib/commands/node';
 
 	// Register extensions once at module level
 	let extensionsRegistered = false;
@@ -35,6 +37,7 @@
 	let eh: any = null;
 	let initialLayoutDone = false;
 	let activeTimeouts: ReturnType<typeof setTimeout>[] = [];
+	let lastMouseModelPos = { x: 0, y: 0 };
 
 	function trackTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
 		const id = setTimeout(() => {
@@ -160,12 +163,14 @@
 			edges.forEach((edge) => {
 				if (!cy) return;
 				const existing = cy.getElementById(edge.id);
-				const data = {
+				const data: Record<string, unknown> = {
 					id: edge.id,
 					source: edge.sourceId,
 					target: edge.targetId,
 					label: edge.label ?? '',
 					edgeType: edge.edgeType,
+					sourceIsGroup: nodeMap.get(edge.sourceId)?.type === 'GROUP',
+					targetIsGroup: nodeMap.get(edge.targetId)?.type === 'GROUP',
 				};
 
 				if (existing.length) {
@@ -210,33 +215,7 @@
 			if (hasPositions) {
 				cy.layout(getPresetLayout()).run();
 			} else {
-				const layout = cy.layout(getFcoseLayout());
-				layout.on('layoutstop', () => {
-					if (!cy) return;
-					cy.nodes('[nodeType="GROUP"]').forEach((g) => {
-						if (g.hasClass('group-collapsed')) return;
-						const children = cy!.nodes().filter(
-							(n: cytoscape.NodeSingular) => n.data('parentId') === g.id(),
-						);
-						if (children.length === 0) return;
-						const PAD = 40;
-						const NODE_HALF = 40;
-						let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-						children.forEach((c: cytoscape.NodeSingular) => {
-							const pos = c.position();
-							minX = Math.min(minX, pos.x - NODE_HALF);
-							maxX = Math.max(maxX, pos.x + NODE_HALF);
-							minY = Math.min(minY, pos.y - NODE_HALF);
-							maxY = Math.max(maxY, pos.y + NODE_HALF);
-						});
-						const w = Math.max(160, maxX - minX + PAD * 2);
-						const h = Math.max(100, maxY - minY + PAD * 2);
-						g.data('width', w);
-						g.data('height', h);
-						g.position({ x: (minX + maxX) / 2, y: (minY + maxY) / 2 });
-					});
-				});
-				layout.run();
+				cy.layout(getFcoseLayout()).run();
 			}
 			initialLayoutDone = true;
 		}
@@ -294,6 +273,98 @@
 
 	export function getCy(): cytoscape.Core | null {
 		return cy;
+	}
+
+	export function animateCascade(changes: StatusChange[]) {
+		if (!cy || changes.length === 0) return;
+		changes.forEach((change, i) => {
+			const node = cy!.getElementById(change.nodeId);
+			if (!node.length) return;
+			trackTimeout(() => {
+				node.addClass('impact-affected');
+				trackTimeout(() => node.removeClass('impact-affected'), 2000);
+			}, i * 150);
+		});
+	}
+
+	export function applyImpactClasses(changedIds: string[], affectedIds: string[]) {
+		if (!cy) return;
+		cy.elements().removeClass('impact-dimmed impact-changed impact-affected');
+		const changedSet = new Set(changedIds);
+		const affectedSet = new Set(affectedIds);
+		cy.nodes().forEach((n) => {
+			const id = n.id();
+			if (changedSet.has(id)) {
+				n.addClass('impact-changed');
+			} else if (affectedSet.has(id)) {
+				n.addClass('impact-affected');
+			} else {
+				n.addClass('impact-dimmed');
+			}
+		});
+		cy.edges().forEach((e) => {
+			const src = e.data('source');
+			const tgt = e.data('target');
+			if ((changedSet.has(src) || affectedSet.has(src)) && (changedSet.has(tgt) || affectedSet.has(tgt))) {
+				// edge in impact subgraph — leave visible
+			} else {
+				e.addClass('impact-dimmed');
+			}
+		});
+	}
+
+	export function clearImpactClasses() {
+		if (!cy) return;
+		cy.elements().removeClass('impact-dimmed impact-changed impact-affected');
+	}
+
+	/** Check if a model-coordinate position is near the GROUP's border (not interior) */
+	function isOnGroupBorder(pos: { x: number; y: number }, node: cytoscape.NodeSingular, threshold = 20): boolean {
+		const bb = node.boundingBox({});
+		const inX = pos.x >= bb.x1 && pos.x <= bb.x2;
+		const inY = pos.y >= bb.y1 && pos.y <= bb.y2;
+		if (!inX || !inY) return false;
+
+		const nearLeft = Math.abs(pos.x - bb.x1) <= threshold;
+		const nearRight = Math.abs(pos.x - bb.x2) <= threshold;
+		const nearTop = Math.abs(pos.y - bb.y1) <= threshold;
+		const nearBottom = Math.abs(pos.y - bb.y2) <= threshold;
+
+		return nearLeft || nearRight || nearTop || nearBottom;
+	}
+
+	/** Resolve to innermost node at drop position — only pass through GROUP interior, not border */
+	function resolveInnermostNode(node: cytoscape.NodeSingular, dropPos: { x: number; y: number }): cytoscape.NodeSingular {
+		if (!cy || node.data('nodeType') !== 'GROUP') return node;
+		// If drop is on GROUP border, keep the GROUP as target
+		if (isOnGroupBorder(dropPos, node)) return node;
+
+		const children = cy.nodes().filter(
+			(n: cytoscape.NodeSingular) => n.data('parentId') === node.id(),
+		);
+		if (children.length === 0) return node;
+
+		// Find child whose bounding box contains drop position (smallest = innermost)
+		let best: cytoscape.NodeSingular | null = null;
+		let bestArea = Infinity;
+		children.forEach((c: cytoscape.NodeSingular) => {
+			const bb = c.boundingBox({});
+			if (dropPos.x >= bb.x1 && dropPos.x <= bb.x2 && dropPos.y >= bb.y1 && dropPos.y <= bb.y2) {
+				const area = (bb.x2 - bb.x1) * (bb.y2 - bb.y1);
+				if (area < bestArea) { bestArea = area; best = c; }
+			}
+		});
+		return best ? resolveInnermostNode(best, dropPos) : node;
+	}
+
+	function syncMultiSelectClasses() {
+		if (!cy) return;
+		cy.nodes().removeClass('multi-selected');
+		if (graphStore.selectedNodeIds.size > 1) {
+			graphStore.selectedNodeIds.forEach((id) => {
+				cy!.getElementById(id).addClass('multi-selected');
+			});
+		}
 	}
 
 	onMount(() => {
@@ -388,7 +459,11 @@
 		cy.on('mouseover', 'node', (e) => {
 			const node = e.target as cytoscape.NodeSingular;
 			if ((eh as { active: boolean }).active || node.grabbed() || isResizing) return;
-			if (node.data('nodeType') === 'GROUP' && !node.hasClass('group-collapsed')) return;
+			// GROUP: only show ports when cursor is near the border
+			if (node.data('nodeType') === 'GROUP' && !node.hasClass('group-collapsed')) {
+				const pos = e.position;
+				if (!isOnGroupBorder(pos, node)) return;
+			}
 			showPorts(node);
 		});
 
@@ -404,6 +479,8 @@
 		cy.on('ehstop ehcancel', () => {
 			if (portOverlay) portOverlay.style.display = 'none';
 			portSource = null;
+			cy!.nodes('.eh-target-resolved').removeClass('eh-target-resolved');
+			cy!.edges('.eh-group-interior').removeClass('eh-group-interior');
 		});
 
 		// GROUP drag state
@@ -412,12 +489,23 @@
 			childOffsets: Map<string, { dx: number; dy: number }>;
 		} | null = null;
 		let dragDescendantIds: Set<string> | null = null;
+		let preDragPositions: NodePosition[] = [];
 
 		cy.on('grab', 'node', (e) => {
 			const node = e.target as cytoscape.NodeSingular;
 			if (isResizing) return;
 			if (portOverlay) portOverlay.style.display = 'none';
 			portSource = null;
+
+			// Capture pre-drag positions for undo
+			if (node.data('nodeType') === 'GROUP') {
+				const descendants = getDescendantNodes(cy!, node.id());
+				preDragPositions = [node, ...descendants].map((n: cytoscape.NodeSingular) => ({
+					id: n.id(), x: n.position().x, y: n.position().y,
+				}));
+			} else {
+				preDragPositions = [{ id: node.id(), x: node.position().x, y: node.position().y }];
+			}
 
 			if (node.data('nodeType') === 'GROUP') {
 				const groupPos = node.position();
@@ -438,26 +526,57 @@
 			}
 		});
 
-		cy.on('ehcomplete', (_event, sourceNode, targetNode, addedEdge) => {
+		cy.on('ehcomplete', (event, sourceNode, targetNode, addedEdge) => {
 			(addedEdge as cytoscape.EdgeSingular).remove();
-			onCreateEdge?.(
-				(sourceNode as cytoscape.NodeSingular).id(),
-				(targetNode as cytoscape.NodeSingular).id(),
-			);
+			// Use tracked mouse position instead of event.position (which may be snap target, not actual cursor)
+			const dropPos = lastMouseModelPos;
+			let source = sourceNode as cytoscape.NodeSingular;
+			let target = targetNode as cytoscape.NodeSingular;
+
+			// Resolve innermost node: if source/target is a GROUP, check if a child
+			// node is at the drop position (user intended the child, not the GROUP)
+			source = resolveInnermostNode(source, source.position());
+			target = resolveInnermostNode(target, dropPos);
+
+			if (source.id() !== target.id()) {
+				onCreateEdge?.(source.id(), target.id());
+			}
 		});
 
 		cy.on('tap', 'node', (evt: cytoscape.EventObject) => {
-			graphStore.selectNode(evt.target.id());
+			const node = evt.target as cytoscape.NodeSingular;
+			// GROUP interior tap: skip — let child nodes receive the event
+			if (node.data('nodeType') === 'GROUP' && !node.hasClass('group-collapsed')) {
+				if (!isOnGroupBorder(evt.position, node)) return;
+			}
+			const originalEvent = evt.originalEvent as MouseEvent;
+			if (originalEvent.shiftKey || originalEvent.ctrlKey || originalEvent.metaKey) {
+				graphStore.toggleNodeSelection(node.id());
+			} else {
+				graphStore.selectNode(node.id());
+			}
+			syncMultiSelectClasses();
 		});
 
 		cy.on('tap', (evt: cytoscape.EventObject) => {
 			if (evt.target === cy) {
 				graphStore.clearSelection();
+				syncMultiSelectClasses();
 			}
 		});
 
 		cy.on('tap', 'edge', (evt: cytoscape.EventObject) => {
 			graphStore.selectEdge(evt.target.id());
+			syncMultiSelectClasses();
+		});
+
+		cy.on('boxselect', 'node', () => {
+			const selected = cy!.$(':selected');
+			const ids: string[] = [];
+			selected.forEach((ele) => { ids.push(ele.id()); });
+			graphStore.selectNodes(ids);
+			selected.unselect(); // clear cytoscape's built-in selection, we use our own class
+			syncMultiSelectClasses();
 		});
 
 		cy.on('dbltap', 'node[nodeType="GROUP"]', (evt: cytoscape.EventObject) => {
@@ -530,6 +649,32 @@
 				groupDragState = null;
 			}
 			dragDescendantIds = null;
+
+			// Record move for undo
+			if (preDragPositions.length > 0) {
+				const newPositions: NodePosition[] = preDragPositions.map((p) => {
+					const n = cy!.getElementById(p.id);
+					return { id: p.id, x: n.position().x, y: n.position().y };
+				});
+				const hasMoved = preDragPositions.some((old, i) =>
+					Math.abs(old.x - newPositions[i].x) > 1 || Math.abs(old.y - newPositions[i].y) > 1
+				);
+				if (hasMoved) {
+					undoStack.record(moveNodesCmd(
+						projectId,
+						[...preDragPositions],
+						newPositions,
+						(positions) => {
+							if (!cy) return;
+							positions.forEach((p) => {
+								cy!.getElementById(p.id).position({ x: p.x, y: p.y });
+							});
+						},
+						() => savePositions(),
+					));
+				}
+				preDragPositions = [];
+			}
 
 			if (dragTimeout) clearTimeout(dragTimeout);
 			dragTimeout = trackTimeout(() => savePositions(), 500);
@@ -713,6 +858,33 @@
 		cyContainer.addEventListener('mousemove', onResizeMouseMove);
 		cyContainer.addEventListener('mouseup', onResizeEnd);
 		cyContainer.addEventListener('mouseleave', onResizeEnd);
+
+		// Track actual mouse position in model coordinates for accurate edge targeting
+		cy.on('mousemove', (e) => {
+			lastMouseModelPos = e.position;
+
+			// During edge drawing: highlight resolved child instead of GROUP
+			if (!(eh as { active: boolean }).active) return;
+			cy!.nodes('.eh-target-resolved').removeClass('eh-target-resolved');
+			const ehTarget = cy!.nodes('.eh-target');
+			if (ehTarget.length === 0) {
+				cy!.edges('.eh-group-interior').removeClass('eh-group-interior');
+				return;
+			}
+			const targetNode = ehTarget.first();
+			if (targetNode.data('nodeType') !== 'GROUP' || targetNode.hasClass('group-collapsed')) {
+				cy!.edges('.eh-group-interior').removeClass('eh-group-interior');
+				return;
+			}
+			const resolved = resolveInnermostNode(targetNode, lastMouseModelPos);
+			if (resolved.id() !== targetNode.id()) {
+				resolved.addClass('eh-target-resolved');
+				// Hide preview edge to GROUP, show ghost edge following cursor
+				cy!.edges('.eh-ghost-edge, .eh-preview').addClass('eh-group-interior');
+			} else {
+				cy!.edges('.eh-group-interior').removeClass('eh-group-interior');
+			}
+		});
 
 		// Initial data load
 		syncElements();

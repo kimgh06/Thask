@@ -13,6 +13,7 @@
 		Search,
 		X,
 		Zap,
+		Trash2,
 	} from 'lucide-svelte';
 	import type { GraphNode, NodeType, NodeStatus } from '$lib/types';
 
@@ -31,6 +32,10 @@
 		onRedo: () => void;
 		canUndo: boolean;
 		canRedo: boolean;
+		selectedCount?: number;
+		onBatchDelete?: () => void;
+		onBatchStatus?: (status: NodeStatus) => void;
+		onDeselectAll?: () => void;
 	}
 
 	let {
@@ -48,6 +53,10 @@
 		onRedo,
 		canUndo,
 		canRedo,
+		selectedCount = 0,
+		onBatchDelete,
+		onBatchStatus,
+		onDeselectAll,
 	}: Props = $props();
 
 	const NODE_TYPES: NodeType[] = ['FLOW', 'BRANCH', 'TASK', 'BUG', 'API', 'UI', 'GROUP'];
@@ -139,6 +148,42 @@
 	class="flex flex-col gap-1 p-2 rounded-xl shadow-xl"
 	style="background: rgba(30,41,59,0.85); backdrop-filter: blur(12px); border: 1px solid var(--color-border);"
 >
+	<!-- Batch context bar -->
+	{#if selectedCount > 1}
+		<div
+			class="flex items-center gap-1.5 pb-1.5 mb-0.5 border-b filter-slide-in"
+			style="border-color: var(--color-border);"
+		>
+			<span class="text-xs font-semibold px-1" style="color: var(--color-text);">
+				{selectedCount} selected
+			</span>
+			<button
+				onclick={onBatchDelete}
+				class="flex items-center gap-1 px-2 h-7 rounded-md text-xs font-medium transition-colors"
+				style="background: rgba(239,68,68,0.15); color: #f87171;"
+				title="Delete selected"
+			>
+				<Trash2 size={14} />
+				Delete
+			</button>
+			{#each STATUS_OPTIONS as opt}
+				<button
+					onclick={() => onBatchStatus?.(opt.value)}
+					class="w-3 h-3 rounded-full transition-transform hover:scale-125"
+					style="background: {opt.color}; border: 2px solid rgba(255,255,255,0.2);"
+					title="Set {opt.value}"
+				></button>
+			{/each}
+			<button
+				onclick={onDeselectAll}
+				class="w-7 h-7 flex items-center justify-center rounded-md transition-colors btn-muted ml-auto"
+				title="Deselect all"
+			>
+				<X size={14} />
+			</button>
+		</div>
+	{/if}
+
 	<!-- Main toolbar row -->
 	<div class="flex items-center gap-0.5">
 

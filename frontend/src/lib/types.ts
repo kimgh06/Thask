@@ -74,6 +74,17 @@ export interface NodeDetail extends GraphNode {
 	history: NodeHistoryEntry[];
 }
 
+export interface StatusChange {
+	nodeId: string;
+	oldStatus: NodeStatus;
+	newStatus: NodeStatus;
+}
+
+export interface NodeUpdateResult {
+	node: GraphNode;
+	propagated: StatusChange[];
+}
+
 export interface ImpactResult {
 	changedNodes: GraphNode[];
 	impactedNodes: GraphNode[];

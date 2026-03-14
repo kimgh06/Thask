@@ -2,12 +2,14 @@
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
 	import { graphStore } from '$lib/stores/graph.svelte';
+	import { undoStack } from '$lib/stores/undo.svelte';
+	import { createNodeCmd, deleteNodeCmd, createEdgeCmd, deleteEdgeCmd, batchDeleteCmd } from '$lib/commands/node';
 	import CytoscapeCanvas from '$lib/components/CytoscapeCanvas.svelte';
 	import GraphToolbar from '$lib/components/GraphToolbar.svelte';
 	import AddNodeModal from '$lib/components/AddNodeModal.svelte';
 	import EdgeColorPopover from '$lib/components/EdgeColorPopover.svelte';
 	import NodeDetailPanel from '$lib/components/NodeDetailPanel.svelte';
-	import type { GraphNode, GraphEdge, NodeDetail, NodeType, EdgeType } from '$lib/types';
+	import type { GraphNode, GraphEdge, NodeDetail, NodeType, NodeStatus, EdgeType, NodeUpdateResult, StatusChange, ImpactResult } from '$lib/types';
 
 	let nodes = $state<GraphNode[]>([]);
 	let edges = $state<GraphEdge[]>([]);
@@ -28,9 +30,14 @@
 	let selectedEdge = $state<GraphEdge | null>(null);
 	let edgePopoverPos = $state({ x: 0, y: 0 });
 
-	// Undo/redo stubs (to be implemented later)
-	let canUndo = $state(false);
-	let canRedo = $state(false);
+	// Mutation context for undo commands
+	const mutCtx = {
+		get projectId() { return projectId; },
+		getNodes: () => nodes,
+		setNodes: (v: GraphNode[]) => { nodes = v; },
+		getEdges: () => edges,
+		setEdges: (v: GraphEdge[]) => { edges = v; },
+	};
 
 	// Zoom level for status bar
 	let zoomLevel = $state(1);
@@ -77,6 +84,25 @@
 		}
 	});
 
+	// React to impact mode toggle
+	$effect(() => {
+		const active = graphStore.impactMode;
+		if (active && projectId) {
+			fetchImpactData();
+		} else {
+			canvas?.clearImpactClasses();
+		}
+	});
+
+	async function fetchImpactData() {
+		const res = await api.get<ImpactResult>(`/api/projects/${projectId}/impact?depth=2`);
+		if (res.data && graphStore.impactMode) {
+			const changedIds = res.data.changedNodes.map((n) => n.id);
+			const affectedIds = res.data.impactedNodes.map((n) => n.id);
+			canvas?.applyImpactClasses(changedIds, affectedIds);
+		}
+	}
+
 	async function fetchNodeDetail(nodeId: string) {
 		detailLoading = true;
 		const res = await api.get<NodeDetail>(`/api/projects/${projectId}/nodes/${nodeId}`);
@@ -103,56 +129,68 @@
 	// --- Node CRUD ---
 	async function handleAddNode(data: { title: string; type: NodeType }) {
 		showAddNodeModal = false;
-		const res = await api.post<GraphNode>(`/api/projects/${projectId}/nodes`, {
-			title: data.title,
-			type: data.type,
-			status: 'IN_PROGRESS',
-		});
-		if (res.data) {
-			nodes = [...nodes, res.data];
-		}
+		await undoStack.run(createNodeCmd(mutCtx, { title: data.title, type: data.type }));
 	}
 
 	async function handleAddGroup() {
-		const res = await api.post<GraphNode>(`/api/projects/${projectId}/nodes`, {
-			title: 'New Group',
-			type: 'GROUP',
-			status: 'IN_PROGRESS',
-		});
-		if (res.data) {
-			nodes = [...nodes, res.data];
-		}
+		await undoStack.run(createNodeCmd(mutCtx, { title: 'New Group', type: 'GROUP' }));
 	}
 
 	async function handleUpdateNode(nodeId: string, data: Record<string, unknown>) {
-		const res = await api.patch<GraphNode>(`/api/projects/${projectId}/nodes/${nodeId}`, data);
+		const res = await api.patch<NodeUpdateResult>(`/api/projects/${projectId}/nodes/${nodeId}`, data);
 		if (res.data) {
-			nodes = nodes.map((n) => (n.id === nodeId ? res.data! : n));
+			const updated = res.data.node;
+			const propagated = res.data.propagated ?? [];
+
+			nodes = nodes.map((n) => (n.id === nodeId ? updated : n));
 			if (selectedNodeDetail?.id === nodeId) {
-				selectedNodeDetail = { ...selectedNodeDetail, ...res.data };
+				selectedNodeDetail = { ...selectedNodeDetail, ...updated };
+			}
+
+			// Apply cascaded status changes to local nodes
+			if (propagated.length > 0) {
+				const changeMap = new Map(propagated.map((c) => [c.nodeId, c.newStatus]));
+				nodes = nodes.map((n) => changeMap.has(n.id) ? { ...n, status: changeMap.get(n.id)! } : n);
+				canvas?.animateCascade(propagated);
 			}
 		}
 	}
 
 	async function handleDeleteNode(nodeId: string) {
-		const res = await api.delete(`/api/projects/${projectId}/nodes/${nodeId}`);
+		const node = nodes.find((n) => n.id === nodeId);
+		if (!node) return;
+		const connectedEdges = edges.filter((e) => e.sourceId === nodeId || e.targetId === nodeId);
+		await undoStack.run(deleteNodeCmd(mutCtx, node, connectedEdges));
+		graphStore.clearSelection();
+	}
+
+	async function handleBatchDelete() {
+		const ids = [...graphStore.selectedNodeIds];
+		if (ids.length === 0) return;
+		const idSet = new Set(ids);
+		const deletedNodes = nodes.filter((n) => idSet.has(n.id));
+		const deletedEdges = edges.filter((e) => idSet.has(e.sourceId) || idSet.has(e.targetId));
+		await undoStack.run(batchDeleteCmd(mutCtx, deletedNodes, deletedEdges));
+		graphStore.clearSelection();
+	}
+
+	async function handleBatchStatus(status: NodeStatus) {
+		const ids = [...graphStore.selectedNodeIds];
+		if (ids.length === 0) return;
+		const res = await api.patch(`/api/projects/${projectId}/nodes/batch-status`, { ids, status });
 		if (!res.error) {
-			nodes = nodes.filter((n) => n.id !== nodeId);
-			edges = edges.filter((e) => e.sourceId !== nodeId && e.targetId !== nodeId);
-			graphStore.clearSelection();
+			const idSet = new Set(ids);
+			nodes = nodes.map((n) => idSet.has(n.id) ? { ...n, status } : n);
 		}
 	}
 
 	// --- Edge CRUD ---
 	async function handleCreateEdge(sourceId: string, targetId: string) {
-		const res = await api.post<GraphEdge>(`/api/projects/${projectId}/edges`, {
-			sourceId,
-			targetId,
-			edgeType: 'related',
-		});
-		if (res.data) {
-			edges = [...edges, res.data];
-		}
+		const duplicate = edges.some(
+			(e) => e.sourceId === sourceId && e.targetId === targetId && e.edgeType === 'related',
+		);
+		if (duplicate) return;
+		await undoStack.run(createEdgeCmd(mutCtx, { sourceId, targetId }));
 	}
 
 	async function handleEdgeTypeChange(edgeType: EdgeType) {
@@ -181,12 +219,9 @@
 
 	async function handleDeleteEdge() {
 		if (!selectedEdge) return;
-		const edgeId = selectedEdge.id;
-		const res = await api.delete(`/api/projects/${projectId}/edges/${edgeId}`);
-		if (!res.error) {
-			edges = edges.filter((e) => e.id !== edgeId);
-			graphStore.clearSelection();
-		}
+		const edge = selectedEdge;
+		await undoStack.run(deleteEdgeCmd(mutCtx, edge));
+		graphStore.clearSelection();
 	}
 
 	async function handleUpdateNodeParent(nodeId: string, parentId: string | null) {
@@ -210,11 +245,12 @@
 		const mod = e.ctrlKey || e.metaKey; // Ctrl (Win/Linux) = Cmd (Mac)
 		const key = e.key.toLowerCase();
 
-		// Delete/Backspace — remove selected node or edge
-		// Mac: Backspace or Cmd+Backspace, Win: Delete or Backspace
+		// Delete/Backspace — remove selected node(s) or edge
 		if (e.key === 'Delete' || e.key === 'Backspace') {
 			e.preventDefault();
-			if (graphStore.selectedNodeId) {
+			if (graphStore.selectedNodeIds.size > 1) {
+				handleBatchDelete();
+			} else if (graphStore.selectedNodeId) {
 				handleDeleteNode(graphStore.selectedNodeId);
 			} else if (graphStore.selectedEdgeId) {
 				handleDeleteEdge();
@@ -230,12 +266,16 @@
 			return;
 		}
 
-		// Mod+Z — Undo (stub)
-		if (mod && !e.shiftKey && key === 'z') { e.preventDefault(); return; }
-		// Mod+Shift+Z / Mod+Y — Redo (stub)
-		if ((mod && e.shiftKey && key === 'z') || (mod && key === 'y')) { e.preventDefault(); return; }
-		// Mod+A — Select all (prevent browser default, future use)
-		if (mod && key === 'a') { e.preventDefault(); return; }
+		// Mod+Z — Undo
+		if (mod && !e.shiftKey && key === 'z') { e.preventDefault(); undoStack.undo(); return; }
+		// Mod+Shift+Z / Mod+Y — Redo
+		if ((mod && e.shiftKey && key === 'z') || (mod && key === 'y')) { e.preventDefault(); undoStack.redo(); return; }
+		// Mod+A — Select all nodes
+		if (mod && key === 'a') {
+			e.preventDefault();
+			graphStore.selectNodes(nodes.map((n) => n.id));
+			return;
+		}
 
 		// Single-key shortcuts (only when no modifier)
 		if (mod || e.altKey) return;
@@ -286,10 +326,14 @@
 					isImpactActive={graphStore.impactMode}
 					{nodes}
 					onFocusNode={(id) => canvas?.focusNode(id)}
-					onUndo={() => {}}
-					onRedo={() => {}}
-					{canUndo}
-					{canRedo}
+					onUndo={() => undoStack.undo()}
+					onRedo={() => undoStack.redo()}
+					canUndo={undoStack.canUndo}
+					canRedo={undoStack.canRedo}
+					selectedCount={graphStore.selectedNodeIds.size}
+					onBatchDelete={handleBatchDelete}
+					onBatchStatus={handleBatchStatus}
+					onDeselectAll={() => graphStore.clearSelection()}
 				/>
 			</div>
 

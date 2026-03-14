@@ -238,7 +238,7 @@ func (h *NodeHandler) Update(c echo.Context) error {
 		}
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{"data": updated, "propagated": propagated})
+	return c.JSON(http.StatusOK, dto.OK(map[string]any{"node": updated, "propagated": propagated}))
 }
 
 func (h *NodeHandler) Delete(c echo.Context) error {
@@ -282,6 +282,44 @@ func (h *NodeHandler) BatchUpdatePositions(c echo.Context) error {
 
 	if err := h.nodeRepo.BatchUpdatePositions(ctx, projectID, positions); err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update positions"))
+	}
+
+	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
+}
+
+func (h *NodeHandler) BatchDelete(c echo.Context) error {
+	var req dto.BatchDeleteRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.Err("Invalid request body"))
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.Err(err.Error()))
+	}
+
+	ctx := c.Request().Context()
+	projectID := c.Param("projectId")
+
+	if err := h.nodeRepo.BatchDelete(ctx, projectID, req.IDs); err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to delete nodes"))
+	}
+
+	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
+}
+
+func (h *NodeHandler) BatchUpdateStatus(c echo.Context) error {
+	var req dto.BatchStatusRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.Err("Invalid request body"))
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.Err(err.Error()))
+	}
+
+	ctx := c.Request().Context()
+	projectID := c.Param("projectId")
+
+	if err := h.nodeRepo.BatchUpdateStatus(ctx, projectID, req.IDs, model.NodeStatus(req.Status)); err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update status"))
 	}
 
 	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
