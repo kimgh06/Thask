@@ -16,6 +16,7 @@
 		Trash2,
 	} from 'lucide-svelte';
 	import type { GraphNode, NodeType, NodeStatus } from '$lib/types';
+	import { NODE_TYPES, STATUS_COLORS } from '$lib/constants';
 
 	interface Props {
 		onAddNode: () => void;
@@ -59,12 +60,11 @@
 		onDeselectAll,
 	}: Props = $props();
 
-	const NODE_TYPES: NodeType[] = ['FLOW', 'BRANCH', 'TASK', 'BUG', 'API', 'UI', 'GROUP'];
-	const STATUS_OPTIONS: { value: NodeStatus; color: string }[] = [
-		{ value: 'PASS', color: '#22c55e' },
-		{ value: 'FAIL', color: '#ef4444' },
-		{ value: 'IN_PROGRESS', color: '#6366f1' },
-		{ value: 'BLOCKED', color: '#f59e0b' },
+	const STATUS_ITEMS: { value: NodeStatus; color: string }[] = [
+		{ value: 'PASS', color: STATUS_COLORS.PASS },
+		{ value: 'FAIL', color: STATUS_COLORS.FAIL },
+		{ value: 'IN_PROGRESS', color: STATUS_COLORS.IN_PROGRESS },
+		{ value: 'BLOCKED', color: STATUS_COLORS.BLOCKED },
 	];
 
 	let showFilters = $state(false);
@@ -166,7 +166,7 @@
 				<Trash2 size={14} />
 				Delete
 			</button>
-			{#each STATUS_OPTIONS as opt}
+			{#each STATUS_ITEMS as opt}
 				<button
 					onclick={() => onBatchStatus?.(opt.value)}
 					class="w-3 h-3 rounded-full transition-transform hover:scale-125"
@@ -349,7 +349,7 @@
 			<div class="flex items-center gap-1 flex-wrap">
 				<span class="text-xs mr-1 flex-shrink-0" style="color: var(--color-text-muted);">Status:</span
 				>
-				{#each STATUS_OPTIONS as opt}
+				{#each STATUS_ITEMS as opt}
 					<button
 						onclick={() =>
 							(activeStatusFilter = activeStatusFilter === opt.value ? null : opt.value)}

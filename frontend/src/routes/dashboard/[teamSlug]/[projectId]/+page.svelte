@@ -10,6 +10,7 @@
 	import EdgeColorPopover from '$lib/components/EdgeColorPopover.svelte';
 	import NodeDetailPanel from '$lib/components/NodeDetailPanel.svelte';
 	import type { GraphNode, GraphEdge, NodeDetail, NodeType, NodeStatus, EdgeType, NodeUpdateResult, StatusChange, ImpactResult } from '$lib/types';
+	import { createKeydownHandler } from '$lib/shortcuts';
 
 	let nodes = $state<GraphNode[]>([]);
 	let edges = $state<GraphEdge[]>([]);
@@ -236,61 +237,27 @@
 		canvas?.focusNode(nodeId);
 	}
 
-	function handleKeydown(e: KeyboardEvent) {
-		// Skip when typing in inputs
-		const tag = (e.target as HTMLElement)?.tagName;
-		if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-		if ((e.target as HTMLElement)?.isContentEditable) return;
-
-		const mod = e.ctrlKey || e.metaKey; // Ctrl (Win/Linux) = Cmd (Mac)
-		const key = e.key.toLowerCase();
-
-		// Delete/Backspace — remove selected node(s) or edge
-		if (e.key === 'Delete' || e.key === 'Backspace') {
-			e.preventDefault();
-			if (graphStore.selectedNodeIds.size > 1) {
-				handleBatchDelete();
-			} else if (graphStore.selectedNodeId) {
-				handleDeleteNode(graphStore.selectedNodeId);
-			} else if (graphStore.selectedEdgeId) {
-				handleDeleteEdge();
-			}
-			return;
-		}
-
-		// Escape — close panel / deselect
-		if (e.key === 'Escape') {
+	const handleKeydown = createKeydownHandler({
+		deleteSelection: () => {
+			if (graphStore.selectedNodeIds.size > 1) handleBatchDelete();
+			else if (graphStore.selectedNodeId) handleDeleteNode(graphStore.selectedNodeId);
+			else if (graphStore.selectedEdgeId) handleDeleteEdge();
+		},
+		escape: () => {
 			if (showAddNodeModal) { showAddNodeModal = false; return; }
-			if (selectedEdge) { graphStore.clearSelection(); return; }
-			if (graphStore.selectedNodeId) { graphStore.clearSelection(); return; }
-			return;
-		}
-
-		// Mod+Z — Undo
-		if (mod && !e.shiftKey && key === 'z') { e.preventDefault(); undoStack.undo(); return; }
-		// Mod+Shift+Z / Mod+Y — Redo
-		if ((mod && e.shiftKey && key === 'z') || (mod && key === 'y')) { e.preventDefault(); undoStack.redo(); return; }
-		// Mod+A — Select all nodes
-		if (mod && key === 'a') {
-			e.preventDefault();
-			graphStore.selectNodes(nodes.map((n) => n.id));
-			return;
-		}
-
-		// Single-key shortcuts (only when no modifier)
-		if (mod || e.altKey) return;
-
-		switch (key) {
-			case 'n': showAddNodeModal = true; break;
-			case 'g': handleAddGroup(); break;
-			case '+': case '=': canvas?.zoomIn(); break;
-			case '-': canvas?.zoomOut(); break;
-			case '0': canvas?.fitView(); break;
-			case 'l': canvas?.runLayout(); break;
-			case 'i': graphStore.toggleImpactMode(); break;
-			default: return; // don't prevent default for unhandled keys
-		}
-	}
+			if (selectedEdge || graphStore.selectedNodeId) graphStore.clearSelection();
+		},
+		undo: () => undoStack.undo(),
+		redo: () => undoStack.redo(),
+		selectAll: () => graphStore.selectNodes(nodes.map((n) => n.id)),
+		addNode: () => { showAddNodeModal = true; },
+		addGroup: () => handleAddGroup(),
+		zoomIn: () => canvas?.zoomIn(),
+		zoomOut: () => canvas?.zoomOut(),
+		fitView: () => canvas?.fitView(),
+		runLayout: () => canvas?.runLayout(),
+		toggleImpact: () => graphStore.toggleImpactMode(),
+	});
 </script>
 
 <svelte:window onkeydown={handleKeydown} />

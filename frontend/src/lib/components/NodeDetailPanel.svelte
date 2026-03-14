@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { GraphNode, NodeType, NodeStatus, NodeHistoryEntry } from '$lib/types';
+	import { NODE_TYPES, STATUS_OPTIONS, TYPE_COLORS, STATUS_COLORS, STATUS_LABELS } from '$lib/constants';
 	import { X, Trash2, Clock, Tag, Link2, History, FileText, MoreHorizontal } from 'lucide-svelte';
 
 	interface Props {
@@ -25,33 +26,6 @@
 		ondelete,
 		onselectnode,
 	}: Props = $props();
-
-	const NODE_TYPES: NodeType[] = ['FLOW', 'BRANCH', 'TASK', 'BUG', 'API', 'UI', 'GROUP'];
-	const STATUS_OPTIONS: NodeStatus[] = ['PASS', 'FAIL', 'IN_PROGRESS', 'BLOCKED'];
-
-	const TYPE_COLORS: Record<NodeType, string> = {
-		FLOW: '#6366f1',
-		BRANCH: '#8b5cf6',
-		TASK: '#3b82f6',
-		BUG: '#ef4444',
-		API: '#22c55e',
-		UI: '#f59e0b',
-		GROUP: '#64748b',
-	};
-
-	const STATUS_COLORS: Record<NodeStatus, string> = {
-		PASS: '#22c55e',
-		FAIL: '#ef4444',
-		IN_PROGRESS: '#6366f1',
-		BLOCKED: '#f59e0b',
-	};
-
-	const STATUS_LABELS: Record<NodeStatus, string> = {
-		PASS: 'Pass',
-		FAIL: 'Fail',
-		IN_PROGRESS: 'In Progress',
-		BLOCKED: 'Blocked',
-	};
 
 	type Tab = 'details' | 'relations' | 'history';
 	let activeTab = $state<Tab>('details');

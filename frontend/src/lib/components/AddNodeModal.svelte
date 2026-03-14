@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { NodeType } from '$lib/types';
+	import { NODE_TYPES_NO_GROUP, TYPE_COLORS } from '$lib/constants';
 
 	interface Props {
 		onsubmit: (data: { title: string; type: NodeType }) => void;
@@ -7,18 +8,6 @@
 	}
 
 	let { onsubmit, onclose }: Props = $props();
-
-	const NODE_TYPES: NodeType[] = ['FLOW', 'BRANCH', 'TASK', 'BUG', 'API', 'UI'];
-
-	const TYPE_COLORS: Record<NodeType, string> = {
-		FLOW: '#6366f1',
-		BRANCH: '#8b5cf6',
-		TASK: '#3b82f6',
-		BUG: '#ef4444',
-		API: '#22c55e',
-		UI: '#f59e0b',
-		GROUP: '#64748b',
-	};
 
 	let title = $state('');
 	let selectedType = $state<NodeType>('TASK');
@@ -75,7 +64,7 @@
 		<div class="flex flex-col gap-2">
 			<span class="text-sm font-medium" style="color: var(--color-text-muted);">Type</span>
 			<div class="grid grid-cols-3 gap-2">
-				{#each NODE_TYPES as type}
+				{#each NODE_TYPES_NO_GROUP as type}
 					<button
 						onclick={() => (selectedType = type)}
 						class="py-2 px-3 rounded-lg text-sm font-medium transition-all flex items-center gap-2"

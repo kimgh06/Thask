@@ -1,31 +1,5 @@
 import type { StylesheetStyle } from 'cytoscape';
-
-const STATUS_COLORS = {
-  PASS: '#34d399',
-  FAIL: '#f87171',
-  IN_PROGRESS: '#818cf8',
-  BLOCKED: '#fbbf24',
-};
-
-const NODE_SHAPES: Record<string, string> = {
-  FLOW: 'round-rectangle',
-  BRANCH: 'diamond',
-  TASK: 'rectangle',
-  BUG: 'hexagon',
-  API: 'barrel',
-  UI: 'ellipse',
-  GROUP: 'round-rectangle',
-};
-
-const NODE_COLORS: Record<string, string> = {
-  FLOW: '#60a5fa',
-  BRANCH: '#a78bfa',
-  TASK: '#22d3ee',
-  BUG: '#f87171',
-  API: '#fb923c',
-  UI: '#34d399',
-  GROUP: '#94a3b8',
-};
+import { TYPE_COLORS, STATUS_COLORS, NODE_SHAPES } from '$lib/constants';
 
 export function getGraphStyles(): StylesheetStyle[] {
   return [
@@ -59,8 +33,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: `node[nodeType="${type}"]`,
       style: {
         shape,
-        'border-color': NODE_COLORS[type] ?? '#475569',
-        'background-color': NODE_COLORS[type] ?? '#475569',
+        'border-color': TYPE_COLORS[type as keyof typeof TYPE_COLORS] ?? '#475569',
+        'background-color': TYPE_COLORS[type as keyof typeof TYPE_COLORS] ?? '#475569',
         'background-opacity': 0.125,
       } as Record<string, string | number>,
     })),
