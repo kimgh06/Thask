@@ -281,7 +281,7 @@
 			/>
 
 			<!-- Floating toolbar -->
-			<div class="absolute top-3 left-3 z-10">
+			<div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-10">
 				<GraphToolbar
 					onAddNode={() => (showAddNodeModal = true)}
 					onAddGroup={handleAddGroup}
@@ -305,7 +305,7 @@
 			</div>
 
 			<!-- Status bar -->
-			<div class="absolute bottom-3 left-3 z-10 flex items-center gap-3 text-xs px-3 py-1.5 rounded-lg"
+			<div class="absolute top-3 right-3 z-10 flex items-center gap-3 text-xs px-3 py-1.5 rounded-lg"
 				style="background: rgba(30,41,59,0.85); backdrop-filter: blur(12px); color: var(--color-text-muted); border: 1px solid var(--color-border);">
 				<span>{nodes.length} nodes</span>
 				<span style="color: var(--color-border);">&middot;</span>

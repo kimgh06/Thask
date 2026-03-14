@@ -190,17 +190,17 @@
 		<!-- Group 1: Add Node, Add Group -->
 		<button
 			onclick={onAddNode}
-			class="flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-colors"
+			class="toolbar-btn flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-semibold transition-colors"
 			style="background: var(--color-primary); color: white;"
-			title="Add Node"
+			data-tooltip="Add Node (N)"
 		>
 			<Plus size={16} />
 			Node
 		</button>
 		<button
 			onclick={onAddGroup}
-			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
-			title="Add Group"
+			class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
+			data-tooltip="Add Group (G)"
 		>
 			<Group size={16} />
 		</button>
@@ -210,29 +210,29 @@
 		<!-- Group 2: Zoom In, Zoom Out, Fit View, Layout -->
 		<button
 			onclick={onZoomIn}
-			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
-			title="Zoom In"
+			class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
+			data-tooltip="Zoom In (+)"
 		>
 			<ZoomIn size={16} />
 		</button>
 		<button
 			onclick={onZoomOut}
-			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
-			title="Zoom Out"
+			class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
+			data-tooltip="Zoom Out (-)"
 		>
 			<ZoomOut size={16} />
 		</button>
 		<button
 			onclick={onFitView}
-			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
-			title="Fit View"
+			class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
+			data-tooltip="Fit View (0)"
 		>
 			<Maximize size={16} />
 		</button>
 		<button
 			onclick={onRunLayout}
-			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
-			title="Auto Layout"
+			class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
+			data-tooltip="Auto Layout (L)"
 		>
 			<LayoutGrid size={16} />
 		</button>
@@ -243,18 +243,18 @@
 		<button
 			onclick={onUndo}
 			disabled={!canUndo}
-			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
+			class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
 			style="opacity: {canUndo ? '1' : '0.35'};"
-			title="Undo (Ctrl+Z)"
+			data-tooltip="Undo (⌘Z)"
 		>
 			<Undo2 size={16} />
 		</button>
 		<button
 			onclick={onRedo}
 			disabled={!canRedo}
-			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
+			class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
 			style="opacity: {canRedo ? '1' : '0.35'};"
-			title="Redo (Ctrl+Y)"
+			data-tooltip="Redo (⌘⇧Z)"
 		>
 			<Redo2 size={16} />
 		</button>
@@ -264,9 +264,9 @@
 		<!-- Group 4: Filter, Search, Impact -->
 		<button
 			onclick={() => (showFilters = !showFilters)}
-			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors relative"
+			class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors relative"
 			style="background: {showFilters ? 'var(--color-primary)' : 'var(--color-surface-hover)'}; color: {showFilters ? 'white' : 'var(--color-text-muted)'};"
-			title="Toggle Filters"
+			data-tooltip="Filter"
 		>
 			<Filter size={16} />
 			{#if activeTypeFilter || activeStatusFilter}
@@ -294,8 +294,8 @@
 				{/if}
 				<button
 					onclick={closeSearch}
-					class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
-					title="Close Search (Esc)"
+					class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
+					data-tooltip="Close (Esc)"
 				>
 					<X size={16} />
 				</button>
@@ -303,8 +303,8 @@
 		{:else}
 			<button
 				onclick={openSearch}
-				class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
-				title="Search (Ctrl+F)"
+				class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
+				data-tooltip="Search (⌘F)"
 			>
 				<Search size={16} />
 			</button>
@@ -312,8 +312,8 @@
 
 		<button
 			onclick={onToggleImpact}
-			class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors {isImpactActive ? 'impact-active' : 'btn-muted'}"
-			title="Toggle Impact Mode"
+			class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors {isImpactActive ? 'impact-active' : 'btn-muted'}"
+			data-tooltip="Impact Mode (I)"
 		>
 			<Zap size={16} />
 		</button>
@@ -395,6 +395,37 @@
 		50% {
 			box-shadow: 0 0 0 6px rgba(245, 158, 11, 0);
 		}
+	}
+
+	/* Tooltip */
+	.toolbar-btn {
+		position: relative;
+	}
+
+	.toolbar-btn::after {
+		content: attr(data-tooltip);
+		position: absolute;
+		bottom: calc(100% + 6px);
+		left: 50%;
+		transform: translateX(-50%) translateY(-2px);
+		padding: 4px 8px;
+		border-radius: 6px;
+		font-size: 11px;
+		font-weight: 500;
+		white-space: nowrap;
+		background: rgba(15, 23, 42, 0.95);
+		color: #e2e8f0;
+		border: 1px solid rgba(148, 163, 184, 0.15);
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity 0.15s ease, transform 0.15s ease;
+		z-index: 50;
+	}
+
+	.toolbar-btn:hover::after {
+		opacity: 1;
+		transform: translateX(-50%) translateY(0px);
 	}
 
 	.filter-slide-in {
