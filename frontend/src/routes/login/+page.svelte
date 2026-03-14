@@ -2,6 +2,12 @@
 	import { goto } from '$app/navigation';
 	import { authStore } from '$lib/stores/auth.svelte';
 
+	$effect(() => {
+		if (!authStore.loading && authStore.isAuthenticated) {
+			goto('/dashboard');
+		}
+	});
+
 	let email = $state('');
 	let password = $state('');
 	let error = $state('');
@@ -20,6 +26,11 @@
 		}
 	}
 </script>
+
+<svelte:head>
+	<title>Sign in — Thask</title>
+	<meta name="description" content="Sign in to your Thask account to manage product flows and QA impact analysis." />
+</svelte:head>
 
 <div class="flex items-center justify-center min-h-screen">
 	<div class="w-full max-w-sm p-8 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]">

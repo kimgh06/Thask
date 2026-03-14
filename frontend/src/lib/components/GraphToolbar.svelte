@@ -97,15 +97,12 @@
 			(n) => n.title.toLowerCase().includes(q) || (n.description ?? '').toLowerCase().includes(q),
 		);
 		searchIndex = 0;
-		if (searchResults.length > 0) {
-			onFocusNode(searchResults[0].id);
-		}
 	});
 
 	function cycleSearch() {
 		if (searchResults.length === 0) return;
-		searchIndex = (searchIndex + 1) % searchResults.length;
 		onFocusNode(searchResults[searchIndex].id);
+		searchIndex = (searchIndex + 1) % searchResults.length;
 	}
 
 	function openSearch() {

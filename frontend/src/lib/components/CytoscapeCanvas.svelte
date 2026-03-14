@@ -4,7 +4,7 @@
 	import fcose from 'cytoscape-fcose';
 	import edgehandles from 'cytoscape-edgehandles';
 	import { getGraphStyles } from '$lib/cytoscape/styles';
-	import { getFcoseLayout } from '$lib/cytoscape/layouts';
+	import { getFcoseLayout, runGroupAwareLayout } from '$lib/cytoscape/layouts';
 	import { getChildNodes, getDescendantNodes, getDescendantIdSet } from '$lib/cytoscape/groupHelpers';
 	import { graphStore } from '$lib/stores/graph.svelte';
 	import { api } from '$lib/api';
@@ -88,8 +88,14 @@
 
 	export function runLayout() {
 		if (!cy || cy.nodes().length === 0) return;
-		cy.layout(getFcoseLayout()).run();
-		trackTimeout(() => savePositions(), 1500);
+		// Check if any nodes have a parentId — if so, use group-aware layout
+		const hasChildren = cy.nodes('[parentId]').length > 0;
+		if (hasChildren) {
+			runGroupAwareLayout(cy, () => savePositions());
+		} else {
+			cy.layout(getFcoseLayout()).run();
+			savePositions();
+		}
 	}
 
 	export function fitView() {
@@ -110,7 +116,8 @@
 		if (!cy) return;
 		const node = cy.getElementById(nodeId);
 		if (!node.length) return;
-		cy.animate({ center: { eles: node }, zoom: 1.5 }, { duration: 400 });
+		cy.stop(); // cancel any running animation
+		cy.animate({ center: { eles: node } }, { duration: 200 });
 		cy.nodes().removeClass('search-highlight');
 		node.addClass('search-highlight');
 		trackTimeout(() => { if (node.inside()) node.removeClass('search-highlight'); }, 2000);

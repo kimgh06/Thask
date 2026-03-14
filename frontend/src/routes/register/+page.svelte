@@ -22,6 +22,11 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Sign up — Thask</title>
+	<meta name="description" content="Create a free Thask account to visualize product flows and track QA impact." />
+</svelte:head>
+
 <div class="flex items-center justify-center min-h-screen">
 	<div class="w-full max-w-sm p-8 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]">
 		<h1 class="text-2xl font-bold mb-6 text-center">Thask</h1>
