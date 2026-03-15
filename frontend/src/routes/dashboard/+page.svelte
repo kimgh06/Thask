@@ -7,14 +7,17 @@
 	let newTeamName = $state('');
 	let newTeamSlug = $state('');
 	let showCreateTeam = $state(false);
+	let loadError = $state('');
 
 	$effect(() => {
 		if (authStore.isAuthenticated) loadTeams();
 	});
 
 	async function loadTeams() {
+		loadError = '';
 		const res = await api.get<Team[]>('/api/teams');
-		if (res.data) teams = res.data;
+		if (res.data) { teams = res.data; }
+		else { loadError = 'Failed to load teams.'; }
 	}
 
 	async function createTeam() {
@@ -52,6 +55,10 @@
 				<button onclick={createTeam} class="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm">Create</button>
 			</div>
 		</div>
+	{/if}
+
+	{#if loadError}
+		<p class="text-sm mb-4" style="color: var(--color-danger, #ef4444);">{loadError}</p>
 	{/if}
 
 	<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

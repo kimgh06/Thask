@@ -5,6 +5,7 @@
 
 	let projects = $state<Project[]>([]);
 	let newProjectName = $state('');
+	let loadError = $state('');
 
 	const teamSlug = $derived(page.params.teamSlug);
 
@@ -13,8 +14,10 @@
 	});
 
 	async function loadProjects() {
+		loadError = '';
 		const res = await api.get<Project[]>(`/api/teams/${teamSlug}/projects`);
-		if (res.data) projects = res.data;
+		if (res.data) { projects = res.data; }
+		else { loadError = 'Failed to load projects.'; }
 	}
 
 	async function createProject() {
@@ -32,6 +35,10 @@
 		<input bind:value={newProjectName} placeholder="New project name" class="px-3 py-2 rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)]" />
 		<button onclick={createProject} class="px-4 py-2 rounded-lg bg-[var(--color-primary)] text-white text-sm">Create Project</button>
 	</div>
+
+	{#if loadError}
+		<p class="text-sm mb-4" style="color: var(--color-danger, #ef4444);">{loadError}</p>
+	{/if}
 
 	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 		{#each projects as project}

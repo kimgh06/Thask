@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/thask/backend/internal/model"
 )
@@ -117,22 +118,24 @@ func (r *NodeRepo) BatchUpdatePositions(ctx context.Context, projectID string, p
 	Width  *float64
 	Height *float64
 }) error {
-	batch := &strings.Builder{}
-	batch.WriteString("BEGIN;")
+	b := &pgx.Batch{}
 	for _, p := range positions {
 		if p.Width != nil && p.Height != nil {
-			fmt.Fprintf(batch,
-				"UPDATE nodes SET position_x=%f, position_y=%f, width=%f, height=%f, updated_at=now() WHERE id='%s' AND project_id='%s';",
+			b.Queue("UPDATE nodes SET position_x=$1, position_y=$2, width=$3, height=$4, updated_at=now() WHERE id=$5 AND project_id=$6",
 				p.X, p.Y, *p.Width, *p.Height, p.ID, projectID)
 		} else {
-			fmt.Fprintf(batch,
-				"UPDATE nodes SET position_x=%f, position_y=%f, updated_at=now() WHERE id='%s' AND project_id='%s';",
+			b.Queue("UPDATE nodes SET position_x=$1, position_y=$2, updated_at=now() WHERE id=$3 AND project_id=$4",
 				p.X, p.Y, p.ID, projectID)
 		}
 	}
-	batch.WriteString("COMMIT;")
-	_, err := r.pool.Exec(ctx, batch.String())
-	return err
+	br := r.pool.SendBatch(ctx, b)
+	defer br.Close()
+	for range positions {
+		if _, err := br.Exec(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *NodeRepo) FindChangedSince(ctx context.Context, projectID string, since time.Time) ([]model.Node, error) {

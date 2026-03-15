@@ -16,6 +16,7 @@
 	let nodes = $state<GraphNode[]>([]);
 	let edges = $state<GraphEdge[]>([]);
 	let loading = $state(true);
+	let loadError = $state('');
 
 	const projectId = $derived(page.params.projectId ?? '');
 
@@ -27,6 +28,7 @@
 	// Node detail state
 	let selectedNodeDetail = $state<NodeDetail | null>(null);
 	let detailLoading = $state(false);
+	let detailRequestId = 0;
 
 	// Edge popover state
 	let selectedEdge = $state<GraphEdge | null>(null);
@@ -48,6 +50,7 @@
 		const currentProjectId = projectId;
 		if (!currentProjectId) return;
 		loading = true;
+		loadError = '';
 		Promise.all([
 			api.get<GraphNode[]>(`/api/projects/${currentProjectId}/nodes`),
 			api.get<GraphEdge[]>(`/api/projects/${currentProjectId}/edges`),
@@ -58,6 +61,7 @@
 			loading = false;
 		}).catch(() => {
 			if (projectId !== currentProjectId) return;
+			loadError = 'Failed to load graph data.';
 			loading = false;
 		});
 	});
@@ -100,8 +104,10 @@
 	});
 
 	async function fetchNodeDetail(nodeId: string) {
+		const requestId = ++detailRequestId;
 		detailLoading = true;
 		const res = await api.get<NodeDetail>(`/api/projects/${projectId}/nodes/${nodeId}`);
+		if (requestId !== detailRequestId) return; // stale request
 		if (res.data && graphStore.selectedNodeId === nodeId) {
 			selectedNodeDetail = res.data;
 		}
@@ -295,6 +301,15 @@
 		{#if loading}
 			<div class="absolute inset-0 flex items-center justify-center">
 				<p class="text-[var(--color-text-muted)]">Loading graph...</p>
+			</div>
+		{:else if loadError}
+			<div class="absolute inset-0 flex flex-col items-center justify-center gap-3">
+				<p class="text-sm" style="color: var(--color-danger, #ef4444);">{loadError}</p>
+				<button
+					onclick={() => location.reload()}
+					class="px-4 py-2 rounded-lg text-sm font-medium"
+					style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);"
+				>Retry</button>
 			</div>
 		{:else}
 			<CytoscapeCanvas

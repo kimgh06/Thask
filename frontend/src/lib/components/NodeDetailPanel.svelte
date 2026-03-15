@@ -131,17 +131,7 @@
 	let childNodes = $derived(allNodes.filter((n) => n.parentId === node?.id));
 </script>
 
-<!-- Panel overlay backdrop (clicking outside closes) -->
 {#if isOpen && node}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div
-		class="fixed inset-0 z-30"
-		style="background: transparent;"
-		onclick={(e) => {
-			if (e.target === e.currentTarget) onclose();
-		}}
-	></div>
-
 	<!-- Slide-out panel -->
 	<aside
 		class="fixed right-0 top-0 h-full z-40 flex flex-col shadow-2xl"

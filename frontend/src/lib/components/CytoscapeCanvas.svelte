@@ -308,12 +308,8 @@
 
 		cy.on('tap', 'node', (evt: cytoscape.EventObject) => {
 			const node = evt.target as cytoscape.NodeSingular;
-			// GROUP interior tap: skip — let child nodes receive the event
-			if (node.data('nodeType') === 'GROUP' && !node.hasClass('group-collapsed')) {
-				if (!isOnGroupBorder(evt.position, node)) return;
-			}
-			const originalEvent = evt.originalEvent as MouseEvent;
-			if (originalEvent.shiftKey || originalEvent.ctrlKey || originalEvent.metaKey) {
+			const originalEvent = evt.originalEvent as MouseEvent | undefined;
+			if (originalEvent?.shiftKey || originalEvent?.ctrlKey || originalEvent?.metaKey) {
 				graphStore.toggleNodeSelection(node.id());
 			} else {
 				graphStore.selectNode(node.id());

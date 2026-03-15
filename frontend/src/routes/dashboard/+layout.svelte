@@ -55,7 +55,11 @@
 	<div class="flex items-center justify-center min-h-screen">
 		<p class="text-[var(--color-text-muted)]">Loading...</p>
 	</div>
-{:else if authStore.isAuthenticated}
+{:else if !authStore.isAuthenticated}
+	<div class="flex items-center justify-center min-h-screen">
+		<p class="text-[var(--color-text-muted)]">Redirecting...</p>
+	</div>
+{:else}
 	<div class="flex h-screen">
 		<!-- Sidebar -->
 		<aside class="w-56 bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col">

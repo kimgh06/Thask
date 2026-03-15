@@ -133,8 +133,9 @@ export function syncElements(ctx: SyncContext): boolean {
 			}
 		});
 
-		// Add or update edges
+		// Add or update edges (skip orphans whose source/target node is missing)
 		edges.forEach((edge) => {
+			if (!newNodeIds.has(edge.sourceId) || !newNodeIds.has(edge.targetId)) return;
 			const existing = cy.getElementById(edge.id);
 			const data: Record<string, unknown> = {
 				id: edge.id,

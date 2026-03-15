@@ -65,10 +65,12 @@ export function deleteNodeCmd(
 				positionY: node.positionY,
 				width: node.width,
 				height: node.height,
+				assigneeId: node.assigneeId,
+				parentId: node.parentId,
 			});
 			if (nodeRes.data) {
 				ctx.setNodes([...ctx.getNodes(), nodeRes.data]);
-				// Recreate connected edges
+				// Recreate connected edges (map old node ID to new)
 				for (const edge of connectedEdges) {
 					const src = edge.sourceId === node.id ? nodeRes.data.id : edge.sourceId;
 					const tgt = edge.targetId === node.id ? nodeRes.data.id : edge.targetId;
@@ -197,7 +199,8 @@ export function batchDeleteCmd(
 			}
 		},
 		async undo() {
-			// Recreate all deleted nodes
+			// Recreate all deleted nodes, tracking old→new ID mapping
+			const idMap = new Map<string, string>();
 			for (const node of deletedNodes) {
 				const res = await api.post<GraphNode>(`/api/projects/${ctx.projectId}/nodes`, {
 					title: node.title,
@@ -209,16 +212,21 @@ export function batchDeleteCmd(
 					positionY: node.positionY,
 					width: node.width,
 					height: node.height,
+					assigneeId: node.assigneeId,
+					parentId: node.parentId,
 				});
 				if (res.data) {
+					idMap.set(node.id, res.data.id);
 					ctx.setNodes([...ctx.getNodes(), res.data]);
 				}
 			}
-			// Recreate edges (best effort — node IDs may differ)
+			// Recreate edges using mapped IDs
 			for (const edge of deletedEdges) {
+				const src = idMap.get(edge.sourceId) ?? edge.sourceId;
+				const tgt = idMap.get(edge.targetId) ?? edge.targetId;
 				const res = await api.post<GraphEdge>(`/api/projects/${ctx.projectId}/edges`, {
-					sourceId: edge.sourceId,
-					targetId: edge.targetId,
+					sourceId: src,
+					targetId: tgt,
 					edgeType: edge.edgeType,
 					label: edge.label,
 				});

@@ -34,7 +34,7 @@ func (h *ImpactHandler) Analyze(c echo.Context) error {
 
 	depth := 2
 	if d := c.QueryParam("depth"); d != "" {
-		if v, err := strconv.Atoi(d); err == nil {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 && v <= 10 {
 			depth = v
 		}
 	}
