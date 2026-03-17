@@ -58,6 +58,11 @@ export interface GraphEdge {
 	createdAt: string;
 }
 
+export interface GraphData {
+	nodes: GraphNode[];
+	edges: GraphEdge[];
+}
+
 export interface NodeHistoryEntry {
 	id: string;
 	action: string;

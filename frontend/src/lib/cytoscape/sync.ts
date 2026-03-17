@@ -97,7 +97,7 @@ export function syncElements(ctx: SyncContext): boolean {
 
 		// Remove stale elements
 		cy.nodes().forEach((n) => {
-			if (!newNodeIds.has(n.id())) n.remove();
+			if (!newNodeIds.has(n.id()) && n.data('nodeType')) n.remove();
 		});
 		cy.edges().forEach((e) => {
 			if (!newEdgeIds.has(e.id())) e.remove();

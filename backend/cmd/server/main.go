@@ -110,6 +110,9 @@ func main() {
 	projectGroup.PATCH("", projectHandler.Update)
 	projectGroup.DELETE("", projectHandler.Delete)
 
+	// Graph (nodes + edges in single response)
+	projectGroup.GET("/graph", nodeHandler.Graph)
+
 	// Nodes
 	projectGroup.GET("/nodes", nodeHandler.List)
 	projectGroup.POST("/nodes", nodeHandler.Create)

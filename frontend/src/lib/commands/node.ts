@@ -74,6 +74,11 @@ export function deleteNodeCmd(
 				for (const edge of connectedEdges) {
 					const src = edge.sourceId === node.id ? nodeRes.data.id : edge.sourceId;
 					const tgt = edge.targetId === node.id ? nodeRes.data.id : edge.targetId;
+					// Skip if the other endpoint no longer exists
+					const currentNodes = ctx.getNodes();
+					if (!currentNodes.some((n) => n.id === src) || !currentNodes.some((n) => n.id === tgt)) {
+						continue;
+					}
 					const edgeRes = await api.post<GraphEdge>(`/api/projects/${ctx.projectId}/edges`, {
 						sourceId: src,
 						targetId: tgt,
@@ -202,6 +207,8 @@ export function batchDeleteCmd(
 			// Recreate all deleted nodes, tracking old→new ID mapping
 			const idMap = new Map<string, string>();
 			for (const node of deletedNodes) {
+				// Remap parentId if the parent was also in this batch
+				const parentId = node.parentId ? (idMap.get(node.parentId) ?? node.parentId) : node.parentId;
 				const res = await api.post<GraphNode>(`/api/projects/${ctx.projectId}/nodes`, {
 					title: node.title,
 					type: node.type,
@@ -213,7 +220,7 @@ export function batchDeleteCmd(
 					width: node.width,
 					height: node.height,
 					assigneeId: node.assigneeId,
-					parentId: node.parentId,
+					parentId,
 				});
 				if (res.data) {
 					idMap.set(node.id, res.data.id);
@@ -224,6 +231,11 @@ export function batchDeleteCmd(
 			for (const edge of deletedEdges) {
 				const src = idMap.get(edge.sourceId) ?? edge.sourceId;
 				const tgt = idMap.get(edge.targetId) ?? edge.targetId;
+				// Skip if either endpoint no longer exists
+				const currentNodes = ctx.getNodes();
+				if (!currentNodes.some((n) => n.id === src) || !currentNodes.some((n) => n.id === tgt)) {
+					continue;
+				}
 				const res = await api.post<GraphEdge>(`/api/projects/${ctx.projectId}/edges`, {
 					sourceId: src,
 					targetId: tgt,

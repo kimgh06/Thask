@@ -205,7 +205,7 @@
 			layout: { name: 'preset' },
 			minZoom: 0.2,
 			maxZoom: 4,
-			wheelSensitivity: 0.3,
+			wheelSensitivity: 1,
 		});
 
 		// Initialize edgehandles

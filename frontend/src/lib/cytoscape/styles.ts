@@ -7,7 +7,6 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node',
       style: {
-        label: 'data(label)',
         'text-valign': 'center',
         'text-halign': 'center',
         'font-size': 12,
@@ -25,6 +24,24 @@ export function getGraphStyles(): StylesheetStyle[] {
         'background-color': '#1e293b',
         'overlay-padding': 4,
         'z-index': 10,
+      },
+    },
+
+    // Node label — only when label data exists (avoids warning on edgehandles ghost nodes)
+    {
+      selector: 'node[label]',
+      style: {
+        label: 'data(label)',
+      },
+    },
+
+    // Hide edgehandles ghost/internal nodes (no nodeType data)
+    {
+      selector: 'node[!nodeType]',
+      style: {
+        opacity: 0,
+        width: 0.001,
+        height: 0.001,
       },
     },
 

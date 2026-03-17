@@ -9,7 +9,7 @@
 	import AddNodeModal from '$lib/components/AddNodeModal.svelte';
 	import EdgeColorPopover from '$lib/components/EdgeColorPopover.svelte';
 	import NodeDetailPanel from '$lib/components/NodeDetailPanel.svelte';
-	import type { GraphNode, GraphEdge, NodeDetail, NodeType, NodeStatus, EdgeType, NodeUpdateResult, StatusChange } from '$lib/types';
+	import type { GraphNode, GraphEdge, GraphData, NodeDetail, NodeType, NodeStatus, EdgeType, NodeUpdateResult, StatusChange } from '$lib/types';
 	import { computeLocalImpact } from '$lib/cytoscape/impact';
 	import { createKeydownHandler } from '$lib/shortcuts';
 
@@ -51,17 +51,15 @@
 		if (!currentProjectId) return;
 		loading = true;
 		loadError = '';
-		Promise.all([
-			api.get<GraphNode[]>(`/api/projects/${currentProjectId}/nodes`),
-			api.get<GraphEdge[]>(`/api/projects/${currentProjectId}/edges`),
-		]).then(([nodeRes, edgeRes]) => {
+		api.get<GraphData>(`/api/projects/${currentProjectId}/graph`).then((res) => {
 			if (projectId !== currentProjectId) return; // stale response
-			nodes = nodeRes.data ?? [];
-			edges = edgeRes.data ?? [];
-			loading = false;
-		}).catch(() => {
-			if (projectId !== currentProjectId) return;
-			loadError = 'Failed to load graph data.';
+			if (res.error || !res.data) {
+				loadError = res.error || 'Failed to load graph data.';
+				loading = false;
+				return;
+			}
+			nodes = res.data.nodes ?? [];
+			edges = res.data.edges ?? [];
 			loading = false;
 		});
 	});
@@ -259,9 +257,9 @@
 	}
 
 	async function handleUpdateNodeParent(nodeId: string, parentId: string | null) {
-		const res = await api.patch<GraphNode>(`/api/projects/${projectId}/nodes/${nodeId}`, { parentId: parentId ?? '' });
+		const res = await api.patch<NodeUpdateResult>(`/api/projects/${projectId}/nodes/${nodeId}`, { parentId: parentId ?? '' });
 		if (res.data) {
-			nodes = nodes.map((n) => (n.id === nodeId ? res.data! : n));
+			nodes = nodes.map((n) => (n.id === nodeId ? res.data!.node : n));
 		}
 	}
 

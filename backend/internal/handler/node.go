@@ -47,6 +47,33 @@ func (h *NodeHandler) List(c echo.Context) error {
 	return c.JSON(http.StatusOK, dto.OK(nodes))
 }
 
+// Graph returns nodes and edges together in a single response to ensure consistency.
+func (h *NodeHandler) Graph(c echo.Context) error {
+	ctx := c.Request().Context()
+	projectID := c.Param("projectId")
+
+	nodes, err := h.nodeRepo.FindByProjectID(ctx, projectID, nil, nil)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to fetch nodes"))
+	}
+	if nodes == nil {
+		nodes = []model.Node{}
+	}
+
+	edges, err := h.edgeRepo.FindByProjectID(ctx, projectID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to fetch edges"))
+	}
+	if edges == nil {
+		edges = []model.Edge{}
+	}
+
+	return c.JSON(http.StatusOK, dto.OK(map[string]any{
+		"nodes": nodes,
+		"edges": edges,
+	}))
+}
+
 func (h *NodeHandler) Get(c echo.Context) error {
 	ctx := c.Request().Context()
 	projectID := c.Param("projectId")
