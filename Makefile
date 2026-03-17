@@ -32,7 +32,7 @@ test-e2e:
 
 # Docker
 up: .env
-	docker compose up --build
+	docker compose up --build -d
 
 down:
 	docker compose down
