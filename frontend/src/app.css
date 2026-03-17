@@ -1,17 +1,29 @@
 @import 'tailwindcss';
 
 :root {
-	--color-primary: #6366f1;
-	--color-primary-hover: #4f46e5;
-	--color-danger: #ef4444;
-	--color-success: #22c55e;
-	--color-warning: #f59e0b;
-	--color-bg: #0f172a;
-	--color-surface: #1e293b;
-	--color-surface-hover: #334155;
-	--color-border: #334155;
-	--color-text: #f8fafc;
-	--color-text-muted: #94a3b8;
+	/* Foundation — charcoal (not pure black) */
+	--color-bg: #131214;
+	--color-surface: #1b1a1e;
+	--color-surface-hover: #26252a;
+	--color-border: #26252a;
+	--color-border-subtle: #1f1e22;
+
+	/* Text */
+	--color-text: #ededec;
+	--color-text-muted: #9e9c97;
+	--color-text-dim: #6b6966;
+
+	/* Accent — brass gold (yellow-gold, not orange) */
+	--color-accent: #c9a84c;
+	--color-accent-hover: #a8893a;
+	--color-accent-muted: #7d6b35;
+	--color-danger: #c44040;
+	--color-success: #5ea87a;
+	--color-warning: #c26a3d;
+
+	/* Legacy aliases */
+	--color-primary: var(--color-accent);
+	--color-primary-hover: var(--color-accent-hover);
 }
 
 body {
@@ -23,6 +35,6 @@ body {
 /* Dot grid background for the graph canvas */
 .cytoscape-canvas-bg {
 	background-color: var(--color-bg);
-	background-image: radial-gradient(circle, #1e293b 1px, transparent 1px);
+	background-image: radial-gradient(circle, #1b1a1e 1px, transparent 1px);
 	background-size: 24px 24px;
 }
