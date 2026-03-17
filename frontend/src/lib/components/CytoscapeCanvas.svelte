@@ -31,9 +31,10 @@
 		onUpdateNodeParent?: (nodeId: string, parentId: string | null) => void;
 		onZoomChange?: (zoom: number) => void;
 		onCreateEdge?: (sourceId: string, targetId: string) => void;
+		onNodeTap?: (nodeId: string, position: { x: number; y: number }) => void;
 	}
 
-	let { nodes, edges, projectId, onUpdateNodeParent, onZoomChange, onCreateEdge }: Props = $props();
+	let { nodes, edges, projectId, onUpdateNodeParent, onZoomChange, onCreateEdge, onNodeTap }: Props = $props();
 
 	let container: HTMLDivElement;
 	let cy: cytoscape.Core | null = $state(null);
@@ -127,6 +128,10 @@
 		return cy;
 	}
 
+	export function getMousePosition(): { x: number; y: number } {
+		return { ...lastMouseModelPos };
+	}
+
 	export function animateCascade(changes: StatusChange[]) {
 		if (!cy || changes.length === 0) return;
 		changes.forEach((change, i) => {
@@ -206,6 +211,8 @@
 			minZoom: 0.2,
 			maxZoom: 4,
 			wheelSensitivity: 1,
+			boxSelectionEnabled: true,
+			selectionType: 'additive',
 		});
 
 		// Initialize edgehandles
@@ -313,6 +320,9 @@
 				graphStore.toggleNodeSelection(node.id());
 			} else {
 				graphStore.selectNode(node.id());
+				if (originalEvent) {
+					onNodeTap?.(node.id(), { x: originalEvent.clientX, y: originalEvent.clientY });
+				}
 			}
 			syncMultiSelectClasses();
 		});

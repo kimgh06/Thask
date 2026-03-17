@@ -9,6 +9,7 @@
 		history: NodeHistoryEntry[];
 		connectedNodeIds: string[];
 		isOpen: boolean;
+		position: { x: number; y: number };
 		onclose: () => void;
 		onupdate: (nodeId: string, data: Record<string, unknown>) => void;
 		ondelete: (nodeId: string) => void;
@@ -21,11 +22,29 @@
 		history,
 		connectedNodeIds,
 		isOpen,
+		position,
 		onclose,
 		onupdate,
 		ondelete,
 		onselectnode,
 	}: Props = $props();
+
+	const POPUP_WIDTH = 420;
+	const POPUP_MAX_HEIGHT = 480;
+	const MARGIN = 12;
+
+	let popupStyle = $derived.by(() => {
+		const vw = typeof window !== 'undefined' ? window.innerWidth : 1920;
+		const vh = typeof window !== 'undefined' ? window.innerHeight : 1080;
+		let x = position.x + MARGIN;
+		let y = position.y + MARGIN;
+		// Clamp to viewport
+		if (x + POPUP_WIDTH > vw - MARGIN) x = position.x - POPUP_WIDTH - MARGIN;
+		if (y + POPUP_MAX_HEIGHT > vh - MARGIN) y = vh - POPUP_MAX_HEIGHT - MARGIN;
+		if (x < MARGIN) x = MARGIN;
+		if (y < MARGIN) y = MARGIN;
+		return `left: ${x}px; top: ${y}px;`;
+	});
 
 	type Tab = 'details' | 'relations' | 'history';
 	let activeTab = $state<Tab>('details');
@@ -132,13 +151,23 @@
 </script>
 
 {#if isOpen && node}
-	<!-- Slide-out panel -->
+	<!-- Backdrop -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="fixed inset-0 z-40"
+		style="background: rgba(0,0,0,0.4); backdrop-filter: blur(2px);"
+		onmousedown={onclose}
+	></div>
+
+	<!-- Popup panel -->
 	<aside
-		class="fixed right-0 top-0 h-full z-40 flex flex-col shadow-2xl"
+		class="fixed z-50 flex flex-col shadow-2xl rounded-xl"
 		style="
-			width: 360px;
+			width: {POPUP_WIDTH}px;
+			max-height: {POPUP_MAX_HEIGHT}px;
+			{popupStyle}
 			background: var(--color-surface);
-			border-left: 1px solid var(--color-border);
+			border: 1px solid var(--color-border);
 			overflow: hidden;
 		"
 	>

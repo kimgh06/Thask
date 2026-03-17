@@ -2,12 +2,11 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { authStore } from '$lib/stores/auth.svelte';
-	import { api } from '$lib/api';
-	import type { Team } from '$lib/types';
+	import { teamsStore } from '$lib/stores/teams.svelte';
 	import { LayoutDashboard, Users, FolderOpen, LogOut, ChevronDown, ChevronRight } from 'lucide-svelte';
+	import ProjectMenu from '$lib/components/ProjectMenu.svelte';
 
 	let { children } = $props();
-	let teams = $state<Team[]>([]);
 	let collapsedTeams = $state<Set<string>>(new Set());
 
 	$effect(() => {
@@ -18,14 +17,9 @@
 
 	$effect(() => {
 		if (authStore.isAuthenticated) {
-			loadTeams();
+			teamsStore.load();
 		}
 	});
-
-	async function loadTeams() {
-		const res = await api.get<Team[]>('/api/teams');
-		if (res.data) teams = res.data;
-	}
 
 	async function handleLogout() {
 		await authStore.logout();
@@ -88,7 +82,7 @@
 				</a>
 
 				<!-- Teams -->
-				{#each teams as team}
+				{#each teamsStore.teams as team}
 					<div class="pt-2">
 						<button
 							onclick={() => toggleTeam(team.id)}
@@ -111,16 +105,23 @@
 						{#if !collapsedTeams.has(team.id) && team.projects}
 							{#each team.projects as project}
 								{@const href = `/dashboard/${team.slug}/${project.id}`}
-								<a
-									{href}
-									class="flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-colors truncate ml-1"
-									style="background: {isActive(href) ? 'var(--color-primary)' : 'transparent'}; color: {isActive(href) ? 'white' : 'var(--color-text)'};"
+								<div
+									class="flex items-center group ml-1 rounded-lg"
+									style="background: {isActive(href) ? 'var(--color-primary)' : 'transparent'};"
 									onmouseenter={(e) => { if (!isActive(href)) (e.currentTarget as HTMLElement).style.background = 'var(--color-surface-hover)'; }}
 									onmouseleave={(e) => { if (!isActive(href)) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
 								>
-									<FolderOpen size={14} class="shrink-0" />
-									<span class="truncate">{project.name}</span>
-								</a>
+									<ProjectMenu projectId={project.id} projectName={project.name} projectHref={href} active={isActive(href)} onUpdated={() => teamsStore.load()}>
+										<a
+											{href}
+											class="flex-1 flex items-center gap-2.5 px-3 py-1.5 text-sm transition-colors truncate"
+											style="color: {isActive(href) ? 'white' : 'var(--color-text)'};"
+										>
+											<FolderOpen size={14} class="shrink-0" />
+											<span class="truncate">{project.name}</span>
+										</a>
+									</ProjectMenu>
+								</div>
 							{/each}
 						{/if}
 					</div>

@@ -20,30 +20,30 @@ export function createKeydownHandler(actions: ShortcutActions): (e: KeyboardEven
 		if ((e.target as HTMLElement)?.isContentEditable) return;
 
 		const mod = e.ctrlKey || e.metaKey;
-		const key = e.key.toLowerCase();
+		const code = e.code;
 
-		if (e.key === 'Delete' || e.key === 'Backspace') {
+		if (code === 'Delete' || code === 'Backspace') {
 			e.preventDefault();
 			actions.deleteSelection();
 			return;
 		}
 
-		if (e.key === 'Escape') {
+		if (code === 'Escape') {
 			actions.escape();
 			return;
 		}
 
-		if (mod && !e.shiftKey && key === 'z') {
+		if (mod && !e.shiftKey && code === 'KeyZ') {
 			e.preventDefault();
 			actions.undo();
 			return;
 		}
-		if ((mod && e.shiftKey && key === 'z') || (mod && key === 'y')) {
+		if ((mod && e.shiftKey && code === 'KeyZ') || (mod && code === 'KeyY')) {
 			e.preventDefault();
 			actions.redo();
 			return;
 		}
-		if (mod && key === 'a') {
+		if (mod && code === 'KeyA') {
 			e.preventDefault();
 			actions.selectAll();
 			return;
@@ -51,27 +51,26 @@ export function createKeydownHandler(actions: ShortcutActions): (e: KeyboardEven
 
 		if (mod || e.altKey) return;
 
-		switch (key) {
-			case 'n':
+		switch (code) {
+			case 'KeyN':
 				actions.addNode();
 				break;
-			case 'g':
+			case 'KeyG':
 				actions.addGroup();
 				break;
-			case '+':
-			case '=':
+			case 'Equal':
 				actions.zoomIn();
 				break;
-			case '-':
+			case 'Minus':
 				actions.zoomOut();
 				break;
-			case '0':
+			case 'Digit0':
 				actions.fitView();
 				break;
-			case 'l':
+			case 'KeyL':
 				actions.runLayout();
 				break;
-			case 'i':
+			case 'KeyI':
 				actions.toggleImpact();
 				break;
 			default:

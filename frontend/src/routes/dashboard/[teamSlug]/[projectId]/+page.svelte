@@ -6,7 +6,6 @@
 	import { createNodeCmd, deleteNodeCmd, updateNodeCmd, createEdgeCmd, deleteEdgeCmd, batchDeleteCmd } from '$lib/commands/node';
 	import CytoscapeCanvas from '$lib/components/CytoscapeCanvas.svelte';
 	import GraphToolbar from '$lib/components/GraphToolbar.svelte';
-	import AddNodeModal from '$lib/components/AddNodeModal.svelte';
 	import EdgeColorPopover from '$lib/components/EdgeColorPopover.svelte';
 	import NodeDetailPanel from '$lib/components/NodeDetailPanel.svelte';
 	import type { GraphNode, GraphEdge, GraphData, NodeDetail, NodeType, NodeStatus, EdgeType, NodeUpdateResult, StatusChange } from '$lib/types';
@@ -22,13 +21,13 @@
 
 	let canvas = $state<ReturnType<typeof CytoscapeCanvas> | undefined>(undefined);
 
-	// Modal / panel state
-	let showAddNodeModal = $state(false);
-
 	// Node detail state
 	let selectedNodeDetail = $state<NodeDetail | null>(null);
 	let detailLoading = $state(false);
 	let detailRequestId = 0;
+
+	// Node detail popup position
+	let nodePopupPos = $state({ x: 0, y: 0 });
 
 	// Edge popover state
 	let selectedEdge = $state<GraphEdge | null>(null);
@@ -127,13 +126,14 @@
 	}
 
 	// --- Node CRUD ---
-	async function handleAddNode(data: { title: string; type: NodeType }) {
-		showAddNodeModal = false;
-		await undoStack.run(createNodeCmd(mutCtx, { title: data.title, type: data.type }));
+	async function handleAddNode() {
+		const pos = canvas?.getMousePosition() ?? { x: 0, y: 0 };
+		await undoStack.run(createNodeCmd(mutCtx, { title: 'New Node', type: 'TASK', positionX: pos.x, positionY: pos.y }));
 	}
 
 	async function handleAddGroup() {
-		await undoStack.run(createNodeCmd(mutCtx, { title: 'New Group', type: 'GROUP' }));
+		const pos = canvas?.getMousePosition() ?? { x: 0, y: 0 };
+		await undoStack.run(createNodeCmd(mutCtx, { title: 'New Group', type: 'GROUP', positionX: pos.x, positionY: pos.y }));
 	}
 
 	async function handleUpdateNode(nodeId: string, data: Record<string, unknown>) {
@@ -275,13 +275,12 @@
 			else if (graphStore.selectedEdgeId) handleDeleteEdge();
 		},
 		escape: () => {
-			if (showAddNodeModal) { showAddNodeModal = false; return; }
 			if (selectedEdge || graphStore.selectedNodeId) graphStore.clearSelection();
 		},
 		undo: () => undoStack.undo(),
 		redo: () => undoStack.redo(),
 		selectAll: () => graphStore.selectNodes(nodes.map((n) => n.id)),
-		addNode: () => { showAddNodeModal = true; },
+		addNode: () => handleAddNode(),
 		addGroup: () => handleAddGroup(),
 		zoomIn: () => canvas?.zoomIn(),
 		zoomOut: () => canvas?.zoomOut(),
@@ -318,12 +317,13 @@
 				onUpdateNodeParent={handleUpdateNodeParent}
 				onCreateEdge={handleCreateEdge}
 				onZoomChange={(z) => (zoomLevel = z)}
+				onNodeTap={(_id, pos) => { nodePopupPos = pos; }}
 			/>
 
 			<!-- Floating toolbar (z-40 to stay above NodeDetailPanel backdrop at z-30) -->
 			<div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-40">
 				<GraphToolbar
-					onAddNode={() => (showAddNodeModal = true)}
+					onAddNode={handleAddNode}
 					onAddGroup={handleAddGroup}
 					onZoomIn={() => canvas?.zoomIn()}
 					onZoomOut={() => canvas?.zoomOut()}
@@ -357,14 +357,6 @@
 		{/if}
 	</div>
 
-	<!-- Add Node Modal -->
-	{#if showAddNodeModal}
-		<AddNodeModal
-			onsubmit={handleAddNode}
-			onclose={() => (showAddNodeModal = false)}
-		/>
-	{/if}
-
 	<!-- Edge Color Popover -->
 	{#if selectedEdge}
 		<EdgeColorPopover
@@ -384,6 +376,7 @@
 		history={selectedNodeDetail?.history ?? []}
 		connectedNodeIds={selectedNodeDetail?.connectedNodeIds ?? []}
 		isOpen={!!graphStore.selectedNodeId && !!selectedNodeDetail}
+		position={nodePopupPos}
 		onclose={() => graphStore.clearSelection()}
 		onupdate={handleUpdateNode}
 		ondelete={handleDeleteNode}

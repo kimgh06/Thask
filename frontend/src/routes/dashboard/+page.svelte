@@ -1,24 +1,18 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { Team } from '$lib/types';
 	import { authStore } from '$lib/stores/auth.svelte';
+	import { teamsStore } from '$lib/stores/teams.svelte';
+	import ProjectMenu from '$lib/components/ProjectMenu.svelte';
 
-	let teams = $state<Team[]>([]);
 	let newTeamName = $state('');
 	let newTeamSlug = $state('');
 	let showCreateTeam = $state(false);
-	let loadError = $state('');
+	let addingProjectTeamId = $state<string | null>(null);
+	let newProjectName = $state('');
 
 	$effect(() => {
-		if (authStore.isAuthenticated) loadTeams();
+		if (authStore.isAuthenticated) teamsStore.load();
 	});
-
-	async function loadTeams() {
-		loadError = '';
-		const res = await api.get<Team[]>('/api/teams');
-		if (res.data) { teams = res.data; }
-		else { loadError = 'Failed to load teams.'; }
-	}
 
 	async function createTeam() {
 		if (!newTeamName || !newTeamSlug) return;
@@ -26,7 +20,15 @@
 		newTeamName = '';
 		newTeamSlug = '';
 		showCreateTeam = false;
-		loadTeams();
+		teamsStore.load();
+	}
+
+	async function createProject(teamSlug: string) {
+		if (!newProjectName) return;
+		await api.post(`/api/teams/${teamSlug}/projects`, { name: newProjectName });
+		newProjectName = '';
+		addingProjectTeamId = null;
+		teamsStore.load();
 	}
 </script>
 
@@ -57,23 +59,51 @@
 		</div>
 	{/if}
 
-	{#if loadError}
-		<p class="text-sm mb-4" style="color: var(--color-danger, #ef4444);">{loadError}</p>
+	{#if teamsStore.error}
+		<p class="text-sm mb-4" style="color: var(--color-danger, #ef4444);">{teamsStore.error}</p>
 	{/if}
 
 	<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-		{#each teams as team}
+		{#each teamsStore.teams as team}
 			<div class="p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]">
-				<h3 class="font-semibold mb-2">{team.name}</h3>
+				<div class="flex items-center justify-between mb-2">
+					<h3 class="font-semibold">{team.name}</h3>
+					<button
+						onclick={() => {
+							if (addingProjectTeamId === team.id) {
+								addingProjectTeamId = null;
+								newProjectName = '';
+							} else {
+								addingProjectTeamId = team.id;
+								newProjectName = '';
+							}
+						}}
+						class="w-6 h-6 flex items-center justify-center rounded-md text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)] transition-colors text-lg leading-none"
+						title="Add project"
+					>+</button>
+				</div>
+				{#if addingProjectTeamId === team.id}
+					<form
+						onsubmit={(e) => { e.preventDefault(); createProject(team.slug); }}
+						class="flex gap-2 mb-3"
+					>
+						<input
+							bind:value={newProjectName}
+							placeholder="Project name"
+							class="flex-1 px-3 py-1.5 rounded-lg bg-[var(--color-bg)] border border-[var(--color-border)] text-[var(--color-text)] text-sm"
+						/>
+						<button type="submit" class="px-3 py-1.5 rounded-lg bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white text-sm transition-colors">Add</button>
+					</form>
+				{/if}
 				<p class="text-sm text-[var(--color-text-muted)] mb-3">{team.projects?.length ?? 0} projects</p>
 				{#if team.projects}
 					{#each team.projects as project}
-						<a
-							href="/dashboard/{team.slug}/{project.id}"
-							class="block px-3 py-2 mb-1 rounded-lg hover:bg-[var(--color-surface-hover)] text-sm"
-						>
-							{project.name}
-						</a>
+						{@const href = `/dashboard/${team.slug}/${project.id}`}
+						<div class="flex items-center group mb-1 rounded-lg hover:bg-[var(--color-surface-hover)]">
+							<ProjectMenu projectId={project.id} projectName={project.name} projectHref={href} onUpdated={() => teamsStore.load()}>
+								<a {href} class="flex-1 block px-3 py-2 text-sm">{project.name}</a>
+							</ProjectMenu>
+						</div>
 					{/each}
 				{/if}
 			</div>

@@ -12,7 +12,7 @@ interface NodeMutationContext {
 
 export function createNodeCmd(
 	ctx: NodeMutationContext,
-	data: { title: string; type: NodeType; status?: NodeStatus },
+	data: { title: string; type: NodeType; status?: NodeStatus; positionX?: number; positionY?: number },
 ): Command {
 	let createdNode: GraphNode | null = null;
 
@@ -23,6 +23,8 @@ export function createNodeCmd(
 				title: data.title,
 				type: data.type,
 				status: data.status ?? 'IN_PROGRESS',
+				positionX: data.positionX ?? 0,
+				positionY: data.positionY ?? 0,
 			});
 			if (res.data) {
 				createdNode = res.data;
