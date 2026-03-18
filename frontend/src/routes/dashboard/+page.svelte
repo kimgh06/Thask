@@ -60,7 +60,7 @@
 	{/if}
 
 	{#if teamsStore.error}
-		<p class="text-sm mb-4" style="color: var(--color-danger, #ef4444);">{teamsStore.error}</p>
+		<p class="text-sm mb-4" style="color: var(--color-danger);">{teamsStore.error}</p>
 	{/if}
 
 	<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

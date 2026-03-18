@@ -206,7 +206,7 @@
 							<button
 								onclick={handleDelete}
 								class="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors"
-								style="color: #ef4444;"
+								style="color: var(--color-danger);"
 								onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-surface-hover)'; }}
 								onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.background = ''; }}
 							>

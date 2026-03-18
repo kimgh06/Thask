@@ -1,24 +1,24 @@
-import type { NodeType, NodeStatus } from '$lib/types';
+import type { NodeType, NodeStatus, EdgeType } from '$lib/types';
 
 export const NODE_TYPES: NodeType[] = ['FLOW', 'BRANCH', 'TASK', 'BUG', 'API', 'UI', 'GROUP'];
 export const NODE_TYPES_NO_GROUP: NodeType[] = ['FLOW', 'BRANCH', 'TASK', 'BUG', 'API', 'UI'];
 export const STATUS_OPTIONS: NodeStatus[] = ['PASS', 'FAIL', 'IN_PROGRESS', 'BLOCKED'];
 
 export const TYPE_COLORS: Record<NodeType, string> = {
-	FLOW: '#6366f1',
-	BRANCH: '#8b5cf6',
-	TASK: '#3b82f6',
-	BUG: '#ef4444',
-	API: '#22c55e',
-	UI: '#f59e0b',
-	GROUP: '#64748b',
+	FLOW: '#e2b340',
+	BRANCH: '#a78bfa',
+	TASK: '#7ca3c4',
+	BUG: '#e05252',
+	API: '#5ea87a',
+	UI: '#d4915a',
+	GROUP: '#7c7570',
 };
 
 export const STATUS_COLORS: Record<NodeStatus, string> = {
-	PASS: '#22c55e',
-	FAIL: '#ef4444',
-	IN_PROGRESS: '#6366f1',
-	BLOCKED: '#f59e0b',
+	PASS: '#5ea87a',
+	FAIL: '#e05252',
+	IN_PROGRESS: '#e2b340',
+	BLOCKED: '#c26a3d',
 };
 
 export const STATUS_LABELS: Record<NodeStatus, string> = {
@@ -37,3 +37,29 @@ export const NODE_SHAPES: Record<string, string> = {
 	UI: 'ellipse',
 	GROUP: 'round-rectangle',
 };
+
+export const EDGE_COLORS: Record<EdgeType, string> = {
+	depends_on: '#a78bfa',
+	blocks: '#e05252',
+	related: '#7c7570',
+	parent_child: '#7ca3c4',
+	triggers: '#e2b340',
+};
+
+/** Design system color constants for use in Cytoscape styles (which cannot use CSS variables) */
+export const COLORS = {
+	bg: '#131214',
+	surface: '#1b1a1e',
+	surfaceHover: '#26252a',
+	border: '#26252a',
+	borderSubtle: '#1f1e22',
+	text: '#ededec',
+	textMuted: '#9e9c97',
+	textDim: '#6b6966',
+	accent: '#c9a84c',
+	accentHover: '#a8893a',
+	accentMuted: '#7d6b35',
+	danger: '#c44040',
+	success: '#5ea87a',
+	warning: '#c26a3d',
+} as const;

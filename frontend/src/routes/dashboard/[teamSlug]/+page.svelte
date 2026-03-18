@@ -37,7 +37,7 @@
 	</div>
 
 	{#if loadError}
-		<p class="text-sm mb-4" style="color: var(--color-danger, #ef4444);">{loadError}</p>
+		<p class="text-sm mb-4" style="color: var(--color-danger);">{loadError}</p>
 	{/if}
 
 	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -3,12 +3,13 @@
 	import { api } from '$lib/api';
 	import { graphStore } from '$lib/stores/graph.svelte';
 	import { undoStack } from '$lib/stores/undo.svelte';
-	import { createNodeCmd, deleteNodeCmd, updateNodeCmd, createEdgeCmd, deleteEdgeCmd, batchDeleteCmd } from '$lib/commands/node';
 	import CytoscapeCanvas from '$lib/components/CytoscapeCanvas.svelte';
 	import GraphToolbar from '$lib/components/GraphToolbar.svelte';
 	import EdgeColorPopover from '$lib/components/EdgeColorPopover.svelte';
 	import NodeDetailPanel from '$lib/components/NodeDetailPanel.svelte';
-	import type { GraphNode, GraphEdge, GraphData, NodeDetail, NodeType, NodeStatus, EdgeType, NodeUpdateResult, StatusChange } from '$lib/types';
+	import { createNodeCrud } from '$lib/managers/nodeCrud.svelte';
+	import { createEdgeCrud } from '$lib/managers/edgeCrud.svelte';
+	import type { GraphNode, GraphEdge, GraphData, NodeDetail, NodeUpdateResult } from '$lib/types';
 	import { computeLocalImpact } from '$lib/cytoscape/impact';
 	import { createKeydownHandler } from '$lib/shortcuts';
 
@@ -33,6 +34,9 @@
 	let selectedEdge = $state<GraphEdge | null>(null);
 	let edgePopoverPos = $state({ x: 0, y: 0 });
 
+	// Zoom level for status bar
+	let zoomLevel = $state(1);
+
 	// Mutation context for undo commands
 	const mutCtx = {
 		get projectId() { return projectId; },
@@ -42,16 +46,35 @@
 		setEdges: (v: GraphEdge[]) => { edges = v; },
 	};
 
-	// Zoom level for status bar
-	let zoomLevel = $state(1);
+	// CRUD managers
+	const nodeCrud = createNodeCrud({
+		getProjectId: () => projectId,
+		getMutCtx: () => mutCtx,
+		getNodes: () => nodes,
+		setNodes: (v) => { nodes = v; },
+		getEdges: () => edges,
+		getSelectedNodeDetail: () => selectedNodeDetail,
+		setSelectedNodeDetail: (d) => { selectedNodeDetail = d; },
+		getCanvas: () => canvas,
+	});
 
+	const edgeCrud = createEdgeCrud({
+		getProjectId: () => projectId,
+		getMutCtx: () => mutCtx,
+		getEdges: () => edges,
+		setEdges: (v) => { edges = v; },
+		getSelectedEdge: () => selectedEdge,
+		setSelectedEdge: (e) => { selectedEdge = e; },
+	});
+
+	// Load graph data
 	$effect(() => {
 		const currentProjectId = projectId;
 		if (!currentProjectId) return;
 		loading = true;
 		loadError = '';
 		api.get<GraphData>(`/api/projects/${currentProjectId}/graph`).then((res) => {
-			if (projectId !== currentProjectId) return; // stale response
+			if (projectId !== currentProjectId) return;
 			if (res.error || !res.data) {
 				loadError = res.error || 'Failed to load graph data.';
 				loading = false;
@@ -63,7 +86,7 @@
 		});
 	});
 
-	// React to node selection from graphStore
+	// React to node selection
 	$effect(() => {
 		const nodeId = graphStore.selectedNodeId;
 		if (nodeId) {
@@ -73,21 +96,19 @@
 		}
 	});
 
-	// React to edge selection from graphStore
+	// React to edge selection
 	$effect(() => {
 		const edgeId = graphStore.selectedEdgeId;
 		if (edgeId) {
 			const edge = edges.find((e) => e.id === edgeId) ?? null;
 			selectedEdge = edge;
-			if (edge) {
-				updateEdgePopoverPosition(edgeId);
-			}
+			if (edge) updateEdgePopoverPosition(edgeId);
 		} else {
 			selectedEdge = null;
 		}
 	});
 
-	// React to impact mode toggle — local BFS from selected node
+	// Impact mode
 	$effect(() => {
 		const active = graphStore.impactMode;
 		const selectedId = graphStore.selectedNodeId;
@@ -104,7 +125,7 @@
 		const requestId = ++detailRequestId;
 		detailLoading = true;
 		const res = await api.get<NodeDetail>(`/api/projects/${projectId}/nodes/${nodeId}`);
-		if (requestId !== detailRequestId) return; // stale request
+		if (requestId !== detailRequestId) return;
 		if (res.data && graphStore.selectedNodeId === nodeId) {
 			selectedNodeDetail = res.data;
 		}
@@ -125,144 +146,6 @@
 		};
 	}
 
-	// --- Node CRUD ---
-	async function handleAddNode() {
-		const pos = canvas?.getMousePosition() ?? { x: 0, y: 0 };
-		await undoStack.run(createNodeCmd(mutCtx, { title: 'New Node', type: 'TASK', positionX: pos.x, positionY: pos.y }));
-	}
-
-	async function handleAddGroup() {
-		const pos = canvas?.getMousePosition() ?? { x: 0, y: 0 };
-		await undoStack.run(createNodeCmd(mutCtx, { title: 'New Group', type: 'GROUP', positionX: pos.x, positionY: pos.y }));
-	}
-
-	async function handleUpdateNode(nodeId: string, data: Record<string, unknown>) {
-		// Capture old values for undo
-		const oldNode = nodes.find((n) => n.id === nodeId);
-		const oldData: Record<string, unknown> = {};
-		if (oldNode) {
-			for (const key of Object.keys(data)) {
-				oldData[key] = (oldNode as unknown as Record<string, unknown>)[key];
-			}
-		}
-
-		const res = await api.patch<NodeUpdateResult>(`/api/projects/${projectId}/nodes/${nodeId}`, data);
-		if (res.data) {
-			const updated = res.data.node;
-			const propagated = res.data.propagated ?? [];
-
-			nodes = nodes.map((n) => (n.id === nodeId ? updated : n));
-			if (selectedNodeDetail?.id === nodeId) {
-				selectedNodeDetail = { ...selectedNodeDetail, ...updated };
-			}
-
-			// Apply cascaded status changes to local nodes
-			if (propagated.length > 0) {
-				const changeMap = new Map(propagated.map((c) => [c.nodeId, c.newStatus]));
-				nodes = nodes.map((n) => changeMap.has(n.id) ? { ...n, status: changeMap.get(n.id)! } : n);
-				canvas?.animateCascade(propagated);
-			}
-
-			// Record for undo (already executed, so use record())
-			undoStack.record(updateNodeCmd(mutCtx, nodeId, oldData, data));
-		}
-	}
-
-	async function handleDeleteNode(nodeId: string) {
-		const node = nodes.find((n) => n.id === nodeId);
-		if (!node) return;
-		const connectedEdges = edges.filter((e) => e.sourceId === nodeId || e.targetId === nodeId);
-		await undoStack.run(deleteNodeCmd(mutCtx, node, connectedEdges));
-		graphStore.clearSelection();
-	}
-
-	async function handleBatchDelete() {
-		const ids = [...graphStore.selectedNodeIds];
-		if (ids.length === 0) return;
-		const idSet = new Set(ids);
-		const deletedNodes = nodes.filter((n) => idSet.has(n.id));
-		const deletedEdges = edges.filter((e) => idSet.has(e.sourceId) || idSet.has(e.targetId));
-		await undoStack.run(batchDeleteCmd(mutCtx, deletedNodes, deletedEdges));
-		graphStore.clearSelection();
-	}
-
-	async function handleBatchStatus(status: NodeStatus) {
-		const ids = [...graphStore.selectedNodeIds];
-		if (ids.length === 0) return;
-		// Capture old statuses for undo
-		const oldStatuses = new Map(
-			nodes.filter((n) => ids.includes(n.id)).map((n) => [n.id, n.status]),
-		);
-		const res = await api.patch(`/api/projects/${projectId}/nodes/batch-status`, { ids, status });
-		if (!res.error) {
-			const idSet = new Set(ids);
-			nodes = nodes.map((n) => idSet.has(n.id) ? { ...n, status } : n);
-			undoStack.record({
-				description: `Set ${ids.length} nodes to ${status}`,
-				async execute() {
-					const r = await api.patch(`/api/projects/${projectId}/nodes/batch-status`, { ids, status });
-					if (!r.error) {
-						nodes = nodes.map((n) => idSet.has(n.id) ? { ...n, status } : n);
-					}
-				},
-				async undo() {
-					// Restore each node's original status
-					for (const [id, oldStatus] of oldStatuses) {
-						await api.patch(`/api/projects/${projectId}/nodes/${id}`, { status: oldStatus });
-					}
-					nodes = nodes.map((n) => oldStatuses.has(n.id) ? { ...n, status: oldStatuses.get(n.id)! } : n);
-				},
-			});
-		}
-	}
-
-	// --- Edge CRUD ---
-	async function handleCreateEdge(sourceId: string, targetId: string) {
-		const duplicate = edges.some(
-			(e) => e.sourceId === sourceId && e.targetId === targetId && e.edgeType === 'related',
-		);
-		if (duplicate) return;
-		await undoStack.run(createEdgeCmd(mutCtx, { sourceId, targetId }));
-	}
-
-	async function handleEdgeTypeChange(edgeType: EdgeType) {
-		if (!selectedEdge) return;
-		const res = await api.patch<GraphEdge>(
-			`/api/projects/${projectId}/edges/${selectedEdge.id}`,
-			{ edgeType },
-		);
-		if (res.data) {
-			edges = edges.map((e) => (e.id === res.data!.id ? res.data! : e));
-			selectedEdge = res.data;
-		}
-	}
-
-	async function handleEdgeLabelUpdate(label: string) {
-		if (!selectedEdge) return;
-		const res = await api.patch<GraphEdge>(
-			`/api/projects/${projectId}/edges/${selectedEdge.id}`,
-			{ label },
-		);
-		if (res.data) {
-			edges = edges.map((e) => (e.id === res.data!.id ? res.data! : e));
-			selectedEdge = res.data;
-		}
-	}
-
-	async function handleDeleteEdge() {
-		if (!selectedEdge) return;
-		const edge = selectedEdge;
-		await undoStack.run(deleteEdgeCmd(mutCtx, edge));
-		graphStore.clearSelection();
-	}
-
-	async function handleUpdateNodeParent(nodeId: string, parentId: string | null) {
-		const res = await api.patch<NodeUpdateResult>(`/api/projects/${projectId}/nodes/${nodeId}`, { parentId: parentId ?? '' });
-		if (res.data) {
-			nodes = nodes.map((n) => (n.id === nodeId ? res.data!.node : n));
-		}
-	}
-
 	function handleSelectNodeFromPanel(nodeId: string) {
 		graphStore.selectNode(nodeId);
 		canvas?.focusNode(nodeId);
@@ -270,9 +153,9 @@
 
 	const handleKeydown = createKeydownHandler({
 		deleteSelection: () => {
-			if (graphStore.selectedNodeIds.size > 1) handleBatchDelete();
-			else if (graphStore.selectedNodeId) handleDeleteNode(graphStore.selectedNodeId);
-			else if (graphStore.selectedEdgeId) handleDeleteEdge();
+			if (graphStore.selectedNodeIds.size > 1) nodeCrud.handleBatchDelete();
+			else if (graphStore.selectedNodeId) nodeCrud.handleDeleteNode(graphStore.selectedNodeId);
+			else if (graphStore.selectedEdgeId) edgeCrud.handleDeleteEdge();
 		},
 		escape: () => {
 			if (selectedEdge || graphStore.selectedNodeId) graphStore.clearSelection();
@@ -280,8 +163,8 @@
 		undo: () => undoStack.undo(),
 		redo: () => undoStack.redo(),
 		selectAll: () => graphStore.selectNodes(nodes.map((n) => n.id)),
-		addNode: () => handleAddNode(),
-		addGroup: () => handleAddGroup(),
+		addNode: () => nodeCrud.handleAddNode(),
+		addGroup: () => nodeCrud.handleAddGroup(),
 		zoomIn: () => canvas?.zoomIn(),
 		zoomOut: () => canvas?.zoomOut(),
 		fitView: () => canvas?.fitView(),
@@ -301,7 +184,7 @@
 			</div>
 		{:else if loadError}
 			<div class="absolute inset-0 flex flex-col items-center justify-center gap-3">
-				<p class="text-sm" style="color: var(--color-danger, #ef4444);">{loadError}</p>
+				<p class="text-sm" style="color: var(--color-danger);">{loadError}</p>
 				<button
 					onclick={() => location.reload()}
 					class="px-4 py-2 rounded-lg text-sm font-medium"
@@ -314,17 +197,17 @@
 				{nodes}
 				{edges}
 				{projectId}
-				onUpdateNodeParent={handleUpdateNodeParent}
-				onCreateEdge={handleCreateEdge}
+				onUpdateNodeParent={nodeCrud.handleUpdateNodeParent}
+				onCreateEdge={edgeCrud.handleCreateEdge}
 				onZoomChange={(z) => (zoomLevel = z)}
 				onNodeTap={(_id, pos) => { nodePopupPos = pos; }}
 			/>
 
-			<!-- Floating toolbar (z-40 to stay above NodeDetailPanel backdrop at z-30) -->
+			<!-- Floating toolbar -->
 			<div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-40">
 				<GraphToolbar
-					onAddNode={handleAddNode}
-					onAddGroup={handleAddGroup}
+					onAddNode={nodeCrud.handleAddNode}
+					onAddGroup={nodeCrud.handleAddGroup}
 					onZoomIn={() => canvas?.zoomIn()}
 					onZoomOut={() => canvas?.zoomOut()}
 					onFitView={() => canvas?.fitView()}
@@ -339,15 +222,15 @@
 					canUndo={undoStack.canUndo}
 					canRedo={undoStack.canRedo}
 					selectedCount={graphStore.selectedNodeIds.size}
-					onBatchDelete={handleBatchDelete}
-					onBatchStatus={handleBatchStatus}
+					onBatchDelete={nodeCrud.handleBatchDelete}
+					onBatchStatus={nodeCrud.handleBatchStatus}
 					onDeselectAll={() => graphStore.clearSelection()}
 				/>
 			</div>
 
 			<!-- Status bar -->
 			<div class="absolute top-3 right-3 z-40 flex items-center gap-3 text-xs px-3 py-1.5 rounded-lg"
-				style="background: rgba(30,41,59,0.85); backdrop-filter: blur(12px); color: var(--color-text-muted); border: 1px solid var(--color-border);">
+				style="background: rgba(27,26,30,0.9); backdrop-filter: blur(12px); color: var(--color-text-muted); border: 1px solid var(--color-border);">
 				<span>{nodes.length} nodes</span>
 				<span style="color: var(--color-border);">&middot;</span>
 				<span>{edges.length} edges</span>
@@ -362,9 +245,9 @@
 		<EdgeColorPopover
 			position={edgePopoverPos}
 			currentLabel={selectedEdge.label ?? ''}
-			onselect={handleEdgeTypeChange}
-			onupdatelabel={handleEdgeLabelUpdate}
-			ondelete={handleDeleteEdge}
+			onselect={edgeCrud.handleEdgeTypeChange}
+			onupdatelabel={edgeCrud.handleEdgeLabelUpdate}
+			ondelete={edgeCrud.handleDeleteEdge}
 			oncancel={() => graphStore.clearSelection()}
 		/>
 	{/if}
@@ -378,8 +261,8 @@
 		isOpen={!!graphStore.selectedNodeId && !!selectedNodeDetail}
 		position={nodePopupPos}
 		onclose={() => graphStore.clearSelection()}
-		onupdate={handleUpdateNode}
-		ondelete={handleDeleteNode}
+		onupdate={nodeCrud.handleUpdateNode}
+		ondelete={nodeCrud.handleDeleteNode}
 		onselectnode={handleSelectNodeFromPanel}
 	/>
 </div>

@@ -93,7 +93,7 @@
 				>Copy link</button>
 				<button
 					onclick={deleteProject}
-					class="w-full text-left px-3 py-1.5 text-sm hover:bg-[var(--color-surface-hover)]" style="color: var(--color-danger, #ef4444);"
+					class="w-full text-left px-3 py-1.5 text-sm hover:bg-[var(--color-surface-hover)]" style="color: var(--color-danger);"
 				>Delete</button>
 			</div>
 		{/if}

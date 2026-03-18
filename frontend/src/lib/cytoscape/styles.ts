@@ -1,5 +1,5 @@
 import type { StylesheetStyle } from 'cytoscape';
-import { TYPE_COLORS, STATUS_COLORS, NODE_SHAPES } from '$lib/constants';
+import { TYPE_COLORS, STATUS_COLORS, NODE_SHAPES, EDGE_COLORS, COLORS } from '$lib/constants';
 
 export function getGraphStyles(): StylesheetStyle[] {
   return [
@@ -11,17 +11,17 @@ export function getGraphStyles(): StylesheetStyle[] {
         'text-halign': 'center',
         'font-size': 12,
         'font-weight': 600,
-        'font-family': 'Inter, system-ui, sans-serif',
+        'font-family': 'JetBrains Mono, monospace',
         'text-wrap': 'wrap',
         'text-max-width': '100px',
-        color: '#e2e8f0',
-        'text-outline-color': '#1e293b',
+        color: COLORS.text,
+        'text-outline-color': COLORS.bg,
         'text-outline-width': 2,
         width: 72,
         height: 72,
         'border-width': 2,
-        'border-color': '#475569',
-        'background-color': '#1e293b',
+        'border-color': COLORS.border,
+        'background-color': COLORS.surface,
         'overlay-padding': 4,
         'z-index': 10,
       },
@@ -50,8 +50,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: `node[nodeType="${type}"]`,
       style: {
         shape,
-        'border-color': TYPE_COLORS[type as keyof typeof TYPE_COLORS] ?? '#475569',
-        'background-color': TYPE_COLORS[type as keyof typeof TYPE_COLORS] ?? '#475569',
+        'border-color': TYPE_COLORS[type as keyof typeof TYPE_COLORS] ?? COLORS.border,
+        'background-color': TYPE_COLORS[type as keyof typeof TYPE_COLORS] ?? COLORS.border,
         'background-opacity': 0.125,
       } as Record<string, string | number>,
     })),
@@ -64,15 +64,15 @@ export function getGraphStyles(): StylesheetStyle[] {
         height: 'data(height)',
         shape: 'round-rectangle',
         'border-style': 'dashed',
-        'border-color': '#475569',
+        'border-color': COLORS.border,
         'border-width': 1.5,
         'background-opacity': 0.06,
-        'background-color': '#94a3b8',
+        'background-color': TYPE_COLORS.GROUP,
         'text-valign': 'top',
         'text-halign': 'center',
         'font-size': 13,
         'font-weight': 600,
-        color: '#94a3b8',
+        color: COLORS.textMuted,
         'z-index': 'data(depth)',
       } as Record<string, string | number>,
     },
@@ -111,25 +111,25 @@ export function getGraphStyles(): StylesheetStyle[] {
       },
     },
 
-    // Selected node — glow effect
+    // Selected node — brass gold glow
     {
       selector: 'node:selected',
       style: {
         'border-width': 3,
-        'border-color': '#818cf8',
-        'overlay-color': '#818cf8',
+        'border-color': COLORS.accent,
+        'overlay-color': COLORS.accent,
         'overlay-opacity': 0.12,
         'overlay-padding': 6,
       },
     },
 
-    // Search highlight (zoom-to-node pulse)
+    // Search highlight
     {
       selector: 'node.search-highlight',
       style: {
         'border-width': 5,
-        'border-color': '#f59e0b',
-        'overlay-color': '#f59e0b',
+        'border-color': COLORS.accent,
+        'overlay-color': COLORS.accent,
         'overlay-opacity': 0.25,
         'overlay-padding': 10,
         'z-index': 999,
@@ -141,8 +141,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'node.multi-selected',
       style: {
         'border-width': 3,
-        'border-color': '#a78bfa',
-        'overlay-color': '#a78bfa',
+        'border-color': COLORS.accent,
+        'overlay-color': COLORS.accent,
         'overlay-opacity': 0.1,
       },
     },
@@ -151,11 +151,11 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node.drop-target',
       style: {
-        'border-color': '#818cf8',
+        'border-color': COLORS.accent,
         'border-width': 2.5,
         'border-style': 'solid',
         'background-opacity': 0.12,
-        'background-color': '#818cf8',
+        'background-color': COLORS.accent,
       } as Record<string, string | number>,
     },
 
@@ -163,7 +163,7 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node.resizing',
       style: {
-        'border-color': '#3b82f6',
+        'border-color': COLORS.accent,
         'border-width': 3,
         'border-style': 'solid',
       } as Record<string, string | number>,
@@ -174,15 +174,15 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'edge',
       style: {
         width: 1.5,
-        'line-color': '#475569',
-        'target-arrow-color': '#475569',
+        'line-color': '#3d3a36',
+        'target-arrow-color': '#3d3a36',
         'target-arrow-shape': 'triangle',
         'curve-style': 'bezier',
         'arrow-scale': 1,
         'font-size': 10,
         'text-rotation': 'autorotate',
-        color: '#64748b',
-        'text-outline-color': '#0f172a',
+        color: COLORS.textDim,
+        'text-outline-color': COLORS.bg,
         'text-outline-width': 2,
       },
     },
@@ -197,23 +197,23 @@ export function getGraphStyles(): StylesheetStyle[] {
     // Edge types
     {
       selector: 'edge[edgeType="blocks"]',
-      style: { 'line-color': '#ef4444', 'target-arrow-color': '#ef4444', 'line-style': 'dashed' },
+      style: { 'line-color': EDGE_COLORS.blocks, 'target-arrow-color': EDGE_COLORS.blocks, 'line-style': 'dashed' },
     },
     {
       selector: 'edge[edgeType="depends_on"]',
-      style: { 'line-color': '#f97316', 'target-arrow-color': '#f97316' },
+      style: { 'line-color': EDGE_COLORS.depends_on, 'target-arrow-color': EDGE_COLORS.depends_on },
     },
     {
       selector: 'edge[edgeType="triggers"]',
-      style: { 'line-color': '#3b82f6', 'target-arrow-color': '#3b82f6' },
+      style: { 'line-color': EDGE_COLORS.triggers, 'target-arrow-color': EDGE_COLORS.triggers },
     },
     {
       selector: 'edge[edgeType="related"]',
-      style: { 'line-color': '#6b7280', 'target-arrow-color': '#6b7280' },
+      style: { 'line-color': EDGE_COLORS.related, 'target-arrow-color': EDGE_COLORS.related },
     },
     {
       selector: 'edge[edgeType="parent_child"]',
-      style: { 'line-color': '#8b5cf6', 'target-arrow-color': '#8b5cf6', 'line-style': 'dashed' },
+      style: { 'line-color': EDGE_COLORS.parent_child, 'target-arrow-color': EDGE_COLORS.parent_child, 'line-style': 'dashed' },
     },
 
     // Edges connecting to GROUP nodes — snap to outline
@@ -236,8 +236,8 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: '.eh-ghost-edge',
       style: {
-        'line-color': '#818cf8',
-        'target-arrow-color': '#818cf8',
+        'line-color': COLORS.accent,
+        'target-arrow-color': COLORS.accent,
         'target-arrow-shape': 'triangle',
         'line-style': 'dashed',
         width: 1.5,
@@ -250,8 +250,8 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'edge.eh-preview',
       style: {
-        'line-color': '#818cf8',
-        'target-arrow-color': '#818cf8',
+        'line-color': COLORS.accent,
+        'target-arrow-color': COLORS.accent,
         'target-arrow-shape': 'triangle',
         'line-style': 'solid',
         width: 2,
@@ -285,8 +285,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: '.eh-source',
       style: {
         'border-width': 3,
-        'border-color': '#818cf8',
-        'overlay-color': '#818cf8',
+        'border-color': COLORS.accent,
+        'overlay-color': COLORS.accent,
         'overlay-opacity': 0.1,
         'overlay-padding': 6,
       },
@@ -296,8 +296,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: '.eh-target',
       style: {
         'border-width': 3,
-        'border-color': '#34d399',
-        'overlay-color': '#34d399',
+        'border-color': COLORS.success,
+        'overlay-color': COLORS.success,
         'overlay-opacity': 0.1,
       },
     },
@@ -305,7 +305,7 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node[nodeType="GROUP"].eh-target',
       style: {
-        'border-color': '#475569',
+        'border-color': COLORS.border,
         'border-width': 1.5,
         'overlay-opacity': 0,
       } as Record<string, string | number>,
@@ -315,8 +315,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'node.eh-target-resolved',
       style: {
         'border-width': 3,
-        'border-color': '#34d399',
-        'overlay-color': '#34d399',
+        'border-color': COLORS.success,
+        'overlay-color': COLORS.success,
         'overlay-opacity': 0.1,
       },
     },
@@ -332,10 +332,10 @@ export function getGraphStyles(): StylesheetStyle[] {
         'text-valign': 'center',
         'border-style': 'solid',
         'border-width': 1.5,
-        'border-color': '#475569',
+        'border-color': COLORS.border,
         'background-opacity': 0.15,
-        'background-color': '#334155',
-        color: '#94a3b8',
+        'background-color': COLORS.surface,
+        color: COLORS.textMuted,
       } as Record<string, string | number>,
     },
 
@@ -373,54 +373,54 @@ export function getGraphStyles(): StylesheetStyle[] {
       style: { opacity: 0.08 },
     },
 
-    // QA Impact Mode: highlighted (changed) — [status] raises specificity to override status colors
+    // QA Impact Mode: highlighted (changed) — brass gold
     {
       selector: 'node[status].impact-changed',
       style: {
         'border-width': 3,
-        'border-color': '#fb923c',
-        'background-color': '#fb923c',
+        'border-color': COLORS.accent,
+        'background-color': COLORS.accent,
         'background-opacity': 0.15,
-        'overlay-color': '#fb923c',
+        'overlay-color': COLORS.accent,
         'overlay-opacity': 0.15,
         'overlay-padding': 8,
       },
     },
 
-    // QA Impact Mode: impacted (connected)
+    // QA Impact Mode: impacted (connected) — dimmer gold
     {
       selector: 'node[status].impact-affected',
       style: {
         'border-width': 2.5,
-        'border-color': '#fdba74',
-        'background-color': '#fdba74',
+        'border-color': COLORS.accentHover,
+        'background-color': COLORS.accentHover,
         'background-opacity': 0.1,
-        'overlay-color': '#fdba74',
+        'overlay-color': COLORS.accentHover,
         'overlay-opacity': 0.1,
       },
     },
 
-    // Status cascade flash (sky-blue, separate from impact mode orange)
+    // Status cascade flash — steel blue
     {
       selector: 'node[status].cascade-flash',
       style: {
         'border-width': 3,
-        'border-color': '#38bdf8',
-        'overlay-color': '#38bdf8',
+        'border-color': '#7ca3c4',
+        'overlay-color': '#7ca3c4',
         'overlay-opacity': 0.15,
         'overlay-padding': 6,
       },
     },
 
-    // QA Impact Mode: FAIL/BUG nodes (red glow)
+    // QA Impact Mode: FAIL/BUG nodes (warm red glow)
     {
       selector: 'node[status].impact-fail',
       style: {
         'border-width': 3,
-        'border-color': '#ef4444',
-        'background-color': '#ef4444',
+        'border-color': COLORS.danger,
+        'background-color': COLORS.danger,
         'background-opacity': 0.18,
-        'overlay-color': '#ef4444',
+        'overlay-color': COLORS.danger,
         'overlay-opacity': 0.18,
         'overlay-padding': 8,
       },

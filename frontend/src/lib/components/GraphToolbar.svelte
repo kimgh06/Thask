@@ -10,7 +10,6 @@
 		Undo2,
 		Redo2,
 		Filter,
-		Search,
 		X,
 		Zap,
 		Trash2,
@@ -18,6 +17,7 @@
 	import type { GraphNode, NodeType, NodeStatus } from '$lib/types';
 	import { NODE_TYPES, STATUS_COLORS } from '$lib/constants';
 	import { graphStore } from '$lib/stores/graph.svelte';
+	import SearchBar from '$lib/components/SearchBar.svelte';
 
 	interface Props {
 		onAddNode: () => void;
@@ -74,64 +74,12 @@
 	let activeTypeFilter = $derived(graphStore.typeFilter);
 	let activeStatusFilter = $derived(graphStore.statusFilter);
 
-	let showSearch = $state(false);
-	let searchQuery = $state('');
-	let searchResults = $state<GraphNode[]>([]);
-	let searchIndex = $state(0);
-	let searchInput: HTMLInputElement | undefined = $state();
-
-	let searchResultsText = $derived(
-		searchResults.length > 0
-			? `${searchIndex + 1}/${searchResults.length}`
-			: searchQuery.length > 0
-				? '0/0'
-				: '',
-	);
-
-	$effect(() => {
-		if (!searchQuery) {
-			searchResults = [];
-			searchIndex = 0;
-			return;
-		}
-		const q = searchQuery.toLowerCase();
-		searchResults = nodes.filter(
-			(n) => n.title.toLowerCase().includes(q) || (n.description ?? '').toLowerCase().includes(q),
-		);
-		searchIndex = 0;
-	});
-
-	function cycleSearch() {
-		if (searchResults.length === 0) return;
-		onFocusNode(searchResults[searchIndex].id);
-		searchIndex = (searchIndex + 1) % searchResults.length;
-	}
-
-	function openSearch() {
-		showSearch = true;
-		setTimeout(() => searchInput?.focus(), 0);
-	}
-
-	function closeSearch() {
-		showSearch = false;
-		searchQuery = '';
-		searchResults = [];
-		searchIndex = 0;
-	}
-
-	function handleSearchKeydown(e: KeyboardEvent) {
-		if (e.key === 'Enter') {
-			e.preventDefault();
-			cycleSearch();
-		} else if (e.key === 'Escape') {
-			closeSearch();
-		}
-	}
+	let searchBar = $state<ReturnType<typeof SearchBar> | undefined>(undefined);
 
 	function handleGlobalKeydown(e: KeyboardEvent) {
 		if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
 			e.preventDefault();
-			openSearch();
+			searchBar?.open();
 		}
 	}
 
@@ -146,7 +94,7 @@
 
 <div
 	class="flex flex-col gap-1 p-2 rounded-xl shadow-xl"
-	style="background: rgba(30,41,59,0.85); backdrop-filter: blur(12px); border: 1px solid var(--color-border);"
+	style="background: rgba(27,26,30,0.9); backdrop-filter: blur(12px); border: 1px solid var(--color-border);"
 >
 	<!-- Batch context bar -->
 	{#if selectedCount > 1}
@@ -277,38 +225,7 @@
 			{/if}
 		</button>
 
-		{#if showSearch}
-			<div class="flex items-center gap-1 ml-0.5">
-				<input
-					bind:this={searchInput}
-					bind:value={searchQuery}
-					onkeydown={handleSearchKeydown}
-					placeholder="Search nodes..."
-					class="px-2 py-1 rounded-lg text-xs outline-none transition-all"
-					style="background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-primary); width: 150px; height: 32px;"
-				/>
-				{#if searchResultsText}
-					<span class="text-xs whitespace-nowrap" style="color: var(--color-text-muted);"
-						>{searchResultsText}</span
-					>
-				{/if}
-				<button
-					onclick={closeSearch}
-					class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
-					data-tooltip="Close (Esc)"
-				>
-					<X size={16} />
-				</button>
-			</div>
-		{:else}
-			<button
-				onclick={openSearch}
-				class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
-				data-tooltip="Search (⌘F)"
-			>
-				<Search size={16} />
-			</button>
-		{/if}
+		<SearchBar bind:this={searchBar} {nodes} {onFocusNode} />
 
 		<button
 			onclick={onToggleImpact}
@@ -384,7 +301,7 @@
 	}
 
 	.impact-active {
-		background: #f59e0b;
+		background: #c9a84c;
 		color: #000;
 		animation: pulse 2s ease-in-out infinite;
 	}
@@ -392,10 +309,10 @@
 	@keyframes pulse {
 		0%,
 		100% {
-			box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+			box-shadow: 0 0 0 0 rgba(201, 168, 76, 0.4);
 		}
 		50% {
-			box-shadow: 0 0 0 6px rgba(245, 158, 11, 0);
+			box-shadow: 0 0 0 6px rgba(201, 168, 76, 0);
 		}
 	}
 
@@ -415,9 +332,9 @@
 		font-size: 11px;
 		font-weight: 500;
 		white-space: nowrap;
-		background: rgba(15, 23, 42, 0.95);
-		color: #e2e8f0;
-		border: 1px solid rgba(148, 163, 184, 0.15);
+		background: rgba(27, 26, 30, 0.95);
+		color: #ededec;
+		border: 1px solid rgba(38, 37, 42, 0.6);
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 		pointer-events: none;
 		opacity: 0;

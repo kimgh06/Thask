@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import type { EdgeType } from '$lib/types';
+	import { EDGE_COLORS } from '$lib/constants';
 
 	interface Props {
 		position: { x: number; y: number };
@@ -14,11 +15,11 @@
 	let { position, currentLabel, onselect, onupdatelabel, ondelete, oncancel }: Props = $props();
 
 	const EDGE_TYPES: { value: EdgeType; label: string; color: string }[] = [
-		{ value: 'depends_on', label: 'Depends On', color: '#6366f1' },
-		{ value: 'blocks', label: 'Blocks', color: '#ef4444' },
-		{ value: 'related', label: 'Related', color: '#64748b' },
-		{ value: 'parent_child', label: 'Parent / Child', color: '#22c55e' },
-		{ value: 'triggers', label: 'Triggers', color: '#f59e0b' },
+		{ value: 'depends_on', label: 'Depends On', color: EDGE_COLORS.depends_on },
+		{ value: 'blocks', label: 'Blocks', color: EDGE_COLORS.blocks },
+		{ value: 'related', label: 'Related', color: EDGE_COLORS.related },
+		{ value: 'parent_child', label: 'Parent / Child', color: EDGE_COLORS.parent_child },
+		{ value: 'triggers', label: 'Triggers', color: EDGE_COLORS.triggers },
 	];
 
 	let label = $state('');
@@ -116,12 +117,12 @@
 		<button
 			onclick={ondelete}
 			class="mt-1 px-3 py-1.5 rounded text-xs font-medium transition-colors"
-			style="background: #ef444422; color: #ef4444; border: 1px solid #ef444444;"
+			style="background: rgba(196,64,64,0.13); color: var(--color-danger); border: 1px solid rgba(196,64,64,0.27);"
 			onmouseenter={(e) => {
-				(e.currentTarget as HTMLElement).style.background = '#ef444433';
+				(e.currentTarget as HTMLElement).style.background = 'rgba(196,64,64,0.2)';
 			}}
 			onmouseleave={(e) => {
-				(e.currentTarget as HTMLElement).style.background = '#ef444422';
+				(e.currentTarget as HTMLElement).style.background = 'rgba(196,64,64,0.13)';
 			}}
 		>
 			Delete Edge
