@@ -101,6 +101,37 @@ func (h *TeamHandler) GetBySlug(c echo.Context) error {
 	return c.JSON(http.StatusOK, dto.OK(team))
 }
 
+func (h *TeamHandler) Update(c echo.Context) error {
+	var req dto.UpdateTeamRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.Err("Invalid request body"))
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.Err(err.Error()))
+	}
+
+	ctx := c.Request().Context()
+	slug := c.Param("teamSlug")
+	userID := mw.GetUserID(c)
+
+	team, err := h.teamRepo.FindBySlug(ctx, slug)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
+	}
+
+	isMember, _ := h.teamRepo.IsMember(ctx, team.ID, userID)
+	if !isMember {
+		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
+	}
+
+	updated, err := h.teamRepo.Update(ctx, team.ID, req.Name)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update team"))
+	}
+
+	return c.JSON(http.StatusOK, dto.OK(updated))
+}
+
 func (h *TeamHandler) Delete(c echo.Context) error {
 	ctx := c.Request().Context()
 	slug := c.Param("teamSlug")

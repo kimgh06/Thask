@@ -98,6 +98,7 @@ func main() {
 	authed.GET("/api/teams", teamHandler.List)
 	authed.POST("/api/teams", teamHandler.Create)
 	authed.GET("/api/teams/:teamSlug", teamHandler.GetBySlug)
+	authed.PATCH("/api/teams/:teamSlug", teamHandler.Update)
 	authed.DELETE("/api/teams/:teamSlug", teamHandler.Delete)
 	authed.GET("/api/teams/:teamSlug/members", teamHandler.ListMembers)
 	authed.POST("/api/teams/:teamSlug/members", teamHandler.InviteMember)

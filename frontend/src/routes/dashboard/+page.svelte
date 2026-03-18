@@ -9,6 +9,8 @@
 	let showCreateTeam = $state(false);
 	let addingProjectTeamId = $state<string | null>(null);
 	let newProjectName = $state('');
+	let editingTeamId = $state<string | null>(null);
+	let editingTeamName = $state('');
 
 	$effect(() => {
 		if (authStore.isAuthenticated) teamsStore.load();
@@ -28,6 +30,15 @@
 		await api.post(`/api/teams/${teamSlug}/projects`, { name: newProjectName });
 		newProjectName = '';
 		addingProjectTeamId = null;
+		teamsStore.load();
+	}
+
+	async function renameTeam(teamSlug: string) {
+		if (!editingTeamName) return;
+		const res = await api.patch(`/api/teams/${teamSlug}`, { name: editingTeamName });
+		if (res.error) { console.error('Failed to rename team:', res.error); return; }
+		editingTeamId = null;
+		editingTeamName = '';
 		teamsStore.load();
 	}
 </script>
@@ -67,20 +78,43 @@
 		{#each teamsStore.teams as team}
 			<div class="p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]">
 				<div class="flex items-center justify-between mb-2">
-					<h3 class="font-semibold">{team.name}</h3>
-					<button
-						onclick={() => {
-							if (addingProjectTeamId === team.id) {
-								addingProjectTeamId = null;
-								newProjectName = '';
-							} else {
-								addingProjectTeamId = team.id;
-								newProjectName = '';
-							}
-						}}
-						class="w-6 h-6 flex items-center justify-center rounded-md text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)] transition-colors text-lg leading-none"
-						title="Add project"
-					>+</button>
+					{#if editingTeamId === team.id}
+						<form
+							onsubmit={(e) => { e.preventDefault(); renameTeam(team.slug); }}
+							class="flex-1 flex gap-1.5"
+						>
+							<input
+								bind:value={editingTeamName}
+								onkeydown={(e) => { if (e.key === 'Escape') { editingTeamId = null; } }}
+								class="flex-1 px-2 py-1 rounded-md bg-[var(--color-bg)] border border-[var(--color-primary)] text-[var(--color-text)] text-sm font-semibold outline-none"
+								autofocus
+							/>
+							<button type="submit" class="px-2 py-1 rounded-md bg-[var(--color-primary)] text-white text-xs cursor-pointer">OK</button>
+							<button type="button" onclick={() => { editingTeamId = null; }} class="px-2 py-1 rounded-md bg-[var(--color-surface-hover)] text-[var(--color-text-muted)] text-xs cursor-pointer">Cancel</button>
+						</form>
+					{:else}
+						<h3 class="font-semibold">{team.name}</h3>
+						<div class="flex gap-1">
+							<button
+								onclick={() => { editingTeamId = team.id; editingTeamName = team.name; }}
+								class="w-6 h-6 flex items-center justify-center rounded-md text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)] transition-colors text-xs cursor-pointer"
+								title="Rename team"
+							>✎</button>
+							<button
+								onclick={() => {
+									if (addingProjectTeamId === team.id) {
+										addingProjectTeamId = null;
+										newProjectName = '';
+									} else {
+										addingProjectTeamId = team.id;
+										newProjectName = '';
+									}
+								}}
+								class="w-6 h-6 flex items-center justify-center rounded-md text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-text)] transition-colors text-lg leading-none cursor-pointer"
+								title="Add project"
+							>+</button>
+						</div>
+					{/if}
 				</div>
 				{#if addingProjectTeamId === team.id}
 					<form

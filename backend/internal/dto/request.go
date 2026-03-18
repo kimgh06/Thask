@@ -16,6 +16,10 @@ type CreateTeamRequest struct {
 	Slug string `json:"slug" validate:"required,min=1,max=100,slug"`
 }
 
+type UpdateTeamRequest struct {
+	Name string `json:"name" validate:"required,min=1,max=100"`
+}
+
 type InviteMemberRequest struct {
 	Email string `json:"email" validate:"required,email"`
 	Role  string `json:"role" validate:"omitempty,oneof=admin member viewer"`
