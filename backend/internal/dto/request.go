@@ -92,3 +92,30 @@ type UpdateEdgeRequest struct {
 	EdgeType *string `json:"edgeType" validate:"omitempty,oneof=depends_on blocks related parent_child triggers"`
 	Label    *string `json:"label" validate:"omitempty,max=100"`
 }
+
+type ImportGraphRequest struct {
+	Mode  string           `json:"mode" validate:"required,oneof=replace merge"`
+	Nodes []ImportNodeItem `json:"nodes" validate:"required,dive"`
+	Edges []ImportEdgeItem `json:"edges" validate:"dive"`
+}
+
+type ImportNodeItem struct {
+	ID          string   `json:"id"`
+	Type        string   `json:"type" validate:"required,oneof=FLOW BRANCH TASK BUG API UI GROUP"`
+	Title       string   `json:"title" validate:"required,min=1,max=300"`
+	Description *string  `json:"description"`
+	Status      string   `json:"status" validate:"omitempty,oneof=PASS FAIL IN_PROGRESS BLOCKED"`
+	Tags        []string `json:"tags"`
+	ParentID    *string  `json:"parentId"`
+	PositionX   float64  `json:"positionX"`
+	PositionY   float64  `json:"positionY"`
+	Width       *float64 `json:"width"`
+	Height      *float64 `json:"height"`
+}
+
+type ImportEdgeItem struct {
+	SourceID string  `json:"sourceId" validate:"required"`
+	TargetID string  `json:"targetId" validate:"required"`
+	EdgeType string  `json:"edgeType" validate:"omitempty,oneof=depends_on blocks related parent_child triggers"`
+	Label    *string `json:"label"`
+}

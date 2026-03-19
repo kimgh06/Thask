@@ -19,6 +19,9 @@ func NewNodeRepo(pool *pgxpool.Pool) *NodeRepo {
 	return &NodeRepo{pool: pool}
 }
 
+func (r *NodeRepo) Pool() *pgxpool.Pool { return r.pool }
+
+
 func (r *NodeRepo) Create(ctx context.Context, n *model.Node) (*model.Node, error) {
 	var node model.Node
 	err := r.pool.QueryRow(ctx,

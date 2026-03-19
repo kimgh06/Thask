@@ -12,6 +12,9 @@
 		Filter,
 		X,
 		Zap,
+		Download,
+		FileJson,
+		Upload,
 	} from 'lucide-svelte';
 	import type { GraphNode, NodeType, NodeStatus } from '$lib/types';
 	import { NODE_TYPES, STATUS_COLORS } from '$lib/constants';
@@ -26,6 +29,9 @@
 		onFitView: () => void;
 		onRunLayout: () => void;
 		onToggleImpact: () => void;
+		onExportPNG: () => void;
+		onExportJSON: () => void;
+		onImport: (mode: 'replace' | 'merge') => void;
 		isImpactActive: boolean;
 		canImpact: boolean;
 		nodes: GraphNode[];
@@ -44,6 +50,9 @@
 		onFitView,
 		onRunLayout,
 		onToggleImpact,
+		onExportPNG,
+		onExportJSON,
+		onImport,
 		isImpactActive,
 		canImpact,
 		nodes,
@@ -62,6 +71,7 @@
 	];
 
 	let showFilters = $state(false);
+	let showImportMenu = $state(false);
 	let activeTypeFilter = $derived(graphStore.typeFilter);
 	let activeStatusFilter = $derived(graphStore.statusFilter);
 
@@ -191,6 +201,55 @@
 		>
 			<Zap size={16} />
 		</button>
+
+		<div class="w-px h-5 mx-1 flex-shrink-0" style="background: var(--color-border);"></div>
+
+		<!-- Group 6: Export -->
+		<button
+			onclick={onExportPNG}
+			class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
+			data-tooltip="Export PNG"
+		>
+			<Download size={16} />
+		</button>
+		<button
+			onclick={onExportJSON}
+			class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
+			data-tooltip="Export JSON"
+		>
+			<FileJson size={16} />
+		</button>
+		<div class="relative">
+			<button
+				onclick={() => (showImportMenu = !showImportMenu)}
+				class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+				style="background: {showImportMenu ? 'var(--color-primary)' : 'var(--color-surface-hover)'}; color: {showImportMenu ? 'white' : 'var(--color-text-muted)'};"
+				data-tooltip="Import JSON"
+			>
+				<Upload size={16} />
+			</button>
+			{#if showImportMenu}
+				<div
+					class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 py-1 rounded-lg shadow-xl min-w-[140px] filter-slide-in"
+					style="background: rgba(27,26,30,0.95); border: 1px solid var(--color-border);"
+				>
+					<button
+						onclick={() => { showImportMenu = false; onImport('replace'); }}
+						class="w-full px-3 py-1.5 text-xs text-left transition-colors hover:bg-[var(--color-surface-hover)]"
+						style="color: var(--color-text);"
+					>
+						Replace
+					</button>
+					<button
+						onclick={() => { showImportMenu = false; onImport('merge'); }}
+						class="w-full px-3 py-1.5 text-xs text-left transition-colors hover:bg-[var(--color-surface-hover)]"
+						style="color: var(--color-text);"
+					>
+						Merge
+					</button>
+				</div>
+			{/if}
+		</div>
 	</div>
 
 	<!-- Filter bar (slides in smoothly) -->

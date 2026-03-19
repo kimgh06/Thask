@@ -113,6 +113,7 @@ func main() {
 
 	// Graph (nodes + edges in single response)
 	projectGroup.GET("/graph", nodeHandler.Graph)
+	projectGroup.POST("/graph/import", nodeHandler.Import)
 
 	// Nodes
 	projectGroup.GET("/nodes", nodeHandler.List)

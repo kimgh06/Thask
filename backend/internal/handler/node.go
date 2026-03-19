@@ -74,6 +74,132 @@ func (h *NodeHandler) Graph(c echo.Context) error {
 	}))
 }
 
+func (h *NodeHandler) Import(c echo.Context) error {
+	var req dto.ImportGraphRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.Err("Invalid request body"))
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.Err(err.Error()))
+	}
+
+	ctx := c.Request().Context()
+	projectID := c.Param("projectId")
+
+	tx, err := h.nodeRepo.Pool().Begin(ctx)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to start transaction"))
+	}
+	defer tx.Rollback(ctx)
+
+	// Replace mode: delete all existing data
+	if req.Mode == "replace" {
+		if _, err := tx.Exec(ctx, `DELETE FROM edges WHERE project_id = $1`, projectID); err != nil {
+			return c.JSON(http.StatusInternalServerError, dto.Err("Failed to clear edges"))
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM nodes WHERE project_id = $1`, projectID); err != nil {
+			return c.JSON(http.StatusInternalServerError, dto.Err("Failed to clear nodes"))
+		}
+	}
+
+	// Create nodes with new IDs, build old→new mapping
+	idMap := make(map[string]string, len(req.Nodes))
+	createdNodes := make([]model.Node, 0, len(req.Nodes))
+
+	for _, item := range req.Nodes {
+		status := model.NodeStatus(item.Status)
+		if status == "" {
+			status = model.NodeStatusInProgress
+		}
+		tags := item.Tags
+		if tags == nil {
+			tags = []string{}
+		}
+
+		var node model.Node
+		err := tx.QueryRow(ctx,
+			`INSERT INTO nodes (project_id, type, title, description, status, tags, position_x, position_y, width, height)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			 RETURNING id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at`,
+			projectID, item.Type, item.Title, item.Description, status, tags, item.PositionX, item.PositionY, item.Width, item.Height,
+		).Scan(&node.ID, &node.ProjectID, &node.Type, &node.Title, &node.Description, &node.Status, &node.AssigneeID, &node.Tags, &node.Metadata, &node.ParentID, &node.PositionX, &node.PositionY, &node.Width, &node.Height, &node.CreatedAt, &node.UpdatedAt)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, dto.Err(fmt.Sprintf("Failed to create node: %s", item.Title)))
+		}
+
+		if item.ID != "" {
+			idMap[item.ID] = node.ID
+		}
+		createdNodes = append(createdNodes, node)
+	}
+
+	// Update parentId using the mapping
+	for i, item := range req.Nodes {
+		if item.ParentID == nil || *item.ParentID == "" {
+			continue
+		}
+		newParentID, ok := idMap[*item.ParentID]
+		if !ok {
+			continue
+		}
+		_, err := tx.Exec(ctx,
+			`UPDATE nodes SET parent_id = $1, updated_at = now() WHERE id = $2`,
+			newParentID, createdNodes[i].ID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, dto.Err("Failed to set parent"))
+		}
+		createdNodes[i].ParentID = &newParentID
+	}
+
+	// Create edges with remapped IDs
+	createdEdges := make([]model.Edge, 0, len(req.Edges))
+	for _, item := range req.Edges {
+		srcID, srcOK := idMap[item.SourceID]
+		tgtID, tgtOK := idMap[item.TargetID]
+		if !srcOK || !tgtOK {
+			continue // skip edges referencing unknown nodes
+		}
+
+		edgeType := model.EdgeType(item.EdgeType)
+		if edgeType == "" {
+			edgeType = model.EdgeTypeDependsOn
+		}
+
+		var edge model.Edge
+		err := tx.QueryRow(ctx,
+			`INSERT INTO edges (project_id, source_id, target_id, edge_type, label)
+			 VALUES ($1, $2, $3, $4, $5)
+			 RETURNING id, project_id, source_id, target_id, edge_type, label, created_at`,
+			projectID, srcID, tgtID, edgeType, item.Label,
+		).Scan(&edge.ID, &edge.ProjectID, &edge.SourceID, &edge.TargetID, &edge.EdgeType, &edge.Label, &edge.CreatedAt)
+		if err != nil {
+			log.Printf("[WARN] import: skipping edge %s→%s: %v", srcID, tgtID, err)
+			continue // skip duplicate or invalid edges
+		}
+		createdEdges = append(createdEdges, edge)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to commit import"))
+	}
+
+	// For replace mode, return only imported data
+	// For merge mode, return full graph
+	if req.Mode == "merge" {
+		allNodes, _ := h.nodeRepo.FindByProjectID(ctx, projectID, nil, nil)
+		allEdges, _ := h.edgeRepo.FindByProjectID(ctx, projectID)
+		if allNodes == nil {
+			allNodes = []model.Node{}
+		}
+		if allEdges == nil {
+			allEdges = []model.Edge{}
+		}
+		return c.JSON(http.StatusOK, dto.OK(map[string]any{"nodes": allNodes, "edges": allEdges}))
+	}
+
+	return c.JSON(http.StatusOK, dto.OK(map[string]any{"nodes": createdNodes, "edges": createdEdges}))
+}
+
 func (h *NodeHandler) Get(c echo.Context) error {
 	ctx := c.Request().Context()
 	projectID := c.Param("projectId")

@@ -11,6 +11,7 @@
 	import type { GraphNode, GraphEdge, GraphData, NodeDetail } from '$lib/types';
 	import { computeLocalImpact } from '$lib/cytoscape/impact';
 	import { createKeydownHandler } from '$lib/shortcuts';
+	import { exportPNG, exportJSON, importJSON } from '$lib/export';
 
 	let nodes = $state<GraphNode[]>([]);
 	let edges = $state<GraphEdge[]>([]);
@@ -147,6 +148,24 @@
 		canvas?.startEdgeDrawingFromNode(nodeId);
 	}
 
+	function handleExportPNG() {
+		const cy = canvas?.getCy();
+		if (cy) exportPNG(cy);
+	}
+
+	function handleExportJSON() {
+		exportJSON(nodes, edges);
+	}
+
+	async function handleImport(mode: 'replace' | 'merge') {
+		const result = await importJSON(projectId, mode, mode === 'merge' ? nodes : undefined);
+		if (result) {
+			nodes = result.nodes;
+			edges = result.edges;
+			graphStore.clearSelection();
+		}
+	}
+
 	const handleKeydown = createKeydownHandler({
 		deleteSelection: () => {
 			if (graphStore.selectedNodeIds.size > 1) nodeCrud.handleBatchDelete();
@@ -209,6 +228,9 @@
 						onFitView={() => canvas?.fitView()}
 						onRunLayout={() => canvas?.runLayout()}
 						onToggleImpact={() => graphStore.toggleImpactMode()}
+						onExportPNG={handleExportPNG}
+						onExportJSON={handleExportJSON}
+						onImport={handleImport}
 						isImpactActive={graphStore.impactMode}
 						canImpact={!!graphStore.selectedNodeId}
 						{nodes}
