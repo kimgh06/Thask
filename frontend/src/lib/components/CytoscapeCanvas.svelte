@@ -34,7 +34,9 @@
 		onNodeTap?: (nodeId: string, position: { x: number; y: number }) => void;
 	}
 
-	let { nodes, edges, projectId, onUpdateNodeParent, onZoomChange, onCreateEdge, onNodeTap }: Props = $props();
+	let { nodes, edges, projectId, onUpdateNodeParent, onZoomChange, onCreateEdge, onNodeTap = undefined }: Props = $props();
+
+	let ehInstance: { start: (n: cytoscape.NodeSingular) => void; stop: () => void } | null = null;
 
 	let container: HTMLDivElement;
 	let cy: cytoscape.Core | null = $state(null);
@@ -139,6 +141,13 @@
 		deactivateImpactMode(cy);
 	}
 
+	export function startEdgeDrawingFromNode(nodeId: string) {
+		if (!cy || !ehInstance) return;
+		const node = cy.getElementById(nodeId);
+		if (!node.length) return;
+		ehInstance.start(node);
+	}
+
 	onMount(() => {
 		cy = cytoscape({
 			container,
@@ -152,6 +161,7 @@
 
 		// Initialize edgehandles
 		const eh = initEdgehandles(cy);
+		ehInstance = eh as typeof ehInstance;
 
 		// Resize handlers
 		const cyContainer = cy.container()!;

@@ -216,6 +216,20 @@ export function getGraphStyles(): StylesheetStyle[] {
       style: { 'line-color': EDGE_COLORS.parent_child, 'target-arrow-color': EDGE_COLORS.parent_child, 'line-style': 'dashed' },
     },
 
+    // Selected edge — brass gold highlight
+    {
+      selector: 'edge.edge-selected',
+      style: {
+        width: 3,
+        'line-color': COLORS.accent,
+        'target-arrow-color': COLORS.accent,
+        'overlay-color': COLORS.accent,
+        'overlay-opacity': 0.12,
+        'overlay-padding': 4,
+        'z-index': 999,
+      } as Record<string, string | number>,
+    },
+
     // Edges connecting to GROUP nodes — snap to outline
     {
       selector: 'edge[?targetIsGroup]',

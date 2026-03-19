@@ -124,6 +124,108 @@ export function createNodeCrud(deps: NodeCrudDeps) {
 		}
 	}
 
+	async function handleBatchType(type: NodeType) {
+		const ids = [...graphStore.selectedNodeIds];
+		if (ids.length === 0) return;
+		const projectId = deps.getProjectId();
+		const idSet = new Set(ids);
+		for (const id of ids) {
+			const res = await api.patch(`/api/projects/${projectId}/nodes/${id}`, { type });
+			if (res.error) { console.error('Failed to update node type:', res.error); return; }
+		}
+		deps.setNodes(deps.getNodes().map((n) => idSet.has(n.id) ? { ...n, type } : n));
+	}
+
+	async function handleBatchAddTag(tag: string) {
+		const ids = [...graphStore.selectedNodeIds];
+		if (ids.length === 0 || !tag) return;
+		const projectId = deps.getProjectId();
+		const idSet = new Set(ids);
+		const currentNodes = deps.getNodes();
+		for (const id of ids) {
+			const node = currentNodes.find((n) => n.id === id);
+			if (!node || node.tags.includes(tag)) continue;
+			const res = await api.patch(`/api/projects/${projectId}/nodes/${id}`, { tags: [...node.tags, tag] });
+			if (res.error) { console.error('Failed to add tag:', res.error); return; }
+		}
+		deps.setNodes(deps.getNodes().map((n) =>
+			idSet.has(n.id) && !n.tags.includes(tag) ? { ...n, tags: [...n.tags, tag] } : n,
+		));
+	}
+
+	async function handleCreateGroupFromSelection() {
+		const ids = [...graphStore.selectedNodeIds];
+		if (ids.length < 2) return;
+		const projectId = deps.getProjectId();
+		const selected = deps.getNodes().filter((n) => ids.includes(n.id));
+		const xs = selected.map((n) => n.positionX);
+		const ys = selected.map((n) => n.positionY);
+		const padding = 60;
+		const minX = Math.min(...xs) - padding;
+		const minY = Math.min(...ys) - padding;
+		const maxX = Math.max(...xs) + padding;
+		const maxY = Math.max(...ys) + padding;
+		const cx = (minX + maxX) / 2;
+		const cy = (minY + maxY) / 2;
+		const w = maxX - minX;
+		const h = maxY - minY;
+
+		// Create group via direct API call
+		const createRes = await api.post<GraphNode>(`/api/projects/${projectId}/nodes`, {
+			title: 'New Group', type: 'GROUP', status: 'IN_PROGRESS', positionX: cx, positionY: cy,
+		});
+		if (createRes.error || !createRes.data) { console.error('Failed to create group:', createRes.error); return; }
+		const group = createRes.data;
+		deps.setNodes([...deps.getNodes(), group]);
+
+		// Set dimensions
+		await api.patch(`/api/projects/${projectId}/nodes/${group.id}`, { width: w, height: h });
+		deps.setNodes(deps.getNodes().map((n) =>
+			n.id === group.id ? { ...n, width: w, height: h } : n,
+		));
+
+		// Reparent selected nodes (capture old parents for undo)
+		const oldParents = new Map(selected.map((n) => [n.id, n.parentId ?? null]));
+		for (const id of ids) {
+			await api.patch(`/api/projects/${projectId}/nodes/${id}`, { parentId: group.id });
+		}
+		const idSet = new Set(ids);
+		deps.setNodes(deps.getNodes().map((n) =>
+			idSet.has(n.id) ? { ...n, parentId: group.id } : n,
+		));
+
+		// Record compound undo for the full operation
+		undoStack.record({
+			description: `Create group from ${ids.length} nodes`,
+			async execute() {
+				const r = await api.post<GraphNode>(`/api/projects/${projectId}/nodes`, {
+					title: 'New Group', type: 'GROUP', status: 'IN_PROGRESS', positionX: cx, positionY: cy,
+				});
+				if (!r.data) return;
+				const newGroup = r.data;
+				deps.setNodes([...deps.getNodes(), newGroup]);
+				await api.patch(`/api/projects/${projectId}/nodes/${newGroup.id}`, { width: w, height: h });
+				deps.setNodes(deps.getNodes().map((n) => n.id === newGroup.id ? { ...n, width: w, height: h } : n));
+				for (const id of ids) {
+					await api.patch(`/api/projects/${projectId}/nodes/${id}`, { parentId: newGroup.id });
+				}
+				deps.setNodes(deps.getNodes().map((n) => idSet.has(n.id) ? { ...n, parentId: newGroup.id } : n));
+			},
+			async undo() {
+				for (const [id, oldParent] of oldParents) {
+					await api.patch(`/api/projects/${projectId}/nodes/${id}`, { parentId: oldParent ?? '' });
+				}
+				deps.setNodes(deps.getNodes().map((n) =>
+					oldParents.has(n.id) ? { ...n, parentId: oldParents.get(n.id) ?? null } : n,
+				));
+				await api.delete(`/api/projects/${projectId}/nodes/${group.id}`);
+				deps.setNodes(deps.getNodes().filter((n) => n.id !== group.id));
+			},
+		});
+
+		graphStore.selectNode(group.id);
+	}
+
 	return {
 		handleAddNode,
 		handleAddGroup,
@@ -131,6 +233,9 @@ export function createNodeCrud(deps: NodeCrudDeps) {
 		handleDeleteNode,
 		handleBatchDelete,
 		handleBatchStatus,
+		handleBatchType,
+		handleBatchAddTag,
+		handleCreateGroupFromSelection,
 		handleUpdateNodeParent,
 	};
 }

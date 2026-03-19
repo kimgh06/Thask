@@ -30,18 +30,22 @@ export function attachSelectionHandlers(
 				options.onNodeTap?.(node.id(), { x: originalEvent.clientX, y: originalEvent.clientY });
 			}
 		}
+		cy.edges().removeClass('edge-selected');
 		syncMultiSelectClasses();
 	}
 
 	function onTapBackground(evt: cytoscape.EventObject) {
 		if (evt.target === cy) {
 			graphStore.clearSelection();
+			cy.edges().removeClass('edge-selected');
 			syncMultiSelectClasses();
 		}
 	}
 
 	function onTapEdge(evt: cytoscape.EventObject) {
 		graphStore.selectEdge(evt.target.id());
+		cy.edges().removeClass('edge-selected');
+		evt.target.addClass('edge-selected');
 		syncMultiSelectClasses();
 	}
 

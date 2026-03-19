@@ -5,11 +5,10 @@
 	import { undoStack } from '$lib/stores/undo.svelte';
 	import CytoscapeCanvas from '$lib/components/CytoscapeCanvas.svelte';
 	import GraphToolbar from '$lib/components/GraphToolbar.svelte';
-	import EdgeColorPopover from '$lib/components/EdgeColorPopover.svelte';
-	import NodeDetailPanel from '$lib/components/NodeDetailPanel.svelte';
+	import DetailSidePanel from '$lib/components/DetailSidePanel.svelte';
 	import { createNodeCrud } from '$lib/managers/nodeCrud.svelte';
 	import { createEdgeCrud } from '$lib/managers/edgeCrud.svelte';
-	import type { GraphNode, GraphEdge, GraphData, NodeDetail, NodeUpdateResult } from '$lib/types';
+	import type { GraphNode, GraphEdge, GraphData, NodeDetail } from '$lib/types';
 	import { computeLocalImpact } from '$lib/cytoscape/impact';
 	import { createKeydownHandler } from '$lib/shortcuts';
 
@@ -27,15 +26,24 @@
 	let detailLoading = $state(false);
 	let detailRequestId = 0;
 
-	// Node detail popup position
-	let nodePopupPos = $state({ x: 0, y: 0 });
-
-	// Edge popover state
+	// Edge state
 	let selectedEdge = $state<GraphEdge | null>(null);
-	let edgePopoverPos = $state({ x: 0, y: 0 });
 
 	// Zoom level for status bar
 	let zoomLevel = $state(1);
+
+	// Panel mode derived from selection state
+	let panelMode = $derived.by(() => {
+		if (graphStore.selectedNodeIds.size > 1) return 'multi-select' as const;
+		if (graphStore.selectedNodeId) return 'node' as const;
+		if (graphStore.selectedEdgeId) return 'edge' as const;
+		return 'empty' as const;
+	});
+
+	// Selected nodes for multi-select view
+	let selectedNodes = $derived(
+		nodes.filter((n) => graphStore.selectedNodeIds.has(n.id)),
+	);
 
 	// Mutation context for undo commands
 	const mutCtx = {
@@ -100,9 +108,7 @@
 	$effect(() => {
 		const edgeId = graphStore.selectedEdgeId;
 		if (edgeId) {
-			const edge = edges.find((e) => e.id === edgeId) ?? null;
-			selectedEdge = edge;
-			if (edge) updateEdgePopoverPosition(edgeId);
+			selectedEdge = edges.find((e) => e.id === edgeId) ?? null;
 		} else {
 			selectedEdge = null;
 		}
@@ -132,23 +138,13 @@
 		detailLoading = false;
 	}
 
-	function updateEdgePopoverPosition(edgeId: string) {
-		const cy = canvas?.getCy();
-		if (!cy) return;
-		const edgeEle = cy.getElementById(edgeId);
-		if (!edgeEle.length) return;
-		const rbb = edgeEle.renderedBoundingBox({});
-		const containerRect = cy.container()?.getBoundingClientRect();
-		if (!containerRect) return;
-		edgePopoverPos = {
-			x: containerRect.left + (rbb.x1 + rbb.x2) / 2,
-			y: containerRect.top + (rbb.y1 + rbb.y2) / 2,
-		};
-	}
-
 	function handleSelectNodeFromPanel(nodeId: string) {
 		graphStore.selectNode(nodeId);
 		canvas?.focusNode(nodeId);
+	}
+
+	function handleStartEdgeDrawing(nodeId: string) {
+		canvas?.startEdgeDrawingFromNode(nodeId);
 	}
 
 	const handleKeydown = createKeydownHandler({
@@ -158,7 +154,7 @@
 			else if (graphStore.selectedEdgeId) edgeCrud.handleDeleteEdge();
 		},
 		escape: () => {
-			if (selectedEdge || graphStore.selectedNodeId) graphStore.clearSelection();
+			if (selectedEdge || graphStore.selectedNodeId || graphStore.selectedNodeIds.size > 0) graphStore.clearSelection();
 		},
 		undo: () => undoStack.undo(),
 		redo: () => undoStack.redo(),
@@ -176,93 +172,88 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="h-full flex flex-col">
-	<!-- Canvas area -->
-	<div class="flex-1 relative">
-		{#if loading}
-			<div class="absolute inset-0 flex items-center justify-center">
-				<p class="text-[var(--color-text-muted)]">Loading graph...</p>
-			</div>
-		{:else if loadError}
-			<div class="absolute inset-0 flex flex-col items-center justify-center gap-3">
-				<p class="text-sm" style="color: var(--color-danger);">{loadError}</p>
-				<button
-					onclick={() => location.reload()}
-					class="px-4 py-2 rounded-lg text-sm font-medium"
-					style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);"
-				>Retry</button>
-			</div>
-		{:else}
-			<CytoscapeCanvas
-				bind:this={canvas}
-				{nodes}
-				{edges}
-				{projectId}
-				onUpdateNodeParent={nodeCrud.handleUpdateNodeParent}
-				onCreateEdge={edgeCrud.handleCreateEdge}
-				onZoomChange={(z) => (zoomLevel = z)}
-				onNodeTap={(_id, pos) => { nodePopupPos = pos; }}
-			/>
-
-			<!-- Floating toolbar -->
-			<div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-40">
-				<GraphToolbar
-					onAddNode={nodeCrud.handleAddNode}
-					onAddGroup={nodeCrud.handleAddGroup}
-					onZoomIn={() => canvas?.zoomIn()}
-					onZoomOut={() => canvas?.zoomOut()}
-					onFitView={() => canvas?.fitView()}
-					onRunLayout={() => canvas?.runLayout()}
-					onToggleImpact={() => graphStore.toggleImpactMode()}
-					isImpactActive={graphStore.impactMode}
-					canImpact={!!graphStore.selectedNodeId}
+	<div class="flex-1 flex overflow-hidden">
+		<!-- Canvas column -->
+		<div class="flex-1 relative min-w-0">
+			{#if loading}
+				<div class="absolute inset-0 flex items-center justify-center">
+					<p class="text-[var(--color-text-muted)]">Loading graph...</p>
+				</div>
+			{:else if loadError}
+				<div class="absolute inset-0 flex flex-col items-center justify-center gap-3">
+					<p class="text-sm" style="color: var(--color-danger);">{loadError}</p>
+					<button
+						onclick={() => location.reload()}
+						class="px-4 py-2 rounded-lg text-sm font-medium"
+						style="background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);"
+					>Retry</button>
+				</div>
+			{:else}
+				<CytoscapeCanvas
+					bind:this={canvas}
 					{nodes}
-					onFocusNode={(id) => canvas?.focusNode(id)}
-					onUndo={() => undoStack.undo()}
-					onRedo={() => undoStack.redo()}
-					canUndo={undoStack.canUndo}
-					canRedo={undoStack.canRedo}
-					selectedCount={graphStore.selectedNodeIds.size}
-					onBatchDelete={nodeCrud.handleBatchDelete}
-					onBatchStatus={nodeCrud.handleBatchStatus}
-					onDeselectAll={() => graphStore.clearSelection()}
+					{edges}
+					{projectId}
+					onUpdateNodeParent={nodeCrud.handleUpdateNodeParent}
+					onCreateEdge={edgeCrud.handleCreateEdge}
+					onZoomChange={(z) => (zoomLevel = z)}
 				/>
-			</div>
 
-			<!-- Status bar -->
-			<div class="absolute top-3 right-3 z-40 flex items-center gap-3 text-xs px-3 py-1.5 rounded-lg"
-				style="background: rgba(27,26,30,0.9); backdrop-filter: blur(12px); color: var(--color-text-muted); border: 1px solid var(--color-border);">
-				<span>{nodes.length} nodes</span>
-				<span style="color: var(--color-border);">&middot;</span>
-				<span>{edges.length} edges</span>
-				<span style="color: var(--color-border);">&middot;</span>
-				<span>{Math.round(zoomLevel * 100)}%</span>
-			</div>
+				<!-- Floating toolbar -->
+				<div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-40">
+					<GraphToolbar
+						onAddNode={nodeCrud.handleAddNode}
+						onAddGroup={nodeCrud.handleAddGroup}
+						onZoomIn={() => canvas?.zoomIn()}
+						onZoomOut={() => canvas?.zoomOut()}
+						onFitView={() => canvas?.fitView()}
+						onRunLayout={() => canvas?.runLayout()}
+						onToggleImpact={() => graphStore.toggleImpactMode()}
+						isImpactActive={graphStore.impactMode}
+						canImpact={!!graphStore.selectedNodeId}
+						{nodes}
+						onFocusNode={(id) => canvas?.focusNode(id)}
+						onUndo={() => undoStack.undo()}
+						onRedo={() => undoStack.redo()}
+						canUndo={undoStack.canUndo}
+						canRedo={undoStack.canRedo}
+					/>
+				</div>
+
+				<!-- Status bar -->
+				<div class="absolute top-3 right-3 z-40 flex items-center gap-3 text-xs px-3 py-1.5 rounded-lg"
+					style="background: rgba(27,26,30,0.9); backdrop-filter: blur(12px); color: var(--color-text-muted); border: 1px solid var(--color-border);">
+					<span>{nodes.length} nodes</span>
+					<span style="color: var(--color-border);">&middot;</span>
+					<span>{edges.length} edges</span>
+					<span style="color: var(--color-border);">&middot;</span>
+					<span>{Math.round(zoomLevel * 100)}%</span>
+				</div>
+			{/if}
+		</div>
+
+		<!-- Side Panel -->
+		{#if panelMode !== 'empty'}
+			<DetailSidePanel
+				{panelMode}
+				node={selectedNodeDetail}
+				allNodes={nodes}
+				{selectedEdge}
+				{selectedNodes}
+				onclose={() => graphStore.clearSelection()}
+				onUpdateNode={nodeCrud.handleUpdateNode}
+				onDeleteNode={nodeCrud.handleDeleteNode}
+				onSelectNode={handleSelectNodeFromPanel}
+				onEdgeTypeChange={edgeCrud.handleEdgeTypeChange}
+				onEdgeLabelUpdate={edgeCrud.handleEdgeLabelUpdate}
+				onDeleteEdge={edgeCrud.handleDeleteEdge}
+				onBatchDelete={nodeCrud.handleBatchDelete}
+				onBatchStatus={nodeCrud.handleBatchStatus}
+				onBatchType={nodeCrud.handleBatchType}
+				onBatchAddTag={nodeCrud.handleBatchAddTag}
+				onCreateGroupFromSelection={nodeCrud.handleCreateGroupFromSelection}
+				onStartEdgeDrawing={handleStartEdgeDrawing}
+			/>
 		{/if}
 	</div>
-
-	<!-- Edge Color Popover -->
-	{#if selectedEdge}
-		<EdgeColorPopover
-			position={edgePopoverPos}
-			currentLabel={selectedEdge.label ?? ''}
-			onselect={edgeCrud.handleEdgeTypeChange}
-			onupdatelabel={edgeCrud.handleEdgeLabelUpdate}
-			ondelete={edgeCrud.handleDeleteEdge}
-			oncancel={() => graphStore.clearSelection()}
-		/>
-	{/if}
-
-	<!-- Node Detail Panel -->
-	<NodeDetailPanel
-		node={selectedNodeDetail}
-		allNodes={nodes}
-		history={selectedNodeDetail?.history ?? []}
-		connectedNodeIds={selectedNodeDetail?.connectedNodeIds ?? []}
-		isOpen={!!graphStore.selectedNodeId && !!selectedNodeDetail}
-		position={nodePopupPos}
-		onclose={() => graphStore.clearSelection()}
-		onupdate={nodeCrud.handleUpdateNode}
-		ondelete={nodeCrud.handleDeleteNode}
-		onselectnode={handleSelectNodeFromPanel}
-	/>
 </div>
