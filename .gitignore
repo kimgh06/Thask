@@ -24,6 +24,10 @@ frontend/.svelte-kit/
 .DS_Store
 Thumbs.db
 
+# Build artifacts
+bin/
+dist/
+
 # Docker postgres data
 pgdata/
 
