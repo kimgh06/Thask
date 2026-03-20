@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/thask/backend/internal/model"
@@ -128,4 +129,64 @@ func (r *TeamRepo) IsMember(ctx context.Context, teamID, userID string) (bool, e
 func (r *TeamRepo) RemoveMember(ctx context.Context, teamID, userID string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM team_members WHERE team_id = $1 AND user_id = $2`, teamID, userID)
 	return err
+}
+
+func (r *TeamRepo) GetMemberRole(ctx context.Context, teamID, userID string) (model.TeamRole, error) {
+	var role model.TeamRole
+	err := r.pool.QueryRow(ctx,
+		`SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2`,
+		teamID, userID,
+	).Scan(&role)
+	return role, err
+}
+
+func (r *TeamRepo) UpdateMemberRole(ctx context.Context, teamID, userID string, role model.TeamRole) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE team_members SET role = $3 WHERE team_id = $1 AND user_id = $2`,
+		teamID, userID, role,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("member not found")
+	}
+	return nil
+}
+
+func (r *TeamRepo) CountByRole(ctx context.Context, teamID string, role model.TeamRole) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM team_members WHERE team_id = $1 AND role = $2`,
+		teamID, role,
+	).Scan(&count)
+	return count, err
+}
+
+func (r *TeamRepo) TransferOwnership(ctx context.Context, teamID, fromUserID, toUserID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	tag, err := tx.Exec(ctx,
+		`UPDATE team_members SET role = 'admin' WHERE team_id = $1 AND user_id = $2 AND role = 'owner'`,
+		teamID, fromUserID,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("caller is not the current owner")
+	}
+
+	if _, err := tx.Exec(ctx,
+		`UPDATE team_members SET role = 'owner' WHERE team_id = $1 AND user_id = $2`,
+		teamID, toUserID,
+	); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }

@@ -2,6 +2,8 @@ package service
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"time"
 
@@ -36,4 +38,26 @@ func GenerateToken() (string, error) {
 
 func SessionExpiresAt() time.Time {
 	return time.Now().Add(sessionDuration)
+}
+
+const (
+	apiKeyPrefix = "thsk_"
+	apiKeyBytes  = 24
+)
+
+func GenerateAPIKey() (string, error) {
+	b := make([]byte, apiKeyBytes)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return apiKeyPrefix + hex.EncodeToString(b), nil
+}
+
+func HashAPIKey(key string) string {
+	h := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(h[:])
+}
+
+func VerifyAPIKey(key, hash string) bool {
+	return subtle.ConstantTimeCompare([]byte(HashAPIKey(key)), []byte(hash)) == 1
 }
