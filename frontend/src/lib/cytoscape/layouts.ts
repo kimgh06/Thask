@@ -84,23 +84,29 @@ function arrangeChildrenInGroups(cy: cytoscape.Core) {
     if (children.length === 0) return;
 
     const gPos = group.position();
-    const gW = (group.data('width') as number) ?? 160;
-    const gH = (group.data('height') as number) ?? 100;
-    const pad = 25;
-
-    const innerW = gW - pad * 2;
-    const innerH = gH - pad * 2;
-
     const count = children.length;
     const cols = Math.ceil(Math.sqrt(count));
     const rows = Math.ceil(count / cols);
 
-    const cellW = innerW / cols;
-    const cellH = innerH / rows;
+    // Fixed cell size based on node dimensions + spacing
+    const cellW = 72 + 40;
+    const cellH = 72 + 40;
 
-    // Top-left of inner area
+    // Auto-size GROUP to fit children
+    const padSide = 30;
+    const padTop = 45; // title space
+    const padBot = 30;
+    const newW = Math.max(cols * cellW + padSide * 2, 160);
+    const newH = Math.max(rows * cellH + padTop + padBot, 100);
+    group.data('width', newW);
+    group.data('height', newH);
+
+    const innerW = newW - padSide * 2;
+    const innerH = newH - padTop - padBot;
+
+    // Top-left of inner area, offset for title
     const startX = gPos.x - innerW / 2 + cellW / 2;
-    const startY = gPos.y - innerH / 2 + cellH / 2;
+    const startY = gPos.y - (newH / 2) + padTop + cellH / 2;
 
     let i = 0;
     children.forEach((child: cytoscape.NodeSingular) => {

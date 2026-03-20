@@ -12,6 +12,7 @@
 	import { computeLocalImpact } from '$lib/cytoscape/impact';
 	import { createKeydownHandler } from '$lib/shortcuts';
 	import { exportPNG, exportJSON, importJSON } from '$lib/export';
+	import { realtimeStore } from '$lib/stores/realtime.svelte';
 
 	let nodes = $state<GraphNode[]>([]);
 	let edges = $state<GraphEdge[]>([]);
@@ -77,13 +78,11 @@
 	});
 
 	// Load graph data
-	$effect(() => {
-		const currentProjectId = projectId;
-		if (!currentProjectId) return;
-		loading = true;
-		loadError = '';
-		api.get<GraphData>(`/api/projects/${currentProjectId}/graph`).then((res) => {
-			if (projectId !== currentProjectId) return;
+	function loadGraph() {
+		const pid = projectId;
+		if (!pid) return;
+		api.get<GraphData>(`/api/projects/${pid}/graph`).then((res) => {
+			if (projectId !== pid) return;
 			if (res.error || !res.data) {
 				loadError = res.error || 'Failed to load graph data.';
 				loading = false;
@@ -93,6 +92,17 @@
 			edges = res.data.edges ?? [];
 			loading = false;
 		});
+	}
+
+	$effect(() => {
+		if (!projectId) return;
+		loading = true;
+		loadError = '';
+		loadGraph();
+
+		// Real-time sync
+		realtimeStore.connect(projectId, loadGraph);
+		return () => realtimeStore.disconnect();
 	});
 
 	// React to node selection

@@ -9,6 +9,8 @@ PostgreSQL 17 with pgx/v5 (raw SQL queries). Migrations in `backend/migrations/0
 ```
 Users ◄──── Sessions
   │
+  ├──── ApiKeys
+  │
   ├──── TeamMembers ────► Teams
   │                         │
   │                         └──── Projects
@@ -168,6 +170,25 @@ Indexes:
 - `idx_node_history_project_recent (project_id, created_at)`
 - `idx_node_history_node_id (node_id, created_at)`
 
+### api_keys
+
+API keys for programmatic access (CLI, MCP, CI/CD).
+
+| Column | Type | Constraints |
+|---|---|---|
+| `id` | UUID | PK, default `gen_random_uuid()` |
+| `user_id` | UUID | FK → `users(id)` ON DELETE CASCADE |
+| `name` | TEXT | NOT NULL |
+| `key_prefix` | CHAR(12) | NOT NULL — first 12 chars for display |
+| `key_hash` | TEXT | NOT NULL — SHA256 hash |
+| `last_used_at` | TIMESTAMPTZ | nullable |
+| `expires_at` | TIMESTAMPTZ | nullable (NULL = no expiration) |
+| `created_at` | TIMESTAMPTZ | NOT NULL, default `now()` |
+
+**Indexes:**
+- `idx_api_keys_user` — `user_id`
+- `idx_api_keys_hash` — `key_hash`
+
 ---
 
 ## Relations Summary
@@ -175,6 +196,7 @@ Indexes:
 | Relation | Type | ON DELETE |
 |---|---|---|
 | sessions → users | M:1 | — |
+| api_keys → users | M:1 | CASCADE |
 | teams → users (created_by) | M:1 | — |
 | team_members → teams | M:1 | CASCADE |
 | team_members → users | M:1 | CASCADE |

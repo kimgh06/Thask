@@ -93,6 +93,23 @@ type UpdateEdgeRequest struct {
 	Label    *string `json:"label" validate:"omitempty,max=100"`
 }
 
+type UpdateMemberRoleRequest struct {
+	Role string `json:"role" validate:"required,oneof=admin member viewer"`
+}
+
+type TransferOwnershipRequest struct {
+	UserID string `json:"userId" validate:"required,uuid"`
+}
+
+type LayoutRequest struct {
+	Algorithm string `json:"algorithm" validate:"omitempty,oneof=dagre grid"`
+}
+
+type CreateAPIKeyRequest struct {
+	Name      string `json:"name" validate:"required,min=1,max=100"`
+	ExpiresIn *int   `json:"expiresIn" validate:"omitempty,min=1,max=365"`
+}
+
 type ImportGraphRequest struct {
 	Mode  string           `json:"mode" validate:"required,oneof=replace merge"`
 	Nodes []ImportNodeItem `json:"nodes" validate:"required,dive"`

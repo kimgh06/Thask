@@ -83,7 +83,45 @@ cd frontend && npx playwright test
 
 - `backend/` — Go API server (Echo v4 + pgx/v5)
 - `frontend/` — SvelteKit app (Svelte 5 + Tailwind v4)
+- `cli/` — Go CLI tool (Cobra) + MCP server
 - `docs/` — Documentation
+
+### CLI Development
+
+The CLI is a separate Go module in `cli/`.
+
+```bash
+cd cli
+
+# Build
+go build -o thask ./cmd/thask
+
+# Install locally
+./thask install --dir ~/.local/bin
+
+# Test a command
+./thask config set url http://localhost:7244
+./thask config set token <your-api-key>
+./thask node list --pretty
+```
+
+### MCP Server Testing
+
+To test the MCP server locally with Claude Code:
+
+1. Build the CLI: `cd cli && go build -o thask ./cmd/thask`
+2. Add to `.claude/mcp.json`:
+   ```json
+   {
+     "mcpServers": {
+       "thask": {
+         "command": "./cli/thask",
+         "args": ["mcp", "serve", "--url", "http://localhost:7244", "--token", "<your-api-key>"]
+       }
+     }
+   }
+   ```
+3. Restart Claude Code — the 12 Thask tools should appear
 
 ## Code Style
 

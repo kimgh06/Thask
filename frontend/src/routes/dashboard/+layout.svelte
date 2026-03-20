@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { teamsStore } from '$lib/stores/teams.svelte';
-	import { LayoutDashboard, Users, FolderOpen, LogOut, ChevronDown, ChevronRight } from 'lucide-svelte';
+	import { LayoutDashboard, Users, FolderOpen, LogOut, ChevronDown, ChevronRight, Settings, UserCog } from 'lucide-svelte';
 	import ProjectMenu from '$lib/components/ProjectMenu.svelte';
 
 	let { children } = $props();
@@ -102,6 +102,19 @@
 							{/if}
 						</button>
 
+						{#if !collapsedTeams.has(team.id)}
+							{@const membersHref = `/dashboard/${team.slug}/members`}
+							<a
+								href={membersHref}
+								class="flex items-center gap-2.5 ml-1 px-3 py-1.5 rounded-lg text-sm transition-colors"
+								style="background: {isActive(membersHref) ? 'var(--color-primary)' : 'transparent'}; color: {isActive(membersHref) ? 'white' : 'var(--color-text-muted)'};"
+								onmouseenter={(e) => { if (!isActive(membersHref)) (e.currentTarget as HTMLElement).style.background = 'var(--color-surface-hover)'; }}
+								onmouseleave={(e) => { if (!isActive(membersHref)) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+							>
+								<UserCog size={14} class="shrink-0" />
+								<span class="truncate">Members</span>
+							</a>
+						{/if}
 						{#if !collapsedTeams.has(team.id) && team.projects}
 							{#each team.projects as project}
 								{@const href = `/dashboard/${team.slug}/${project.id}`}
@@ -128,7 +141,17 @@
 				{/each}
 			</nav>
 
-			<div class="p-2 border-t border-[var(--color-border)]">
+			<div class="p-2 border-t border-[var(--color-border)] space-y-0.5">
+				<a
+					href="/dashboard/settings"
+					class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors"
+					style="background: {isActive('/dashboard/settings') ? 'var(--color-primary)' : 'transparent'}; color: {isActive('/dashboard/settings') ? 'white' : 'var(--color-text-muted)'};"
+					onmouseenter={(e) => { if (!isActive('/dashboard/settings')) (e.currentTarget as HTMLElement).style.background = 'var(--color-surface-hover)'; }}
+					onmouseleave={(e) => { if (!isActive('/dashboard/settings')) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+				>
+					<Settings size={15} class="shrink-0" />
+					<span>Settings</span>
+				</a>
 				<button
 					onclick={handleLogout}
 					class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-[var(--color-text-muted)] hover:bg-[var(--color-surface-hover)] transition-colors"

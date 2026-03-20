@@ -10,13 +10,13 @@ Frontend: SvelteKit + Svelte 5 components.
 
 | Type | Shape | Color | Description |
 |---|---|---|---|
-| FLOW | round-rectangle | blue `#3b82f6` | Product flow / user journey |
-| BRANCH | diamond | purple `#8b5cf6` | Conditional branch / decision |
-| TASK | rectangle | cyan `#06b6d4` | Work item / task |
-| BUG | hexagon | red `#ef4444` | Bug / defect |
-| API | barrel | orange `#f97316` | API endpoint |
-| UI | ellipse | green `#10b981` | UI component / screen |
-| GROUP | round-rectangle (dashed) | slate `#64748b` | Container for grouping nodes |
+| FLOW | round-rectangle | yellow-gold `#e2b340` | Product flow / user journey |
+| BRANCH | diamond | purple `#a78bfa` | Conditional branch / decision |
+| TASK | rectangle | steel blue `#7ca3c4` | Work item / task |
+| BUG | hexagon | red `#e05252` | Bug / defect |
+| API | barrel | green `#5ea87a` | API endpoint |
+| UI | ellipse | orange `#d4915a` | UI component / screen |
+| GROUP | round-rectangle (dashed) | gray `#7c7570` | Container for grouping nodes |
 
 ## Node Statuses
 
@@ -31,11 +31,11 @@ Frontend: SvelteKit + Svelte 5 components.
 
 | Type | Color | Style | Description |
 |---|---|---|---|
-| depends_on | orange | solid | A depends on B |
-| blocks | red | dashed | A blocks B |
-| triggers | blue | solid | A triggers B |
-| related | gray | solid | General relation |
-| parent_child | purple | dashed | Parent-child hierarchy |
+| depends_on | purple `#a78bfa` | solid | A depends on B |
+| blocks | red `#e05252` | dashed | A blocks B |
+| triggers | yellow-gold `#e2b340` | solid | A triggers B |
+| related | gray `#7c7570` | solid | General relation |
+| parent_child | blue `#7ca3c4` | dashed | Parent-child hierarchy |
 
 ---
 
@@ -124,15 +124,16 @@ When a node's status changes to PASS or FAIL, the waterfall algorithm propagates
 3. Edge is created with default type `related`
 
 ### Edge Editing
-1. Click an edge — EdgeColorPopover appears at the edge's position
+1. Click an edge — EdgeDetailView opens in the side panel
 2. Select a new edge type from the 5 options
 3. Edit the label (debounced auto-save)
 4. Or click delete to remove the edge
 
 ### Node Selection
-- **Click node:** Select node, opens NodeDetailPanel
+- **Click node:** Select node, opens DetailSidePanel → NodeDetailView
 - **Click canvas:** Clear selection
-- **Click edge:** Select edge, opens EdgeColorPopover
+- **Click edge:** Select edge, opens DetailSidePanel → EdgeDetailView
+- **Box select / Ctrl+Click:** Multi-select, opens MultiSelectView with batch operations
 
 ### Group Drag
 - Dragging a GROUP moves all descendant nodes together
@@ -146,6 +147,39 @@ When a node's status changes to PASS or FAIL, the waterfall algorithm propagates
 
 ---
 
+## Export & Import
+
+### PNG Export
+- **Toolbar:** Export button → PNG
+- Full-graph capture with dark background (#131214), 2x scale
+- Implemented in `frontend/src/lib/export.ts`
+
+### JSON Export
+- **Toolbar:** Export button → JSON
+- Exports all nodes and edges as pretty-printed JSON with timestamp
+
+### JSON Import
+- **Toolbar:** Import button → select file
+- **Replace mode:** Overwrites entire graph with imported data (transaction-safe)
+- **Merge mode:** Adds imported nodes alongside existing ones, offset to the right
+- **API:** `POST /api/projects/:projectId/graph/import`
+
+---
+
+## Batch Operations
+
+When multiple nodes are selected (box select or Ctrl+Click), the MultiSelectView panel offers:
+
+| Operation | Description |
+|---|---|
+| Batch delete | Delete all selected nodes |
+| Batch status | Set status for all selected nodes |
+| Batch type | Change type for all selected nodes |
+| Batch add tag | Add a tag to all selected nodes |
+| Create group | Create a GROUP containing all selected nodes |
+
+---
+
 ## File Map
 
 | File | Responsibility |
@@ -154,12 +188,22 @@ When a node's status changes to PASS or FAIL, the waterfall algorithm propagates
 | `frontend/src/lib/cytoscape/layouts.ts` | fCOSE and preset layout configurations |
 | `frontend/src/lib/cytoscape/groupHelpers.ts` | `getChildNodes()`, `getDescendantNodes()`, `getDescendantIdSet()` |
 | `frontend/src/lib/cytoscape/impact.ts` | `activateImpactMode()`, `deactivateImpactMode()` |
+| `frontend/src/lib/cytoscape/handlers/selection.ts` | Node/edge/multi-select tap handlers |
+| `frontend/src/lib/cytoscape/handlers/edgeCreation.ts` | Edge drawing with port overlay |
+| `frontend/src/lib/cytoscape/handlers/groupDrag.ts` | Drag nodes into/out of groups |
+| `frontend/src/lib/managers/nodeCrud.svelte.ts` | Node CRUD + batch operations |
+| `frontend/src/lib/managers/edgeCrud.svelte.ts` | Edge CRUD operations |
+| `frontend/src/lib/export.ts` | PNG/JSON export, JSON import |
 | `backend/internal/service/waterfall.go` | `ComputeWaterfall()` — BFS status propagation |
 | `backend/internal/service/impact.go` | `ComputeImpact()` — bidirectional BFS |
 | `frontend/src/lib/components/CytoscapeCanvas.svelte` | Main canvas with all interactions |
 | `frontend/src/lib/components/GraphToolbar.svelte` | Toolbar with zoom, layout, filters, search |
+| `frontend/src/lib/components/DetailSidePanel.svelte` | Fixed side panel (node/edge/multi-select) |
+| `frontend/src/lib/components/panel/NodeDetailView.svelte` | Node detail with tabs: Info, Connected, History |
+| `frontend/src/lib/components/panel/EdgeDetailView.svelte` | Edge type/label editing |
+| `frontend/src/lib/components/panel/MultiSelectView.svelte` | Batch operations for multi-selection |
 | `frontend/src/lib/components/AddNodeModal.svelte` | Node creation modal |
-| `frontend/src/lib/components/EdgeColorPopover.svelte` | Edge type/label editing popover |
-| `frontend/src/lib/components/NodeDetailPanel.svelte` | Slide-out detail panel with tabs |
+| `frontend/src/lib/components/SearchBar.svelte` | Node search with pulse highlight |
 | `frontend/src/lib/stores/graph.svelte.ts` | Selection, filters, impact mode, collapsed groups |
+| `frontend/src/lib/stores/undo.svelte.ts` | Undo/redo command stack |
 | `frontend/src/lib/types.ts` | GraphNode, GraphEdge, NodeType, NodeStatus, EdgeType |

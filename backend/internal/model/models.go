@@ -114,6 +114,17 @@ type NodeHistoryEntry struct {
 	UserName  string        `json:"userName" db:"display_name"`
 }
 
+type APIKey struct {
+	ID         string     `json:"id" db:"id"`
+	UserID     string     `json:"userId" db:"user_id"`
+	Name       string     `json:"name" db:"name"`
+	KeyPrefix  string     `json:"keyPrefix" db:"key_prefix"`
+	KeyHash    string     `json:"-" db:"key_hash"`
+	LastUsedAt *time.Time `json:"lastUsedAt,omitempty" db:"last_used_at"`
+	ExpiresAt  *time.Time `json:"expiresAt,omitempty" db:"expires_at"`
+	CreatedAt  time.Time  `json:"createdAt" db:"created_at"`
+}
+
 type ImpactResult struct {
 	ChangedNodes  []Node `json:"changedNodes"`
 	ImpactedNodes []Node `json:"impactedNodes"`

@@ -16,9 +16,9 @@
 | `L` | Run auto-layout |
 | `I` | Toggle Impact Mode |
 | `Mod+F` | Open search bar |
-| `Mod+Z` | Undo (planned) |
-| `Mod+Shift+Z` / `Mod+Y` | Redo (planned) |
-| `Mod+A` | Select all (planned) |
+| `Mod+Z` | Undo |
+| `Mod+Shift+Z` / `Mod+Y` | Redo |
+| `Mod+A` | Select all |
 
 > Single-key shortcuts are disabled when typing in input fields.
 

@@ -124,6 +124,13 @@ export function syncElements(ctx: SyncContext): boolean {
 
 			if (existing.length) {
 				existing.data(data);
+				// Update position if it changed (e.g. after server-side layout)
+				if (hasPositions) {
+					const curPos = existing.position();
+					if (Math.abs(curPos.x - node.positionX) > 0.5 || Math.abs(curPos.y - node.positionY) > 0.5) {
+						existing.position({ x: node.positionX, y: node.positionY });
+					}
+				}
 			} else {
 				cy.add({
 					group: 'nodes',

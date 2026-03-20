@@ -2,10 +2,16 @@
 
 ## Overview
 
-Thask uses a **monorepo with separate backend and frontend** services. The backend is a Go API server; the frontend is a SvelteKit application. Both communicate via REST and are deployed as independent Docker containers.
+Thask uses a **monorepo with separate backend, frontend, and CLI** services. The backend is a Go API server; the frontend is a SvelteKit application; the CLI is a Go tool with an embedded MCP server. All communicate via REST/stdio and are deployed as independent Docker containers or binaries.
 
 ```
 ┌──────────────────────────────────────────────────────────┐
+│  CLI (Go + Cobra)                                        │
+│  thask node · thask edge · thask graph · thask impact    │
+├──────────────────────────────────────────────────────────┤
+│  MCP Server (stdio)                                      │
+│  12 tools · thask.node.* · thask.edge.* · thask.graph.*  │
+╠══════════════════════════════════════════════════════════╣
 │  Frontend (SvelteKit + Svelte 5)                         │
 │  CytoscapeCanvas · GraphToolbar · NodeDetailPanel · ...  │
 ├──────────────────────────────────────────────────────────┤
@@ -18,10 +24,10 @@ Thask uses a **monorepo with separate backend and frontend** services. The backe
 │  Backend (Go + Echo v4)                                  │
 ├──────────────────────────────────────────────────────────┤
 │  Middleware Layer                                        │
-│  CORS · RateLimiter · Auth · ProjectAccess               │
+│  CORS · RateLimiter · Auth · ProjectAccess · TeamAccess  │
 ├──────────────────────────────────────────────────────────┤
 │  Handler Layer (HTTP → Business Logic)                   │
-│  auth · team · node · edge · impact · summary            │
+│  auth · team · node · edge · impact · summary · api_key  │
 ├──────────────────────────────────────────────────────────┤
 │  Service Layer (Pure Logic)                              │
 │  waterfall · impact · auth (bcrypt, tokens)              │
@@ -61,7 +67,7 @@ Svelte 5 Stores                   API Client
                   ▼
    ┌──────────────────────────────────────────┐
    │         PostgreSQL 17                   │
-   │  8 tables, 5 enums, 12+ indexes        │
+   │  9 tables, 5 enums, 12+ indexes        │
    └──────────────────────────────────────────┘
 ```
 
@@ -70,6 +76,18 @@ Svelte 5 Stores                   API Client
 ## Directory Structure
 
 ```
+cli/
+├── cmd/thask/
+│   └── main.go                    # CLI entrypoint
+├── internal/
+│   ├── cmd/                       # Cobra commands (node, edge, team, etc.)
+│   ├── mcp/                       # MCP server (stdio, 12 tools)
+│   ├── client/                    # HTTP client for backend API
+│   ├── config/                    # Config file (~/.config/thask/)
+│   └── output/                    # Output formatting (JSON, table, quiet)
+├── go.mod
+└── go.sum
+
 backend/
 ├── cmd/server/
 │   └── main.go                    # Entrypoint: DB, migrations, routes, graceful shutdown
@@ -86,9 +104,11 @@ backend/
 │   │   ├── edge.go                # CRUD with self-reference check
 │   │   ├── impact.go              # BFS-based impact analysis
 │   │   ├── summary.go             # Dashboard summary counts
+│   │   ├── api_key.go             # Create, List, Delete API keys
 │   │   └── validator.go           # Custom validator (slug regex)
 │   ├── middleware/
 │   │   ├── auth.go                # Cookie → session → user context injection
+│   │   ├── role.go                # TeamAccess (slug resolution + membership), RequireRole (minimum role check)
 │   │   └── project_access.go      # Team membership verification (centralized)
 │   ├── model/
 │   │   ├── enums.go               # NodeType, NodeStatus, EdgeType, TeamRole constants
@@ -101,7 +121,8 @@ backend/
 │   │   ├── project.go             # CRUD, VerifyAccess (centralized)
 │   │   ├── node.go                # CRUD, BatchPositions, FindChangedSince, UpdateStatus
 │   │   ├── edge.go                # CRUD, FindConnected
-│   │   └── history.go             # Create, FindByNodeID (with user join)
+│   │   ├── history.go             # Create, FindByNodeID (with user join)
+│   │   └── api_key.go             # API key storage and validation
 │   └── service/
 │       ├── auth.go                # bcrypt (cost 12), token generation, session expiry
 │       ├── waterfall.go           # BFS status propagation (max depth 10)
@@ -196,10 +217,17 @@ Browser → SvelteKit route → api.ts (fetch w/ cookie)
                               → sessions table (token lookup)
                               → users table (join)
                               → inject user into Echo context
+
+CLI/MCP → Authorization header (Bearer <api_key>)
+        → Go middleware: Auth → ValidateAPIKey()
+                              → api_keys table (hash lookup)
+                              → users table (join)
+                              → inject user into Echo context
 ```
 
 - Session tokens: 32-byte hex, 7-day expiry
 - Storage: HttpOnly cookie (`thask_session`)
+- API keys: SHA256 hash, per-user, with optional expiration
 - Passwords: bcrypt with cost 12
 - Session rotation: all previous sessions deleted on login
 - Rate limiting: 20 req/s per client
@@ -211,8 +239,9 @@ User → TeamMembers → Teams → Projects → Nodes/Edges
 ```
 
 Every API route verifies:
-1. Valid session (`Auth` middleware)
+1. Valid session or API key (`Auth` middleware)
 2. Team membership for the project (`ProjectAccess` middleware — centralized, not duplicated)
+3. Minimum role (if required) via `RequireRole` middleware (owner, admin, member, viewer)
 
 ---
 

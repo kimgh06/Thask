@@ -90,6 +90,28 @@ export interface NodeUpdateResult {
 	propagated: StatusChange[];
 }
 
+export interface TeamMember {
+	id: string;
+	teamId: string;
+	userId: string;
+	role: TeamRole;
+	joinedAt: string;
+	user: User;
+}
+
+export interface APIKey {
+	id: string;
+	name: string;
+	keyPrefix: string;
+	lastUsedAt: string | null;
+	expiresAt: string | null;
+	createdAt: string;
+}
+
+export interface APIKeyCreated extends APIKey {
+	key: string;
+}
+
 export interface ImpactResult {
 	changedNodes: GraphNode[];
 	impactedNodes: GraphNode[];

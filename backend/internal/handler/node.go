@@ -18,10 +18,11 @@ type NodeHandler struct {
 	nodeRepo    *repository.NodeRepo
 	edgeRepo    *repository.EdgeRepo
 	historyRepo *repository.HistoryRepo
+	hub         *service.Hub
 }
 
-func NewNodeHandler(nodeRepo *repository.NodeRepo, edgeRepo *repository.EdgeRepo, historyRepo *repository.HistoryRepo) *NodeHandler {
-	return &NodeHandler{nodeRepo: nodeRepo, edgeRepo: edgeRepo, historyRepo: historyRepo}
+func NewNodeHandler(nodeRepo *repository.NodeRepo, edgeRepo *repository.EdgeRepo, historyRepo *repository.HistoryRepo, hub *service.Hub) *NodeHandler {
+	return &NodeHandler{nodeRepo: nodeRepo, edgeRepo: edgeRepo, historyRepo: historyRepo, hub: hub}
 }
 
 func (h *NodeHandler) List(c echo.Context) error {
@@ -68,6 +69,69 @@ func (h *NodeHandler) Graph(c echo.Context) error {
 		edges = []model.Edge{}
 	}
 
+	return c.JSON(http.StatusOK, dto.OK(map[string]any{
+		"nodes": nodes,
+		"edges": edges,
+	}))
+}
+
+func (h *NodeHandler) Layout(c echo.Context) error {
+	var req dto.LayoutRequest
+	if err := c.Bind(&req); err != nil {
+		req.Algorithm = ""
+	}
+
+	ctx := c.Request().Context()
+	projectID := c.Param("projectId")
+
+	algorithm := req.Algorithm
+	if algorithm == "" {
+		algorithm = "dagre"
+	}
+
+	nodes, err := h.nodeRepo.FindByProjectID(ctx, projectID, nil, nil)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to fetch nodes"))
+	}
+	if len(nodes) == 0 {
+		return c.JSON(http.StatusOK, dto.OK(map[string]any{"nodes": []any{}, "edges": []any{}}))
+	}
+
+	edges, err := h.edgeRepo.FindByProjectID(ctx, projectID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to fetch edges"))
+	}
+	if edges == nil {
+		edges = []model.Edge{}
+	}
+
+	layoutPositions := service.CalculateLayout(nodes, edges, algorithm)
+
+	positions := make([]struct {
+		ID     string
+		X, Y   float64
+		Width  *float64
+		Height *float64
+	}, len(layoutPositions))
+	for i, lp := range layoutPositions {
+		positions[i] = struct {
+			ID     string
+			X, Y   float64
+			Width  *float64
+			Height *float64
+		}{lp.ID, lp.X, lp.Y, lp.Width, lp.Height}
+	}
+
+	if err := h.nodeRepo.BatchUpdatePositions(ctx, projectID, positions); err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to save layout"))
+	}
+
+	nodes, _ = h.nodeRepo.FindByProjectID(ctx, projectID, nil, nil)
+	if nodes == nil {
+		nodes = []model.Node{}
+	}
+
+	h.hub.Publish(service.Event{Type: service.EventGraphLayout, ProjectID: projectID, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusOK, dto.OK(map[string]any{
 		"nodes": nodes,
 		"edges": edges,
@@ -197,6 +261,7 @@ func (h *NodeHandler) Import(c echo.Context) error {
 		return c.JSON(http.StatusOK, dto.OK(map[string]any{"nodes": allNodes, "edges": allEdges}))
 	}
 
+	h.hub.Publish(service.Event{Type: service.EventGraphImport, ProjectID: projectID, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusOK, dto.OK(map[string]any{"nodes": createdNodes, "edges": createdEdges}))
 }
 
@@ -287,6 +352,7 @@ func (h *NodeHandler) Create(c echo.Context) error {
 	title := created.Title
 	_ = h.historyRepo.Create(ctx, created.ID, projectID, userID, model.HistoryActionCreated, strPtr("title"), nil, &title)
 
+	h.hub.Publish(service.Event{Type: service.EventNodeCreated, ProjectID: projectID, Data: created, UserID: userID})
 	return c.JSON(http.StatusCreated, dto.OK(created))
 }
 
@@ -403,6 +469,7 @@ func (h *NodeHandler) Update(c echo.Context) error {
 		}
 	}
 
+	h.hub.Publish(service.Event{Type: service.EventNodeUpdated, ProjectID: projectID, Data: updated, UserID: userID})
 	return c.JSON(http.StatusOK, dto.OK(map[string]any{"node": updated, "propagated": propagated}))
 }
 
@@ -415,6 +482,8 @@ func (h *NodeHandler) Delete(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to delete node"))
 	}
 
+	userID := mw.GetUserID(c)
+	h.hub.Publish(service.Event{Type: service.EventNodeDeleted, ProjectID: projectID, Data: nodeID, UserID: userID})
 	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
 }
 
@@ -449,6 +518,7 @@ func (h *NodeHandler) BatchUpdatePositions(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update positions"))
 	}
 
+	h.hub.Publish(service.Event{Type: service.EventNodeUpdated, ProjectID: projectID, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
 }
 
@@ -468,6 +538,7 @@ func (h *NodeHandler) BatchDelete(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to delete nodes"))
 	}
 
+	h.hub.Publish(service.Event{Type: service.EventNodeDeleted, ProjectID: projectID, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
 }
 
@@ -487,6 +558,7 @@ func (h *NodeHandler) BatchUpdateStatus(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update status"))
 	}
 
+	h.hub.Publish(service.Event{Type: service.EventNodeUpdated, ProjectID: projectID, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
 }
 

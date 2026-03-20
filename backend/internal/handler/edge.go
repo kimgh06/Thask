@@ -5,16 +5,19 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/thask/backend/internal/dto"
+	mw "github.com/thask/backend/internal/middleware"
 	"github.com/thask/backend/internal/model"
 	"github.com/thask/backend/internal/repository"
+	"github.com/thask/backend/internal/service"
 )
 
 type EdgeHandler struct {
 	edgeRepo *repository.EdgeRepo
+	hub      *service.Hub
 }
 
-func NewEdgeHandler(edgeRepo *repository.EdgeRepo) *EdgeHandler {
-	return &EdgeHandler{edgeRepo: edgeRepo}
+func NewEdgeHandler(edgeRepo *repository.EdgeRepo, hub *service.Hub) *EdgeHandler {
+	return &EdgeHandler{edgeRepo: edgeRepo, hub: hub}
 }
 
 func (h *EdgeHandler) List(c echo.Context) error {
@@ -58,6 +61,7 @@ func (h *EdgeHandler) Create(c echo.Context) error {
 		return c.JSON(http.StatusConflict, dto.Err("Edge already exists or invalid"))
 	}
 
+	h.hub.Publish(service.Event{Type: service.EventEdgeCreated, ProjectID: projectID, Data: edge, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusCreated, dto.OK(edge))
 }
 
@@ -81,16 +85,19 @@ func (h *EdgeHandler) Update(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update edge"))
 	}
 
+	h.hub.Publish(service.Event{Type: service.EventEdgeUpdated, ProjectID: edge.ProjectID, Data: edge, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusOK, dto.OK(edge))
 }
 
 func (h *EdgeHandler) Delete(c echo.Context) error {
 	ctx := c.Request().Context()
+	projectID := c.Param("projectId")
 	edgeID := c.Param("edgeId")
 
 	if err := h.edgeRepo.Delete(ctx, edgeID); err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to delete edge"))
 	}
 
+	h.hub.Publish(service.Event{Type: service.EventEdgeDeleted, ProjectID: projectID, Data: edgeID, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
 }

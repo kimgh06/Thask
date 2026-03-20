@@ -1,4 +1,4 @@
-.PHONY: dev dev-db dev-backend dev-frontend build test test-e2e clean
+.PHONY: dev dev-db dev-backend dev-frontend build build-cli release-cli test test-backend test-cli test-e2e clean
 
 # Development
 dev: dev-db
@@ -15,9 +15,12 @@ dev-frontend:
 	cd frontend && npm run dev -- --port 7243
 
 # Build
-build:
+build: build-cli
 	cd backend && go build -o bin/server ./cmd/server
 	cd frontend && npm run build
+
+build-cli:
+	cd cli && go build -ldflags "-X github.com/thask/cli/internal/cmd.Version=$$(git describe --tags --always 2>/dev/null || echo dev) -X github.com/thask/cli/internal/cmd.Commit=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown) -X github.com/thask/cli/internal/mcp.Version=$$(git describe --tags --always 2>/dev/null || echo dev)" -o ../bin/thask ./cmd/thask
 
 # Test
 test:
@@ -26,6 +29,19 @@ test:
 
 test-backend:
 	cd backend && go test -v ./...
+
+release-cli:
+	@mkdir -p dist
+	cd cli && GOOS=darwin  GOARCH=arm64 go build -ldflags "-X github.com/thask/cli/internal/cmd.Version=$$(git describe --tags --always 2>/dev/null || echo dev)" -o ../dist/thask-darwin-arm64 ./cmd/thask
+	cd cli && GOOS=darwin  GOARCH=amd64 go build -ldflags "-X github.com/thask/cli/internal/cmd.Version=$$(git describe --tags --always 2>/dev/null || echo dev)" -o ../dist/thask-darwin-amd64 ./cmd/thask
+	cd cli && GOOS=linux   GOARCH=amd64 go build -ldflags "-X github.com/thask/cli/internal/cmd.Version=$$(git describe --tags --always 2>/dev/null || echo dev)" -o ../dist/thask-linux-amd64  ./cmd/thask
+	cd cli && GOOS=linux   GOARCH=arm64 go build -ldflags "-X github.com/thask/cli/internal/cmd.Version=$$(git describe --tags --always 2>/dev/null || echo dev)" -o ../dist/thask-linux-arm64  ./cmd/thask
+	cd cli && GOOS=windows GOARCH=amd64 go build -ldflags "-X github.com/thask/cli/internal/cmd.Version=$$(git describe --tags --always 2>/dev/null || echo dev)" -o ../dist/thask-windows-amd64.exe ./cmd/thask
+	@echo "Built binaries in dist/"
+	@ls -lh dist/
+
+test-cli:
+	cd cli && go test ./...
 
 test-e2e:
 	cd frontend && npx playwright test
@@ -53,5 +69,5 @@ db-down:
 
 # Clean
 clean:
-	rm -rf backend/bin
+	rm -rf backend/bin bin/
 	rm -rf frontend/build frontend/.svelte-kit

@@ -6,9 +6,9 @@
 <td align="center" width="160"><img src="public/mascot.png" alt="Thask Mascot" width="140" /></td>
 </tr></table>
 
-**Visualize product flows, tasks, and bugs as a linked node graph.**
+**Map dependencies visually. Break nothing.**
 <br />
-Built for QA risk management and change impact analysis.
+Dependency visualization for AI-assisted development teams.
 
 <br />
 
@@ -35,6 +35,10 @@ Spreadsheets lose context. Linear issue trackers hide relationships. **Thask map
 <table>
 <tr>
 <td width="25%" align="center">
+<h4>AI-Native</h4>
+<p>Ship with <code>thask mcp serve</code> — Claude Code and Cursor read your dependency graph as a tool. Ask "what breaks if I change this?" and get real answers.</p>
+</td>
+<td width="25%" align="center">
 <h4>Graph-first Thinking</h4>
 <p>Every flow, task, and bug is a node. Every dependency is a visible edge. No more hidden connections.</p>
 </td>
@@ -45,10 +49,6 @@ Spreadsheets lose context. Linear issue trackers hide relationships. **Thask map
 <td width="25%" align="center">
 <h4>Self-hosted</h4>
 <p><code>docker compose up</code> — that's it. Your data stays on your infrastructure. No vendor lock-in.</p>
-</td>
-<td width="25%" align="center">
-<h4>Team-ready</h4>
-<p>Multi-team projects with role-based access. Everyone sees the same graph.</p>
 </td>
 </tr>
 </table>
@@ -80,6 +80,52 @@ Slide-out panel with full editing — title, description, type, status, tags, co
 ### Edge Relationships
 
 Five edge types with distinct colors: `depends_on`, `blocks`, `related`, `parent_child`, `triggers`. Click any edge to change its type or delete it.
+
+### CLI & MCP Integration
+
+Full CLI for terminal workflows (`thask node list --pretty`). MCP server mode for AI agent integration — Claude Code and Cursor can query and modify your graph directly. [CLI Reference](docs/CLI.md) · [MCP Guide](docs/MCP.md)
+
+### Role-Based Access
+
+Four team roles — Owner, Admin, Member, Viewer — with granular permissions. API key authentication for programmatic access.
+
+---
+
+## Quick Start for AI Agents
+
+Get Thask working with Claude Code in 3 minutes:
+
+1. **Start Thask** (if not running):
+   ```bash
+   make up
+   ```
+
+2. **Create an API key** in the web UI at [http://localhost:7243](http://localhost:7243) → Settings → API Keys
+
+3. **Install the CLI:**
+   ```bash
+   cd cli && go build -o thask ./cmd/thask && ./thask install
+   ```
+
+4. **Configure:**
+   ```bash
+   thask config set url http://localhost:7244
+   thask config set token <your-api-key>
+   ```
+
+5. **Add to Claude Code** (`.claude/mcp.json`):
+   ```json
+   {
+     "mcpServers": {
+       "thask": {
+         "command": "thask",
+         "args": ["mcp", "serve"]
+       }
+     }
+   }
+   ```
+
+Now Claude Code can read and modify your dependency graph. See [MCP Guide](docs/MCP.md) for details.
 
 ---
 
@@ -157,6 +203,7 @@ Open [http://localhost:7243](http://localhost:7243)
 |---|---|
 | **Backend** | Go 1.26 (Echo v4) |
 | **Frontend** | SvelteKit + Svelte 5 (runes) |
+| **CLI** | Go (Cobra) + MCP server |
 | **Graph Engine** | Cytoscape.js + fCOSE layout + edgehandles |
 | **Styling** | Tailwind CSS v4 |
 | **State** | Svelte 5 runes ($state, $derived, $effect) |
@@ -198,6 +245,15 @@ frontend/
                         # EdgeColorPopover, NodeDetailPanel
       cytoscape/        # Styles, layouts, impact mode, group helpers
   e2e/                  # Playwright E2E tests
+
+cli/
+  cmd/thask/            # CLI entrypoint
+  internal/
+    cmd/                # Cobra commands (node, edge, team, etc.)
+    mcp/                # MCP server (stdio protocol, 12 tools)
+    client/             # HTTP client for backend API
+    config/             # Config file management (~/.config/thask/)
+    output/             # Output formatting (JSON, table, quiet)
 ```
 
 ---
@@ -278,6 +334,8 @@ Place a reverse proxy (e.g. nginx, Caddy, Cloudflare Tunnel) in front to handle 
 - [API Reference](docs/API.md) — 22+ endpoints with request/response examples
 - [Graph Engine](docs/GRAPH.md) — Node types, edge types, GROUP, impact mode
 - [Keyboard Shortcuts](docs/SHORTCUTS.md) — All shortcuts and interactions
+- [CLI Reference](docs/CLI.md) — Installation, commands, shell aliases
+- [MCP Guide](docs/MCP.md) — AI agent integration (Claude Code, Cursor)
 
 ---
 
@@ -313,6 +371,11 @@ Place a reverse proxy (e.g. nginx, Caddy, Cloudflare Tunnel) in front to handle 
 - [x] Docker Compose one-command deploy
 - [x] Go backend with 18 unit tests
 - [x] Playwright E2E tests (13 tests)
+- [x] CLI tool with full graph operations
+- [x] MCP server for AI agent integration (12 tools)
+- [x] API key authentication (Bearer token)
+- [x] Role-based access control (owner/admin/member/viewer)
+- [x] Team member management (invite, roles, transfer)
 
 ### v0.2 — Collaboration & Export
 - [ ] Real-time collaboration (WebSocket / SSE)

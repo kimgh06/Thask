@@ -68,7 +68,6 @@ func (h *TeamHandler) Create(c echo.Context) error {
 	ctx := c.Request().Context()
 	userID := mw.GetUserID(c)
 
-	// Check slug uniqueness
 	if existing, _ := h.teamRepo.FindBySlug(ctx, req.Slug); existing != nil {
 		return c.JSON(http.StatusConflict, dto.Err("Team slug already taken"))
 	}
@@ -83,18 +82,14 @@ func (h *TeamHandler) Create(c echo.Context) error {
 	return c.JSON(http.StatusCreated, dto.OK(team))
 }
 
+// --- Below: TeamAccess middleware provides team_id + team_role in context ---
+
 func (h *TeamHandler) GetBySlug(c echo.Context) error {
 	ctx := c.Request().Context()
 	slug := c.Param("teamSlug")
-	userID := mw.GetUserID(c)
 
 	team, err := h.teamRepo.FindBySlug(ctx, slug)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
-	}
-
-	isMember, _ := h.teamRepo.IsMember(ctx, team.ID, userID)
-	if !isMember {
 		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
 	}
 
@@ -111,20 +106,9 @@ func (h *TeamHandler) Update(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	slug := c.Param("teamSlug")
-	userID := mw.GetUserID(c)
+	teamID := mw.GetTeamID(c)
 
-	team, err := h.teamRepo.FindBySlug(ctx, slug)
-	if err != nil {
-		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
-	}
-
-	isMember, _ := h.teamRepo.IsMember(ctx, team.ID, userID)
-	if !isMember {
-		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
-	}
-
-	updated, err := h.teamRepo.Update(ctx, team.ID, req.Name)
+	updated, err := h.teamRepo.Update(ctx, teamID, req.Name)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update team"))
 	}
@@ -134,20 +118,9 @@ func (h *TeamHandler) Update(c echo.Context) error {
 
 func (h *TeamHandler) Delete(c echo.Context) error {
 	ctx := c.Request().Context()
-	slug := c.Param("teamSlug")
-	userID := mw.GetUserID(c)
+	teamID := mw.GetTeamID(c)
 
-	team, err := h.teamRepo.FindBySlug(ctx, slug)
-	if err != nil {
-		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
-	}
-
-	isMember, _ := h.teamRepo.IsMember(ctx, team.ID, userID)
-	if !isMember {
-		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
-	}
-
-	if err := h.teamRepo.Delete(ctx, team.ID); err != nil {
+	if err := h.teamRepo.Delete(ctx, teamID); err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to delete team"))
 	}
 
@@ -156,21 +129,9 @@ func (h *TeamHandler) Delete(c echo.Context) error {
 
 func (h *TeamHandler) ListMembers(c echo.Context) error {
 	ctx := c.Request().Context()
-	slug := c.Param("teamSlug")
-	userID := mw.GetUserID(c)
+	teamID := mw.GetTeamID(c)
 
-	team, err := h.teamRepo.FindBySlug(ctx, slug)
-	if err != nil {
-		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
-	}
-
-	// Fix: verify requesting user is a member
-	isMember, _ := h.teamRepo.IsMember(ctx, team.ID, userID)
-	if !isMember {
-		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
-	}
-
-	members, err := h.teamRepo.GetMembers(ctx, team.ID)
+	members, err := h.teamRepo.GetMembers(ctx, teamID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to fetch members"))
 	}
@@ -188,18 +149,8 @@ func (h *TeamHandler) InviteMember(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	slug := c.Param("teamSlug")
-	userID := mw.GetUserID(c)
-
-	team, err := h.teamRepo.FindBySlug(ctx, slug)
-	if err != nil {
-		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
-	}
-
-	isMember, _ := h.teamRepo.IsMember(ctx, team.ID, userID)
-	if !isMember {
-		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
-	}
+	teamID := mw.GetTeamID(c)
+	callerRole := mw.GetTeamRole(c)
 
 	invitee, err := h.userRepo.FindByEmail(ctx, req.Email)
 	if err != nil {
@@ -211,7 +162,12 @@ func (h *TeamHandler) InviteMember(c echo.Context) error {
 		role = model.TeamRoleMember
 	}
 
-	if err := h.teamRepo.AddMember(ctx, team.ID, invitee.ID, role); err != nil {
+	// Admin cannot invite as admin or owner
+	if callerRole == model.TeamRoleAdmin && role.AtLeast(model.TeamRoleAdmin) {
+		return c.JSON(http.StatusForbidden, dto.Err("Admins cannot invite as admin or owner"))
+	}
+
+	if err := h.teamRepo.AddMember(ctx, teamID, invitee.ID, role); err != nil {
 		return c.JSON(http.StatusConflict, dto.Err("User already a member"))
 	}
 
@@ -220,20 +176,9 @@ func (h *TeamHandler) InviteMember(c echo.Context) error {
 
 func (h *TeamHandler) ListProjects(c echo.Context) error {
 	ctx := c.Request().Context()
-	slug := c.Param("teamSlug")
-	userID := mw.GetUserID(c)
+	teamID := mw.GetTeamID(c)
 
-	team, err := h.teamRepo.FindBySlug(ctx, slug)
-	if err != nil {
-		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
-	}
-
-	isMember, _ := h.teamRepo.IsMember(ctx, team.ID, userID)
-	if !isMember {
-		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
-	}
-
-	projects, err := h.projectRepo.FindByTeamID(ctx, team.ID)
+	projects, err := h.projectRepo.FindByTeamID(ctx, teamID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to fetch projects"))
 	}
@@ -254,23 +199,147 @@ func (h *TeamHandler) CreateProject(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	slug := c.Param("teamSlug")
+	teamID := mw.GetTeamID(c)
 	userID := mw.GetUserID(c)
 
-	team, err := h.teamRepo.FindBySlug(ctx, slug)
-	if err != nil {
-		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
-	}
-
-	isMember, _ := h.teamRepo.IsMember(ctx, team.ID, userID)
-	if !isMember {
-		return c.JSON(http.StatusNotFound, dto.Err("Team not found"))
-	}
-
-	project, err := h.projectRepo.Create(ctx, team.ID, req.Name, req.Description, userID)
+	project, err := h.projectRepo.Create(ctx, teamID, req.Name, req.Description, userID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to create project"))
 	}
 
 	return c.JSON(http.StatusCreated, dto.OK(project))
+}
+
+// --- P1: Team Member Management ---
+
+func (h *TeamHandler) UpdateMemberRole(c echo.Context) error {
+	var req dto.UpdateMemberRoleRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.Err("Invalid request body"))
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.Err(err.Error()))
+	}
+
+	ctx := c.Request().Context()
+	teamID := mw.GetTeamID(c)
+	callerID := mw.GetUserID(c)
+	callerRole := mw.GetTeamRole(c)
+	targetUserID := c.Param("userId")
+	newRole := model.TeamRole(req.Role)
+
+	if callerID == targetUserID {
+		return c.JSON(http.StatusBadRequest, dto.Err("Use /transfer to change ownership or /leave to leave"))
+	}
+
+	targetRole, err := h.teamRepo.GetMemberRole(ctx, teamID, targetUserID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, dto.Err("Member not found"))
+	}
+
+	if targetRole == model.TeamRoleOwner {
+		return c.JSON(http.StatusForbidden, dto.Err("Cannot change owner's role"))
+	}
+
+	if newRole == model.TeamRoleOwner {
+		return c.JSON(http.StatusBadRequest, dto.Err("Use /transfer to transfer ownership"))
+	}
+
+	// Admin can only manage member/viewer
+	if callerRole == model.TeamRoleAdmin {
+		if targetRole == model.TeamRoleAdmin {
+			return c.JSON(http.StatusForbidden, dto.Err("Admins cannot manage other admins"))
+		}
+		if newRole == model.TeamRoleAdmin {
+			return c.JSON(http.StatusForbidden, dto.Err("Admins cannot promote to admin"))
+		}
+	}
+
+	if err := h.teamRepo.UpdateMemberRole(ctx, teamID, targetUserID, newRole); err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update role"))
+	}
+
+	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
+}
+
+func (h *TeamHandler) RemoveMember(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamID := mw.GetTeamID(c)
+	callerID := mw.GetUserID(c)
+	callerRole := mw.GetTeamRole(c)
+	targetUserID := c.Param("userId")
+
+	if callerID == targetUserID {
+		return c.JSON(http.StatusBadRequest, dto.Err("Use /leave to remove yourself"))
+	}
+
+	targetRole, err := h.teamRepo.GetMemberRole(ctx, teamID, targetUserID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, dto.Err("Member not found"))
+	}
+
+	if targetRole == model.TeamRoleOwner {
+		return c.JSON(http.StatusForbidden, dto.Err("Cannot remove owner"))
+	}
+
+	if callerRole == model.TeamRoleAdmin && targetRole == model.TeamRoleAdmin {
+		return c.JSON(http.StatusForbidden, dto.Err("Admins cannot remove other admins"))
+	}
+
+	if err := h.teamRepo.RemoveMember(ctx, teamID, targetUserID); err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to remove member"))
+	}
+
+	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
+}
+
+func (h *TeamHandler) Leave(c echo.Context) error {
+	ctx := c.Request().Context()
+	teamID := mw.GetTeamID(c)
+	userID := mw.GetUserID(c)
+	role := mw.GetTeamRole(c)
+
+	if role == model.TeamRoleOwner {
+		count, err := h.teamRepo.CountByRole(ctx, teamID, model.TeamRoleOwner)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, dto.Err("Failed to check owner count"))
+		}
+		if count <= 1 {
+			return c.JSON(http.StatusBadRequest, dto.Err("Cannot leave: you are the sole owner. Transfer ownership first."))
+		}
+	}
+
+	if err := h.teamRepo.RemoveMember(ctx, teamID, userID); err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to leave team"))
+	}
+
+	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
+}
+
+func (h *TeamHandler) TransferOwnership(c echo.Context) error {
+	var req dto.TransferOwnershipRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.Err("Invalid request body"))
+	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.Err(err.Error()))
+	}
+
+	ctx := c.Request().Context()
+	teamID := mw.GetTeamID(c)
+	callerID := mw.GetUserID(c)
+
+	if callerID == req.UserID {
+		return c.JSON(http.StatusBadRequest, dto.Err("Cannot transfer ownership to yourself"))
+	}
+
+	if _, err := h.teamRepo.GetMemberRole(ctx, teamID, req.UserID); err != nil {
+		return c.JSON(http.StatusNotFound, dto.Err("Target user is not a team member"))
+	}
+
+	if err := h.teamRepo.TransferOwnership(ctx, teamID, callerID, req.UserID); err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to transfer ownership"))
+	}
+
+	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
 }
