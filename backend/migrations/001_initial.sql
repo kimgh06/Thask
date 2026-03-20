@@ -132,3 +132,10 @@ CREATE TABLE IF NOT EXISTS node_history (
 );
 CREATE INDEX IF NOT EXISTS idx_node_history_project_recent ON node_history(project_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_node_history_node_id ON node_history(node_id, created_at);
+
+-- Migration tracking
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO schema_migrations (version) VALUES (1) ON CONFLICT DO NOTHING;

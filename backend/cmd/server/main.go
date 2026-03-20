@@ -14,7 +14,9 @@ import (
 	"github.com/thask/backend/internal/config"
 	"github.com/thask/backend/internal/handler"
 	"github.com/thask/backend/internal/middleware"
+	"github.com/thask/backend/internal/model"
 	"github.com/thask/backend/internal/repository"
+	"github.com/thask/backend/internal/service"
 )
 
 func main() {
@@ -41,6 +43,23 @@ func main() {
 		slog.Info("migrations applied")
 	}
 
+	// Run migration 002 (idempotent — only if schema_migrations tracking says not applied)
+	var m002Applied bool
+	_ = pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = 2)`).Scan(&m002Applied)
+	if !m002Applied {
+		migration002, err := os.ReadFile("migrations/002_api_keys.sql")
+		if err != nil {
+			slog.Warn("migration 002 file not found, skipping", "error", err)
+		} else {
+			if _, err := pool.Exec(ctx, string(migration002)); err != nil {
+				slog.Error("failed to run migration 002", "error", err)
+				os.Exit(1)
+			}
+			pool.Exec(ctx, `INSERT INTO schema_migrations (version) VALUES (2) ON CONFLICT DO NOTHING`)
+			slog.Info("migration 002 applied")
+		}
+	}
+
 	// Repositories
 	userRepo := repository.NewUserRepo(pool)
 	sessionRepo := repository.NewSessionRepo(pool)
@@ -49,15 +68,21 @@ func main() {
 	nodeRepo := repository.NewNodeRepo(pool)
 	edgeRepo := repository.NewEdgeRepo(pool)
 	historyRepo := repository.NewHistoryRepo(pool)
+	apiKeyRepo := repository.NewAPIKeyRepo(pool)
+
+	// Event Hub
+	hub := service.NewHub()
 
 	// Handlers
 	authHandler := handler.NewAuthHandler(userRepo, sessionRepo)
 	teamHandler := handler.NewTeamHandler(teamRepo, projectRepo, userRepo)
 	projectHandler := handler.NewProjectHandler(projectRepo, teamRepo)
-	nodeHandler := handler.NewNodeHandler(nodeRepo, edgeRepo, historyRepo)
-	edgeHandler := handler.NewEdgeHandler(edgeRepo)
+	nodeHandler := handler.NewNodeHandler(nodeRepo, edgeRepo, historyRepo, hub)
+	edgeHandler := handler.NewEdgeHandler(edgeRepo, hub)
 	impactHandler := handler.NewImpactHandler(nodeRepo, edgeRepo)
 	summaryHandler := handler.NewSummaryHandler(teamRepo, projectRepo)
+	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyRepo)
+	eventHandler := handler.NewEventHandler(hub)
 
 	// Echo
 	e := echo.New()
@@ -89,50 +114,74 @@ func main() {
 	auth.POST("/login", authHandler.Login)
 
 	// Auth routes (protected)
-	authed := e.Group("", middleware.Auth(sessionRepo))
+	authed := e.Group("", middleware.Auth(sessionRepo, apiKeyRepo))
 
 	authed.GET("/api/auth/me", authHandler.Me)
 	authed.POST("/api/auth/logout", authHandler.Logout)
+	authed.POST("/api/auth/api-keys", apiKeyHandler.Create)
+	authed.GET("/api/auth/api-keys", apiKeyHandler.List)
+	authed.DELETE("/api/auth/api-keys/:keyId", apiKeyHandler.Delete)
 
-	// Teams
+	// Teams (no team context needed)
 	authed.GET("/api/teams", teamHandler.List)
 	authed.POST("/api/teams", teamHandler.Create)
-	authed.GET("/api/teams/:teamSlug", teamHandler.GetBySlug)
-	authed.PATCH("/api/teams/:teamSlug", teamHandler.Update)
-	authed.DELETE("/api/teams/:teamSlug", teamHandler.Delete)
-	authed.GET("/api/teams/:teamSlug/members", teamHandler.ListMembers)
-	authed.POST("/api/teams/:teamSlug/members", teamHandler.InviteMember)
-	authed.GET("/api/teams/:teamSlug/projects", teamHandler.ListProjects)
-	authed.POST("/api/teams/:teamSlug/projects", teamHandler.CreateProject)
 
-	// Projects
-	projectGroup := authed.Group("/api/projects/:projectId", middleware.ProjectAccess(projectRepo))
+	// Team-scoped routes (TeamAccess resolves slug + role)
+	teamGroup := authed.Group("/api/teams/:teamSlug", middleware.TeamAccess(teamRepo))
+
+	// Read — all roles
+	teamGroup.GET("", teamHandler.GetBySlug)
+	teamGroup.GET("/members", teamHandler.ListMembers)
+	teamGroup.GET("/projects", teamHandler.ListProjects)
+
+	// Any member can leave
+	teamGroup.POST("/leave", teamHandler.Leave)
+
+	// Admin+ — team management
+	teamAdmin := teamGroup.Group("", middleware.RequireRole(model.TeamRoleAdmin))
+	teamAdmin.PATCH("", teamHandler.Update)
+	teamAdmin.POST("/members", teamHandler.InviteMember)
+	teamAdmin.PATCH("/members/:userId", teamHandler.UpdateMemberRole)
+	teamAdmin.DELETE("/members/:userId", teamHandler.RemoveMember)
+
+	// Member+ — project creation
+	teamMember := teamGroup.Group("", middleware.RequireRole(model.TeamRoleMember))
+	teamMember.POST("/projects", teamHandler.CreateProject)
+
+	// Owner only — destructive operations
+	teamOwner := teamGroup.Group("", middleware.RequireRole(model.TeamRoleOwner))
+	teamOwner.DELETE("", teamHandler.Delete)
+	teamOwner.POST("/transfer", teamHandler.TransferOwnership)
+
+	// Projects (ProjectAccess resolves project + role)
+	projectGroup := authed.Group("/api/projects/:projectId", middleware.ProjectAccess(projectRepo, teamRepo))
+
+	// SSE — real-time events (all roles)
+	projectGroup.GET("/events", eventHandler.Stream)
+
+	// Read — all roles (including viewer)
 	projectGroup.GET("", projectHandler.Get)
-	projectGroup.PATCH("", projectHandler.Update)
-	projectGroup.DELETE("", projectHandler.Delete)
-
-	// Graph (nodes + edges in single response)
 	projectGroup.GET("/graph", nodeHandler.Graph)
-	projectGroup.POST("/graph/import", nodeHandler.Import)
-
-	// Nodes
 	projectGroup.GET("/nodes", nodeHandler.List)
-	projectGroup.POST("/nodes", nodeHandler.Create)
 	projectGroup.GET("/nodes/:nodeId", nodeHandler.Get)
-	projectGroup.PATCH("/nodes/:nodeId", nodeHandler.Update)
-	projectGroup.DELETE("/nodes/:nodeId", nodeHandler.Delete)
-	projectGroup.PATCH("/nodes/positions", nodeHandler.BatchUpdatePositions)
-	projectGroup.POST("/nodes/batch-delete", nodeHandler.BatchDelete)
-	projectGroup.PATCH("/nodes/batch-status", nodeHandler.BatchUpdateStatus)
-
-	// Edges
 	projectGroup.GET("/edges", edgeHandler.List)
-	projectGroup.POST("/edges", edgeHandler.Create)
-	projectGroup.PATCH("/edges/:edgeId", edgeHandler.Update)
-	projectGroup.DELETE("/edges/:edgeId", edgeHandler.Delete)
-
-	// Impact
 	projectGroup.GET("/impact", impactHandler.Analyze)
+
+	// Write — member+ only
+	projectWrite := projectGroup.Group("", middleware.RequireRole(model.TeamRoleMember))
+	projectWrite.PATCH("", projectHandler.Update)
+	projectWrite.DELETE("", projectHandler.Delete)
+	projectWrite.POST("/graph/import", nodeHandler.Import)
+	projectWrite.POST("/graph/layout", nodeHandler.Layout)
+	projectWrite.POST("/nodes", nodeHandler.Create)
+	projectWrite.PATCH("/nodes/:nodeId", nodeHandler.Update)
+	projectWrite.DELETE("/nodes/:nodeId", nodeHandler.Delete)
+	projectWrite.PATCH("/nodes/positions", nodeHandler.BatchUpdatePositions)
+	projectWrite.POST("/nodes/batch-delete", nodeHandler.BatchDelete)
+	projectWrite.PATCH("/nodes/batch-status", nodeHandler.BatchUpdateStatus)
+	projectWrite.POST("/edges", edgeHandler.Create)
+	projectWrite.PATCH("/edges/:edgeId", edgeHandler.Update)
+	projectWrite.DELETE("/edges/:edgeId", edgeHandler.Delete)
 
 	// Summary
 	authed.GET("/api/projects/summary", summaryHandler.Get)
