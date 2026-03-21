@@ -12,7 +12,7 @@ export function attachWaypointHandlers(
 	cy: cytoscape.Core,
 	options: WaypointOptions,
 ): { cleanup: () => void } {
-	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+	const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 	let activeEdgeId: string | null = null;
 	let markerContainer: HTMLDivElement | null = null;
 	let isDragging = false;
@@ -20,12 +20,14 @@ export function attachWaypointHandlers(
 	// --- Save ---
 
 	function saveWaypoints(edgeId: string, waypoints: Array<{ x: number; y: number }>) {
-		if (debounceTimer) clearTimeout(debounceTimer);
-		debounceTimer = setTimeout(async () => {
+		const existing = debounceTimers.get(edgeId);
+		if (existing) clearTimeout(existing);
+		debounceTimers.set(edgeId, setTimeout(async () => {
+			debounceTimers.delete(edgeId);
 			const base = options.getApiBase();
 			if (!base) return;
 			await api.patch(`${base}/edges/${edgeId}`, { waypoints });
-		}, 500);
+		}, 500));
 	}
 
 	// --- Marker container ---
@@ -316,7 +318,9 @@ export function attachWaypointHandlers(
 			cy.off('grab', 'node', onNodeGrab);
 			cy.off('dragfree', 'node', onNodeDragFree);
 			clearMarkers();
-			if (debounceTimer) clearTimeout(debounceTimer);
+			preDragPositions.clear();
+			for (const timer of debounceTimers.values()) clearTimeout(timer);
+			debounceTimers.clear();
 			if (markerContainer) {
 				markerContainer.remove();
 				markerContainer = null;

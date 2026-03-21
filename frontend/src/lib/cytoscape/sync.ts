@@ -24,9 +24,10 @@ function waypointsToSegments(
 		const wy = wp.y - src.y;
 		const weight = (wx * dx + wy * dy) / (len * len);
 		const dist = wx * nx + wy * ny;
-		if (!isFinite(weight) || !isFinite(dist)) continue;
-		weights.push(Math.max(0.01, Math.min(0.99, weight)));
-		distances.push(dist);
+		const safeWeight = isFinite(weight) ? weight : 0.5;
+		const safeDist = isFinite(dist) ? dist : 0;
+		weights.push(Math.max(0.01, Math.min(0.99, safeWeight)));
+		distances.push(safeDist);
 	}
 
 	return { distances, weights };
