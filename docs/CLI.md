@@ -481,6 +481,19 @@ thask graph import --file graph.json --mode merge
 thask graph import --file graph.json --mode replace
 ```
 
+### graph layout [\--algorithm dagre\|grid]
+
+Run server-side auto-layout. Repositions all nodes and auto-sizes GROUPs.
+
+```bash
+thask graph layout -p <projectId>
+thask graph layout -p <projectId> --algorithm grid
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--algorithm` | `dagre` | Layout algorithm: `dagre`, `grid` |
+
 ---
 
 ## impact

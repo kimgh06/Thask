@@ -439,6 +439,51 @@ Constraints: no self-loops (validated server-side).
 
 ---
 
+## Realtime Events (SSE)
+
+### GET /api/projects/:projectId/events
+
+Server-Sent Events stream for realtime updates. Returns `text/event-stream`.
+
+```
+Event: connected        — initial connection confirmation
+Event: node.created     — a node was created
+Event: node.updated     — a node was updated
+Event: node.deleted     — a node was deleted
+Event: edge.created     — an edge was created
+Event: edge.updated     — an edge was updated
+Event: edge.deleted     — an edge was deleted
+Event: graph.layout     — auto-layout was applied
+Event: graph.import     — graph was imported
+```
+
+Each event payload:
+```json
+{ "type": "node.updated", "projectId": "uuid", "data": {...}, "userId": "uuid" }
+```
+
+---
+
+## Graph Layout
+
+### POST /api/projects/:projectId/graph/layout
+
+Run server-side auto-layout. Repositions all nodes and auto-sizes GROUPs. Requires `member` role.
+
+```json
+// Request (all fields optional)
+{ "algorithm": "dagre" }
+
+// Response 200
+{ "data": [{ "id": "uuid", "x": 100, "y": 200, "width": null, "height": null }, ...] }
+```
+
+| Param | Default | Options | Description |
+|---|---|---|---|
+| `algorithm` | `dagre` | `dagre`, `grid` | Layout algorithm |
+
+---
+
 ## Impact Analysis
 
 ### GET /api/projects/:projectId/impact

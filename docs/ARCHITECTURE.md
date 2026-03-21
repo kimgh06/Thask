@@ -201,6 +201,8 @@ frontend/
 | `auth` | Password hashing (bcrypt cost 12), token generation, session expiry |
 | `waterfall` | BFS status propagation across edges (max depth 10) |
 | `impact` | Bidirectional BFS from changed nodes with configurable depth |
+| `eventhub` | Pub/sub hub for SSE realtime events (node/edge CRUD, layout, import) |
+| `layout` | Server-side graph layout algorithms (dagre, grid) with GROUP auto-sizing |
 
 ### Frontend — Stores (Svelte 5 Runes)
 
@@ -208,6 +210,7 @@ frontend/
 |---|---|
 | `AuthStore` | User session, login/register/logout, `$state` user |
 | `GraphStore` | Node/edge selection, type/status filters, impact mode, collapsed groups |
+| `RealtimeStore` | SSE connection to `/api/projects/:id/events`, debounced graph refresh |
 
 ### Auth Flow
 

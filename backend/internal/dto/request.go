@@ -101,6 +101,19 @@ type TransferOwnershipRequest struct {
 	UserID string `json:"userId" validate:"required,uuid"`
 }
 
+type UpdateSharingRequest struct {
+	LinkSharing string `json:"linkSharing" validate:"required,oneof=off viewer editor"`
+}
+
+type AddProjectMemberRequest struct {
+	Email string `json:"email" validate:"required,email"`
+	Role  string `json:"role" validate:"required,oneof=editor viewer"`
+}
+
+type UpdateProjectMemberRequest struct {
+	Role string `json:"role" validate:"required,oneof=editor viewer"`
+}
+
 type LayoutRequest struct {
 	Algorithm string `json:"algorithm" validate:"omitempty,oneof=dagre grid"`
 }

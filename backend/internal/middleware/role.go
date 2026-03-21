@@ -56,6 +56,14 @@ func RequireRole(minRole model.TeamRole) echo.MiddlewareFunc {
 	}
 }
 
+func GetProjectID(c echo.Context) string {
+	id, ok := c.Get(ContextProjectID).(string)
+	if !ok {
+		return ""
+	}
+	return id
+}
+
 func GetTeamID(c echo.Context) string {
 	id, ok := c.Get(ContextTeamID).(string)
 	if !ok {

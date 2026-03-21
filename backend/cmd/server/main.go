@@ -60,6 +60,25 @@ func main() {
 		}
 	}
 
+	// Run migration 003
+	var m003Applied bool
+	_ = pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = 3)`).Scan(&m003Applied)
+	if !m003Applied {
+		migration003, err := os.ReadFile("migrations/003_project_access.sql")
+		if err != nil {
+			slog.Warn("migration 003 file not found, skipping", "error", err)
+		} else {
+			if _, err := pool.Exec(ctx, string(migration003)); err != nil {
+				slog.Error("failed to run migration 003", "error", err)
+				os.Exit(1)
+			}
+			if _, err := pool.Exec(ctx, `INSERT INTO schema_migrations (version) VALUES (3) ON CONFLICT DO NOTHING`); err != nil {
+				slog.Warn("failed to record migration 003", "error", err)
+			}
+			slog.Info("migration 003 applied")
+		}
+	}
+
 	// Repositories
 	userRepo := repository.NewUserRepo(pool)
 	sessionRepo := repository.NewSessionRepo(pool)
@@ -69,6 +88,7 @@ func main() {
 	edgeRepo := repository.NewEdgeRepo(pool)
 	historyRepo := repository.NewHistoryRepo(pool)
 	apiKeyRepo := repository.NewAPIKeyRepo(pool)
+	pmRepo := repository.NewProjectMemberRepo(pool)
 
 	// Event Hub
 	hub := service.NewHub()
@@ -76,7 +96,7 @@ func main() {
 	// Handlers
 	authHandler := handler.NewAuthHandler(userRepo, sessionRepo)
 	teamHandler := handler.NewTeamHandler(teamRepo, projectRepo, userRepo)
-	projectHandler := handler.NewProjectHandler(projectRepo, teamRepo)
+	projectHandler := handler.NewProjectHandler(projectRepo, teamRepo, pmRepo, userRepo)
 	nodeHandler := handler.NewNodeHandler(nodeRepo, edgeRepo, historyRepo, hub)
 	edgeHandler := handler.NewEdgeHandler(edgeRepo, hub)
 	impactHandler := handler.NewImpactHandler(nodeRepo, edgeRepo)
@@ -97,7 +117,7 @@ func main() {
 	e.Use(echoMw.Recover())
 	e.Use(echoMw.CORSWithConfig(echoMw.CORSConfig{
 		AllowOrigins:     []string{cfg.FrontendURL},
-		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete, http.MethodOptions},
+		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 		AllowHeaders:     []string{echo.HeaderContentType, echo.HeaderAuthorization},
 		AllowCredentials: true,
 	}))
@@ -154,10 +174,18 @@ func main() {
 	teamOwner.POST("/transfer", teamHandler.TransferOwnership)
 
 	// Projects (ProjectAccess resolves project + role)
-	projectGroup := authed.Group("/api/projects/:projectId", middleware.ProjectAccess(projectRepo, teamRepo))
+	projectGroup := authed.Group("/api/projects/:projectId", middleware.ProjectAccess(projectRepo, teamRepo, pmRepo))
 
 	// SSE — real-time events (all roles)
 	projectGroup.GET("/events", eventHandler.Stream)
+
+	// Sharing (admin+)
+	projectSharing := projectGroup.Group("", middleware.RequireRole(model.TeamRoleAdmin))
+	projectSharing.GET("/sharing", projectHandler.GetSharing)
+	projectSharing.PUT("/sharing", projectHandler.UpdateSharing)
+	projectSharing.POST("/sharing/members", projectHandler.AddMember)
+	projectSharing.PATCH("/sharing/members/:userId", projectHandler.UpdateMember)
+	projectSharing.DELETE("/sharing/members/:userId", projectHandler.RemoveMember)
 
 	// Read — all roles (including viewer)
 	projectGroup.GET("", projectHandler.Get)
@@ -185,6 +213,14 @@ func main() {
 
 	// Summary
 	authed.GET("/api/projects/summary", summaryHandler.Get)
+
+	// Shared (public, no auth required) — stricter rate limit for unauthenticated access
+	shared := e.Group("/api/shared/:shareToken",
+		echoMw.RateLimiter(echoMw.NewRateLimiterMemoryStore(5)),
+		middleware.SharedAccess(projectRepo),
+	)
+	shared.GET("", projectHandler.SharedGet)
+	shared.GET("/graph", nodeHandler.SharedGraph)
 
 	// Graceful shutdown
 	go func() {

@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CLI tool (Go/Cobra) with full graph operations: node, edge, team, project, graph, impact commands
 - MCP server mode for AI agent integration (Claude Code, Cursor) with 12 tools
+- Realtime updates via Server-Sent Events (SSE) — 8 event types (node/edge CRUD, layout, import)
+- Server-side auto-layout endpoint (`POST /graph/layout`) with dagre and grid algorithms
+- CLI `graph layout` command for server-side auto-layout
 - API key authentication (`Authorization: Bearer <key>`) alongside session cookies
 - Role-based access control: owner, admin, member, viewer with `RequireRole` middleware
 - Team member management: invite, role change, remove, leave, transfer ownership

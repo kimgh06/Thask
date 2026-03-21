@@ -61,6 +61,25 @@ const (
 	EdgeTypeTriggers    EdgeType = "triggers"
 )
 
+type ProjectRole string
+
+const (
+	ProjectRoleEditor ProjectRole = "editor"
+	ProjectRoleViewer ProjectRole = "viewer"
+)
+
+// ToTeamRole maps a ProjectRole to its equivalent TeamRole for authorization.
+func (r ProjectRole) ToTeamRole() TeamRole {
+	switch r {
+	case ProjectRoleEditor:
+		return TeamRoleMember
+	case ProjectRoleViewer:
+		return TeamRoleViewer
+	default:
+		return ""
+	}
+}
+
 type HistoryAction string
 
 const (

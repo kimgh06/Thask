@@ -13,11 +13,14 @@
 	import { createKeydownHandler } from '$lib/shortcuts';
 	import { exportPNG, exportJSON, importJSON } from '$lib/export';
 	import { realtimeStore } from '$lib/stores/realtime.svelte';
+	import ShareDialog from '$lib/components/ShareDialog.svelte';
 
 	let nodes = $state<GraphNode[]>([]);
 	let edges = $state<GraphEdge[]>([]);
 	let loading = $state(true);
 	let loadError = $state('');
+	let showShareDialog = $state(false);
+	let projectName = $state('');
 
 	const projectId = $derived(page.params.projectId ?? '');
 
@@ -98,6 +101,10 @@
 		if (!projectId) return;
 		loading = true;
 		loadError = '';
+		// Fetch project name
+		api.get<{ name: string }>(`/api/projects/${projectId}`).then((res) => {
+			if (res.data) projectName = res.data.name;
+		});
 		loadGraph();
 
 		// Real-time sync
@@ -249,6 +256,7 @@
 						onRedo={() => undoStack.redo()}
 						canUndo={undoStack.canUndo}
 						canRedo={undoStack.canRedo}
+						onShare={() => { showShareDialog = true; }}
 					/>
 				</div>
 
@@ -289,3 +297,11 @@
 		{/if}
 	</div>
 </div>
+
+{#if showShareDialog}
+	<ShareDialog
+		{projectId}
+		{projectName}
+		onClose={() => { showShareDialog = false; }}
+	/>
+{/if}

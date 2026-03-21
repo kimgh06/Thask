@@ -58,6 +58,11 @@ func HashAPIKey(key string) string {
 	return hex.EncodeToString(h[:])
 }
 
+func HashShareToken(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
+}
+
 func VerifyAPIKey(key, hash string) bool {
 	return subtle.ConstantTimeCompare([]byte(HashAPIKey(key)), []byte(hash)) == 1
 }

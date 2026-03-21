@@ -85,6 +85,36 @@ animate: true (500ms)
 
 Reads stored `positionX` / `positionY` from the database. Used when loading an existing graph that has saved positions.
 
+### Server-side Layout
+
+The backend also provides auto-layout via `POST /api/projects/:projectId/graph/layout`:
+
+| Algorithm | Description |
+|---|---|
+| `dagre` | Directed acyclic graph layout (default). Respects edge direction, layers nodes hierarchically. |
+| `grid` | Simple grid layout. Nodes arranged in rows/columns. |
+
+Both algorithms auto-size GROUP nodes to contain their children. Positions are saved to the database and broadcast via SSE.
+
+---
+
+## Realtime Updates (SSE)
+
+When multiple users view the same project, changes are broadcast via Server-Sent Events:
+
+| Event | Trigger |
+|---|---|
+| `node.created` | Node added |
+| `node.updated` | Node title, status, type, etc. changed |
+| `node.deleted` | Node removed |
+| `edge.created` | Edge added |
+| `edge.updated` | Edge type or label changed |
+| `edge.deleted` | Edge removed |
+| `graph.layout` | Auto-layout applied |
+| `graph.import` | Graph imported |
+
+Frontend connects via `EventSource` at `/api/projects/:projectId/events`. Changes trigger a debounced graph refresh (300ms).
+
 ---
 
 ## Impact Mode

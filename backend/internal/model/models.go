@@ -52,8 +52,24 @@ type Project struct {
 	Name        string    `json:"name" db:"name"`
 	Description *string   `json:"description" db:"description"`
 	CreatedBy   string    `json:"createdBy" db:"created_by"`
-	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
-	UpdatedAt   time.Time `json:"updatedAt" db:"updated_at"`
+	LinkSharing    string    `json:"linkSharing" db:"link_sharing"`
+	ShareToken     *string   `json:"shareToken,omitempty" db:"share_token"`
+	ShareTokenHash *string   `json:"-" db:"share_token_hash"`
+	CreatedAt      time.Time `json:"createdAt" db:"created_at"`
+	UpdatedAt      time.Time `json:"updatedAt" db:"updated_at"`
+}
+
+type ProjectMember struct {
+	ID        string      `json:"id" db:"id"`
+	ProjectID string      `json:"projectId" db:"project_id"`
+	UserID    string      `json:"userId" db:"user_id"`
+	Role      ProjectRole `json:"role" db:"role"`
+	CreatedAt time.Time   `json:"createdAt" db:"created_at"`
+}
+
+type ProjectMemberWithUser struct {
+	ProjectMember
+	User *User `json:"user,omitempty"`
 }
 
 type Node struct {

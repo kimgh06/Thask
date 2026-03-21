@@ -112,6 +112,23 @@ export interface APIKeyCreated extends APIKey {
 	key: string;
 }
 
+export type ProjectRole = 'editor' | 'viewer';
+
+export interface ProjectMember {
+	id: string;
+	projectId: string;
+	userId: string;
+	role: ProjectRole;
+	createdAt: string;
+	user: User;
+}
+
+export interface SharingInfo {
+	linkSharing: 'off' | 'viewer' | 'editor';
+	shareUrl: string | null;
+	members: ProjectMember[];
+}
+
 export interface ImpactResult {
 	changedNodes: GraphNode[];
 	impactedNodes: GraphNode[];
