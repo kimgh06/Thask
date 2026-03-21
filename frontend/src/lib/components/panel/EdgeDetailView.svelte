@@ -11,9 +11,10 @@
 		onupdatelabel: (label: string) => void;
 		ondelete: () => void;
 		onselectnode: (nodeId: string) => void;
+		readonly?: boolean;
 	}
 
-	let { edge, allNodes, onselect, onupdatelabel, ondelete, onselectnode }: Props = $props();
+	let { edge, allNodes, onselect, onupdatelabel, ondelete, onselectnode, readonly = false }: Props = $props();
 
 	const EDGE_TYPES: { value: EdgeType; label: string; color: string }[] = [
 		{ value: 'depends_on', label: 'Depends On', color: EDGE_COLORS.depends_on },
@@ -70,10 +71,11 @@
 	<input
 		id="edge-label"
 		bind:value={label}
-		oninput={handleLabelInput}
-		placeholder="Edge label..."
+		oninput={readonly ? undefined : handleLabelInput}
+		placeholder={readonly ? 'No label' : 'Edge label...'}
 		class="px-2 py-1.5 rounded text-xs outline-none"
 		style="background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border);"
+		{readonly}
 	/>
 </div>
 
@@ -83,11 +85,11 @@
 	<div class="flex flex-col gap-1">
 		{#each EDGE_TYPES as et}
 			<button
-				onclick={() => onselect(et.value)}
+				onclick={() => { if (!readonly) onselect(et.value); }}
 				class="flex items-center gap-2 px-2 py-1.5 rounded text-xs font-medium text-left transition-colors"
-				style="background: {edge.edgeType === et.value ? et.color + '22' : 'var(--color-bg)'}; color: {edge.edgeType === et.value ? et.color : 'var(--color-text)'}; border: 1px solid {edge.edgeType === et.value ? et.color + '44' : 'transparent'};"
-				onmouseenter={(e) => { if (edge.edgeType !== et.value) (e.currentTarget as HTMLElement).style.background = 'var(--color-surface-hover)'; }}
-				onmouseleave={(e) => { if (edge.edgeType !== et.value) (e.currentTarget as HTMLElement).style.background = 'var(--color-bg)'; }}
+				style="background: {edge.edgeType === et.value ? et.color + '22' : 'var(--color-bg)'}; color: {edge.edgeType === et.value ? et.color : 'var(--color-text)'}; border: 1px solid {edge.edgeType === et.value ? et.color + '44' : 'transparent'}; cursor: {readonly ? 'default' : 'pointer'};"
+				onmouseenter={(e) => { if (!readonly && edge.edgeType !== et.value) (e.currentTarget as HTMLElement).style.background = 'var(--color-surface-hover)'; }}
+				onmouseleave={(e) => { if (!readonly && edge.edgeType !== et.value) (e.currentTarget as HTMLElement).style.background = 'var(--color-bg)'; }}
 			>
 				<span class="w-3 h-3 rounded-full flex-shrink-0" style="background: {et.color};"></span>
 				{et.label}
@@ -96,6 +98,7 @@
 	</div>
 </div>
 
+{#if !readonly}
 <!-- Delete button -->
 <button
 	onclick={ondelete}
@@ -106,3 +109,4 @@
 >
 	<Trash2 size={12} class="inline mr-1" />Delete Edge
 </button>
+{/if}

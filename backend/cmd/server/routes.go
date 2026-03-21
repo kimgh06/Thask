@@ -123,6 +123,7 @@ func RegisterRoutes(e *echo.Echo, h Handlers, sessionRepo *repository.SessionRep
 	)
 	shared.GET("", h.Project.SharedGet)
 	shared.GET("/graph", h.Node.SharedGraph)
+	shared.GET("/og-image", h.Node.OGImage)
 	shared.GET("/events", h.Event.Stream)
 
 	// Shared write — only when linkSharing == "editor" (member role)

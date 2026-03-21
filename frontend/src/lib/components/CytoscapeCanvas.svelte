@@ -168,6 +168,10 @@
 
 		const cleanups: Array<{ cleanup: () => void }> = [];
 
+		// Selection handlers (always active — needed for detail panel in readonly too)
+		const selectionHandlers = attachSelectionHandlers(cy, { onNodeTap });
+		cleanups.push(selectionHandlers);
+
 		if (!readonly) {
 			// Initialize edgehandles
 			const eh = initEdgehandles(cy);
@@ -188,10 +192,6 @@
 				isOnGroupBorder,
 			});
 			cleanups.push(portHandlers);
-
-			// Selection handlers
-			const selectionHandlers = attachSelectionHandlers(cy, { onNodeTap });
-			cleanups.push(selectionHandlers);
 
 			// Group drag handlers
 			const groupDragHandlers = attachGroupDragHandlers(cy, {

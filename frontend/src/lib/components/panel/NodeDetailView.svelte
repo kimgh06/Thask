@@ -10,9 +10,10 @@
 		ondelete: (nodeId: string) => void;
 		onselectnode: (nodeId: string) => void;
 		onstartedge?: (nodeId: string) => void;
+		readonly?: boolean;
 	}
 
-	let { node, allNodes, onupdate, ondelete, onselectnode, onstartedge }: Props = $props();
+	let { node, allNodes, onupdate, ondelete, onselectnode, onstartedge, readonly = false }: Props = $props();
 
 	type Tab = 'details' | 'relations' | 'history';
 	let activeTab = $state<Tab>('details');
@@ -103,20 +104,24 @@
 
 <!-- Header: Type + Status badges + actions -->
 <div class="flex flex-col gap-2 pb-3 border-b" style="border-color: var(--color-border);">
-	<input
-		bind:value={localTitle}
-		onblur={saveTitle}
-		onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
-		class="text-sm font-semibold bg-transparent outline-none rounded px-1 -mx-1 w-full"
-		style="color: var(--color-text);"
-	/>
+	{#if readonly}
+		<p class="text-sm font-semibold px-1 -mx-1" style="color: var(--color-text);">{node.title}</p>
+	{:else}
+		<input
+			bind:value={localTitle}
+			onblur={saveTitle}
+			onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
+			class="text-sm font-semibold bg-transparent outline-none rounded px-1 -mx-1 w-full"
+			style="color: var(--color-text);"
+		/>
+	{/if}
 	<div class="flex items-center gap-1.5 flex-wrap">
 		<!-- Type dropdown -->
 		<div class="relative">
 			<button
-				onclick={() => { showTypeDropdown = !showTypeDropdown; showStatusDropdown = false; }}
+				onclick={() => { if (!readonly) { showTypeDropdown = !showTypeDropdown; showStatusDropdown = false; } }}
 				class="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium"
-				style="background: {TYPE_COLORS[node.type]}22; color: {TYPE_COLORS[node.type]}; border: 1px solid {TYPE_COLORS[node.type]}44;"
+				style="background: {TYPE_COLORS[node.type]}22; color: {TYPE_COLORS[node.type]}; border: 1px solid {TYPE_COLORS[node.type]}44; cursor: {readonly ? 'default' : 'pointer'};"
 			>
 				<span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background: {TYPE_COLORS[node.type]};"></span>
 				{node.type}
@@ -142,9 +147,9 @@
 		<!-- Status dropdown -->
 		<div class="relative">
 			<button
-				onclick={() => { showStatusDropdown = !showStatusDropdown; showTypeDropdown = false; }}
+				onclick={() => { if (!readonly) { showStatusDropdown = !showStatusDropdown; showTypeDropdown = false; } }}
 				class="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium"
-				style="background: {STATUS_COLORS[node.status]}22; color: {STATUS_COLORS[node.status]}; border: 1px solid {STATUS_COLORS[node.status]}44;"
+				style="background: {STATUS_COLORS[node.status]}22; color: {STATUS_COLORS[node.status]}; border: 1px solid {STATUS_COLORS[node.status]}44; cursor: {readonly ? 'default' : 'pointer'};"
 			>
 				<span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background: {STATUS_COLORS[node.status]};"></span>
 				{STATUS_LABELS[node.status]}
@@ -168,7 +173,7 @@
 		</div>
 
 		<!-- Connect from button -->
-		{#if onstartedge && node.type !== 'GROUP'}
+		{#if !readonly && onstartedge && node.type !== 'GROUP'}
 			<button
 				onclick={() => onstartedge?.(node.id)}
 				class="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors"
@@ -223,11 +228,12 @@
 			<textarea
 				id="node-description"
 				bind:value={localDescription}
-				onblur={saveDescription}
-				placeholder="Add a description..."
+				onblur={readonly ? undefined : saveDescription}
+				placeholder={readonly ? 'No description' : 'Add a description...'}
 				rows="4"
 				class="px-3 py-2 rounded-lg text-xs outline-none resize-none"
 				style="background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border);"
+				{readonly}
 			></textarea>
 		</div>
 
@@ -240,15 +246,17 @@
 					{#each localTags as tag}
 						<span class="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium" style="background: var(--color-surface-hover); color: var(--color-text);">
 							{tag}
-							<button onclick={() => removeTag(tag)} class="leading-none opacity-60 hover:opacity-100" style="color: var(--color-text-muted);" aria-label="Remove tag {tag}">×</button>
+							{#if !readonly}<button onclick={() => removeTag(tag)} class="leading-none opacity-60 hover:opacity-100" style="color: var(--color-text-muted);" aria-label="Remove tag {tag}">×</button>{/if}
 						</span>
 					{/each}
 				</div>
 			{/if}
-			<div class="flex gap-1">
-				<input bind:value={newTag} onkeydown={handleTagKeydown} placeholder="Add tag..." class="flex-1 px-2 py-1 rounded text-xs outline-none" style="background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border);" />
-				<button onclick={addTag} class="px-2 py-1 rounded text-xs font-medium transition-colors" style="background: var(--color-primary); color: white;">Add</button>
-			</div>
+			{#if !readonly}
+				<div class="flex gap-1">
+					<input bind:value={newTag} onkeydown={handleTagKeydown} placeholder="Add tag..." class="flex-1 px-2 py-1 rounded text-xs outline-none" style="background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border);" />
+					<button onclick={addTag} class="px-2 py-1 rounded text-xs font-medium transition-colors" style="background: var(--color-primary); color: white;">Add</button>
+				</div>
+			{/if}
 		</div>
 
 		<div class="grid grid-cols-2 gap-2">
@@ -262,15 +270,17 @@
 			</div>
 		</div>
 
-		<button
-			onclick={handleDelete}
-			class="mt-1 px-3 py-1.5 rounded text-xs font-medium transition-colors"
-			style="background: rgba(196,64,64,0.13); color: var(--color-danger); border: 1px solid rgba(196,64,64,0.27);"
-			onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(196,64,64,0.2)'; }}
-			onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(196,64,64,0.13)'; }}
-		>
-			<Trash2 size={12} class="inline mr-1" />Delete Node
-		</button>
+		{#if !readonly}
+			<button
+				onclick={handleDelete}
+				class="mt-1 px-3 py-1.5 rounded text-xs font-medium transition-colors"
+				style="background: rgba(196,64,64,0.13); color: var(--color-danger); border: 1px solid rgba(196,64,64,0.27);"
+				onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(196,64,64,0.2)'; }}
+				onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(196,64,64,0.13)'; }}
+			>
+				<Trash2 size={12} class="inline mr-1" />Delete Node
+			</button>
+		{/if}
 
 	{:else if activeTab === 'relations'}
 		<div class="flex flex-col gap-2">

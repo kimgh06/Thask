@@ -13,17 +13,17 @@
 		{ title: '7 Node Types', desc: 'Each with distinct shape and color for instant recognition.' },
 		{ title: '5 Edge Types', desc: 'blocks, depends_on, triggers, related, parent_child.' },
 		{ title: 'Impact Mode', desc: 'BFS-powered blast radius analysis from any node.' },
-		{ title: 'Undo / Redo', desc: 'Full command stack. Every action is reversible.' },
-		{ title: 'Group & Collapse', desc: 'Organize nodes into collapsible containers.' },
+		{ title: 'CLI & MCP', desc: 'Terminal-first workflow. Claude Code and Cursor integration.' },
+		{ title: 'Project Sharing', desc: 'Share graphs via link. Viewer or editor access.' },
 		{ title: 'Self-Hosted', desc: 'One command. Your data stays on your server.' },
 	];
 </script>
 
 <svelte:head>
-	<title>Thask — Visualize product flows as a linked node graph</title>
+	<title>Thask — Map dependencies visually. Break nothing.</title>
 	<meta
 		name="description"
-		content="Thask maps your product as a living graph. Visualize flows, tasks, and bugs with QA impact analysis. Self-hosted, open-source."
+		content="Dependency visualization for AI-assisted development. Map flows, tasks, and bugs as a graph. CLI + MCP for Claude Code & Cursor. Self-hosted, open-source."
 	/>
 	<link rel="preconnect" href="https://fonts.googleapis.com" />
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
@@ -47,24 +47,42 @@
 	<section class="hero">
 		<div class="hero-row">
 			<div class="hero-content">
-				<p class="hero-label">ENGINEERING VISUALIZATION TOOL</p>
+				<p class="hero-label">DEPENDENCY VISUALIZATION FOR AI-ASSISTED DEV</p>
 				<h1 class="hero-title">
-					Map your product<br />as a <span class="hero-accent">living graph.</span>
+					Map dependencies visually.<br /><span class="hero-accent">Break nothing.</span>
 				</h1>
 				<p class="hero-desc">
 					Nodes for every flow, task, and bug. Edges for every dependency.<br />
-					Click a node — see the blast radius of change.
+					Works with Claude Code & Cursor via MCP.
 				</p>
 				<div class="hero-actions">
 					<a href="/login" class="btn-primary">Open Editor</a>
+					<a href="https://thask.kimgh06.com/shared/562a734b85200bbdd65a65e18e066dc377b7dcfd3c86edb1eab4e6aece9a9bbf" target="_blank" rel="noopener" class="btn-ghost">
+						Live Demo
+					</a>
 					<a href="https://github.com/kimgh06/Thask" target="_blank" rel="noopener" class="btn-ghost">
-						View Source
+						GitHub
 					</a>
 				</div>
 			</div>
 			<div class="hero-visual">
 				<img src="/mascot.png" alt="Thask mascot" class="hero-mascot" />
 			</div>
+		</div>
+
+		<!-- Live embed -->
+		<div class="hero-embed">
+			<div class="embed-frame">
+				<iframe
+					src="https://thask.kimgh06.com/shared/562a734b85200bbdd65a65e18e066dc377b7dcfd3c86edb1eab4e6aece9a9bbf"
+					title="Thask Documentation Graph — Live Demo"
+					loading="lazy"
+				></iframe>
+			</div>
+			<p class="embed-caption">
+				Live documentation graph — built with <code>thask</code> CLI.
+				<a href="https://thask.kimgh06.com/shared/562a734b85200bbdd65a65e18e066dc377b7dcfd3c86edb1eab4e6aece9a9bbf" target="_blank" rel="noopener">Open full view</a>
+			</p>
 		</div>
 
 		<!-- Node type strip -->
@@ -295,6 +313,41 @@
 	.btn-ghost:hover {
 		color: var(--color-text);
 		border-color: var(--color-text-dim);
+	}
+
+	/* Live embed */
+	.hero-embed {
+		margin-bottom: 3rem;
+	}
+	.embed-frame {
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		overflow: hidden;
+		aspect-ratio: 16 / 9;
+	}
+	.embed-frame iframe {
+		width: 100%;
+		height: 100%;
+		border: none;
+		background: var(--color-bg);
+	}
+	.embed-caption {
+		margin-top: 0.75rem;
+		font-size: 0.8125rem;
+		color: var(--color-text-dim);
+		text-align: center;
+	}
+	.embed-caption code {
+		font-family: 'JetBrains Mono', monospace;
+		color: var(--color-accent);
+		font-size: 0.75rem;
+	}
+	.embed-caption a {
+		color: var(--color-accent);
+		text-decoration: none;
+	}
+	.embed-caption a:hover {
+		text-decoration: underline;
 	}
 
 	/* Node strip */

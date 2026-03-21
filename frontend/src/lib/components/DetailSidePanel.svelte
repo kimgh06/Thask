@@ -29,6 +29,7 @@
 		onBatchAddTag: (tag: string) => void;
 		onCreateGroupFromSelection: () => void;
 		onStartEdgeDrawing?: (nodeId: string) => void;
+		readonly?: boolean;
 	}
 
 	let {
@@ -50,6 +51,7 @@
 		onBatchAddTag,
 		onCreateGroupFromSelection,
 		onStartEdgeDrawing,
+		readonly = false,
 	}: Props = $props();
 
 	let panelTitle = $derived.by(() => {
@@ -89,6 +91,7 @@
 				ondelete={onDeleteNode}
 				onselectnode={onSelectNode}
 				onstartedge={onStartEdgeDrawing}
+				{readonly}
 			/>
 		{:else if panelMode === 'edge' && selectedEdge}
 			<EdgeDetailView
@@ -98,6 +101,7 @@
 				onupdatelabel={onEdgeLabelUpdate}
 				ondelete={onDeleteEdge}
 				onselectnode={onSelectNode}
+				{readonly}
 			/>
 		{:else if panelMode === 'multi-select'}
 			<MultiSelectView

@@ -17,6 +17,8 @@
 	let inviteRole = $state<ProjectRole>('viewer');
 	let inviteError = $state('');
 	let copied = $state(false);
+	let embedTab = $state('Markdown');
+	let embedCopied = $state(false);
 
 	$effect(() => {
 		loadSharing();
@@ -197,6 +199,56 @@
 					</div>
 				</div>
 			</div>
+
+			<!-- Embed Code -->
+			{#if sharing.linkSharing !== 'off' && sharing.shareUrl}
+				{@const origin = typeof window !== 'undefined' ? window.location.origin : ''}
+				{@const sharedUrl = `${origin}${sharing.shareUrl}`}
+				{@const embedUrl = `${origin}/embed${sharing.shareUrl.replace('/shared', '')}`}
+				{@const ogImageUrl = `${origin}/api${sharing.shareUrl}/og-image`}
+				<div class="px-5 pb-4">
+					<h3 class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--color-text-muted);">Embed</h3>
+					<div class="space-y-2">
+						<div class="flex gap-1.5">
+							{#each ['Markdown', 'iframe', 'HTML'] as tab}
+								<button
+									onclick={() => { embedTab = tab; }}
+									class="px-2 py-1 rounded text-[11px] font-medium transition-colors"
+									style="background: {embedTab === tab ? 'var(--color-primary)' : 'var(--color-bg)'}; color: {embedTab === tab ? 'white' : 'var(--color-text-muted)'};"
+								>
+									{tab}
+								</button>
+							{/each}
+						</div>
+						<div class="relative">
+							<pre
+								class="px-3 py-2 rounded-lg text-[11px] font-mono overflow-x-auto whitespace-pre-wrap break-all"
+								style="background: var(--color-bg); border: 1px solid var(--color-border); color: var(--color-text-muted);"
+							>{#if embedTab === 'Markdown'}{`[![Graph](${ogImageUrl})](${sharedUrl})`}{:else if embedTab === 'iframe'}{`<iframe src="${embedUrl}" width="800" height="600" frameborder="0"></iframe>`}{:else}{`<a href="${sharedUrl}"><img src="${ogImageUrl}" alt="Task Graph" /></a>`}{/if}</pre>
+							<button
+								onclick={() => {
+									const text = embedTab === 'Markdown'
+										? `[![Graph](${ogImageUrl})](${sharedUrl})`
+										: embedTab === 'iframe'
+										? `<iframe src="${embedUrl}" width="800" height="600" frameborder="0"></iframe>`
+										: `<a href="${sharedUrl}"><img src="${ogImageUrl}" alt="Task Graph" /></a>`;
+									navigator.clipboard.writeText(text);
+									embedCopied = true;
+									setTimeout(() => { embedCopied = false; }, 2000);
+								}}
+								class="absolute top-1.5 right-1.5 p-1 rounded transition-colors"
+								style="background: var(--color-surface); color: {embedCopied ? 'var(--color-success)' : 'var(--color-text-muted)'};"
+							>
+								{#if embedCopied}
+									<Check size={12} />
+								{:else}
+									<Copy size={12} />
+								{/if}
+							</button>
+						</div>
+					</div>
+				</div>
+			{/if}
 
 			<!-- Footer -->
 			<div class="flex items-center justify-between px-5 py-4" style="border-top: 1px solid var(--color-border);">
