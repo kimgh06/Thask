@@ -3,7 +3,7 @@ package handler
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
@@ -147,7 +147,9 @@ func (h *NodeHandler) Layout(c echo.Context) error {
 			} else {
 				wps = []any{}
 			}
-			_, _ = h.edgeRepo.UpdateRouting(ctx, route.ID, nil, nil, wps)
+			if _, err := h.edgeRepo.UpdateRouting(ctx, route.ID, nil, nil, wps); err != nil {
+				slog.Warn("failed to update edge routing", "edgeId", route.ID, "error", err)
+			}
 		}
 	}
 
@@ -267,7 +269,7 @@ func (h *NodeHandler) Import(c echo.Context) error {
 			projectID, srcID, tgtID, edgeType, item.Label,
 		).Scan(&edge.ID, &edge.ProjectID, &edge.SourceID, &edge.TargetID, &edge.EdgeType, &edge.Label, &edge.CreatedAt)
 		if err != nil {
-			log.Printf("[WARN] import: skipping edge %s→%s: %v", srcID, tgtID, err)
+			slog.Warn("import: skipping edge", "source", srcID, "target", tgtID, "error", err)
 			continue // skip duplicate or invalid edges
 		}
 		createdEdges = append(createdEdges, edge)
@@ -375,7 +377,7 @@ func (h *NodeHandler) Create(c echo.Context) error {
 
 	created, err := h.nodeRepo.Create(ctx, node)
 	if err != nil {
-		log.Printf("[ERROR] nodeRepo.Create: %v", err)
+		slog.Error("nodeRepo.Create failed", "error", err)
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to create node"))
 	}
 
@@ -459,7 +461,7 @@ func (h *NodeHandler) Update(c echo.Context) error {
 
 	updated, err := h.nodeRepo.Update(ctx, nodeID, fields)
 	if err != nil {
-		log.Printf("[ERROR] nodeRepo.Update(%s): %v | fields=%v", nodeID, err, fields)
+		slog.Error("nodeRepo.Update failed", "nodeId", nodeID, "error", err, "fields", fields)
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update node"))
 	}
 
