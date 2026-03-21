@@ -32,6 +32,38 @@ var graphGetCmd = &cobra.Command{
 	},
 }
 
+var graphExportCmd = &cobra.Command{
+	Use:     "export",
+	Aliases: []string{"ex"},
+	Short:   "Export graph to JSON file",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		pid := resolveProject()
+		if pid == "" {
+			return fmt.Errorf("--project or THASK_PROJECT required")
+		}
+		data, err := apiClient.Get("/api/projects/" + pid + "/graph")
+		if err != nil {
+			return err
+		}
+
+		filePath, _ := cmd.Flags().GetString("file")
+		if filePath == "" {
+			filePath = "graph.json"
+		}
+
+		// Pretty-print JSON
+		var raw any
+		json.Unmarshal(data, &raw)
+		out, _ := json.MarshalIndent(raw, "", "  ")
+
+		if err := os.WriteFile(filePath, out, 0644); err != nil {
+			return fmt.Errorf("failed to write file: %w", err)
+		}
+		fmt.Printf("Exported to %s\n", filePath)
+		return nil
+	},
+}
+
 var graphImportCmd = &cobra.Command{
 	Use:   "import",
 	Short: "Import graph from JSON file",
@@ -105,9 +137,12 @@ func init() {
 	graphImportCmd.Flags().String("mode", "merge", "Import mode: replace or merge")
 	_ = graphImportCmd.MarkFlagRequired("file")
 
+	graphExportCmd.Flags().String("file", "graph.json", "Output file path")
+
 	graphLayoutCmd.Flags().String("algorithm", "", "Layout algorithm: dagre (default), grid")
 
 	graphCmd.AddCommand(graphGetCmd)
+	graphCmd.AddCommand(graphExportCmd)
 	graphCmd.AddCommand(graphImportCmd)
 	graphCmd.AddCommand(graphLayoutCmd)
 }

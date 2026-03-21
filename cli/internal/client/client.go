@@ -86,6 +86,10 @@ func (c *Client) Post(path string, body any) (json.RawMessage, error) {
 	return c.do("POST", path, body)
 }
 
+func (c *Client) Put(path string, body any) (json.RawMessage, error) {
+	return c.do("PUT", path, body)
+}
+
 func (c *Client) Patch(path string, body any) (json.RawMessage, error) {
 	return c.do("PATCH", path, body)
 }
