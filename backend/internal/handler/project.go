@@ -131,7 +131,16 @@ func (h *ProjectHandler) UpdateSharing(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update sharing"))
 	}
 
-	return c.JSON(http.StatusOK, dto.OK(updated))
+	var shareURL *string
+	if updated.ShareToken != nil {
+		url := "/shared/" + *updated.ShareToken
+		shareURL = &url
+	}
+
+	return c.JSON(http.StatusOK, dto.OK(map[string]any{
+		"linkSharing": updated.LinkSharing,
+		"shareUrl":    shareURL,
+	}))
 }
 
 // --- Project Members ---

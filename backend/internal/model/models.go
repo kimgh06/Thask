@@ -53,7 +53,7 @@ type Project struct {
 	Description *string   `json:"description" db:"description"`
 	CreatedBy   string    `json:"createdBy" db:"created_by"`
 	LinkSharing    string    `json:"linkSharing" db:"link_sharing"`
-	ShareToken     *string   `json:"shareToken,omitempty" db:"share_token"`
+	ShareToken     *string   `json:"-" db:"share_token"`
 	ShareTokenHash *string   `json:"-" db:"share_token_hash"`
 	CreatedAt      time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt      time.Time `json:"updatedAt" db:"updated_at"`

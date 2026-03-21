@@ -64,6 +64,14 @@ func GetProjectID(c echo.Context) string {
 	return id
 }
 
+// ResolveProjectID returns projectId from URL param, falling back to context (for shared routes).
+func ResolveProjectID(c echo.Context) string {
+	if id := c.Param("projectId"); id != "" {
+		return id
+	}
+	return GetProjectID(c)
+}
+
 func GetTeamID(c echo.Context) string {
 	id, ok := c.Get(ContextTeamID).(string)
 	if !ok {

@@ -25,6 +25,7 @@ export interface Project {
 	name: string;
 	description: string | null;
 	createdBy: string;
+	linkSharing: 'off' | 'viewer' | 'editor';
 	createdAt: string;
 	updatedAt: string;
 }

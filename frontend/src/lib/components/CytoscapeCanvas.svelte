@@ -32,9 +32,13 @@
 		onZoomChange?: (zoom: number) => void;
 		onCreateEdge?: (sourceId: string, targetId: string) => void;
 		onNodeTap?: (nodeId: string, position: { x: number; y: number }) => void;
+		readonly?: boolean;
+		apiBasePath?: string;
 	}
 
-	let { nodes, edges, projectId, onUpdateNodeParent, onZoomChange, onCreateEdge, onNodeTap = undefined }: Props = $props();
+	let { nodes, edges, projectId, onUpdateNodeParent, onZoomChange, onCreateEdge, onNodeTap = undefined, readonly = false, apiBasePath }: Props = $props();
+
+	const resolvedApiBase = $derived(apiBasePath || (projectId ? `/api/projects/${projectId}` : ''));
 
 	let ehInstance: { start: (n: cytoscape.NodeSingular) => void; stop: () => void } | null = null;
 
@@ -68,7 +72,7 @@
 	}
 
 	async function savePositions() {
-		if (!cy) return;
+		if (!cy || readonly || !resolvedApiBase) return;
 		const positions: Array<{ id: string; x: number; y: number; width?: number; height?: number }> = [];
 		cy.nodes().forEach((n: cytoscape.NodeSingular) => {
 			const pos = n.position();
@@ -81,7 +85,7 @@
 			if (h !== undefined) entry.height = h;
 			positions.push(entry);
 		});
-		await api.patch(`/api/projects/${projectId}/nodes/positions`, { positions });
+		await api.patch(`${resolvedApiBase}/nodes/positions`, { positions });
 	}
 
 	export function runLayout() {
@@ -155,46 +159,58 @@
 			layout: { name: 'preset' },
 			minZoom: 0.2,
 			maxZoom: 4,
-			boxSelectionEnabled: true,
+			boxSelectionEnabled: !readonly,
 			selectionType: 'additive',
+			autoungrabify: readonly,
+			userPanningEnabled: true,
+			userZoomingEnabled: true,
 		});
 
-		// Initialize edgehandles
-		const eh = initEdgehandles(cy);
-		ehInstance = eh as typeof ehInstance;
+		const cleanups: Array<{ cleanup: () => void }> = [];
 
-		// Resize handlers
-		const cyContainer = cy.container()!;
-		const resizeHandlers = attachResizeHandlers(cy, cyContainer, {
-			savePositions,
-			isEdgeDrawing: () => (eh as { active: boolean }).active,
-		});
+		if (!readonly) {
+			// Initialize edgehandles
+			const eh = initEdgehandles(cy);
+			ehInstance = eh as typeof ehInstance;
 
-		// Port overlay for edge creation
-		const ehTyped = eh as { active: boolean; start: (n: cytoscape.NodeSingular) => void; stop: () => void };
-		const portHandlers = attachPortOverlay(cy, portOverlay, ehTyped, {
-			isResizing: () => resizeHandlers.isResizing(),
-			isOnGroupBorder,
-		});
+			// Resize handlers
+			const cyContainer = cy.container()!;
+			const resizeHandlers = attachResizeHandlers(cy, cyContainer, {
+				savePositions,
+				isEdgeDrawing: () => (eh as { active: boolean }).active,
+			});
+			cleanups.push(resizeHandlers);
 
-		// Selection handlers
-		const selectionHandlers = attachSelectionHandlers(cy, { onNodeTap });
+			// Port overlay for edge creation
+			const ehTyped = eh as { active: boolean; start: (n: cytoscape.NodeSingular) => void; stop: () => void };
+			const portHandlers = attachPortOverlay(cy, portOverlay, ehTyped, {
+				isResizing: () => resizeHandlers.isResizing(),
+				isOnGroupBorder,
+			});
+			cleanups.push(portHandlers);
 
-		// Group drag handlers
-		const groupDragHandlers = attachGroupDragHandlers(cy, {
-			getProjectId: () => projectId,
-			onUpdateNodeParent,
-			savePositions,
-			isResizing: () => resizeHandlers.isResizing(),
-			hidePortOverlay: () => { portOverlay.style.display = 'none'; },
-			trackTimeout,
-		});
+			// Selection handlers
+			const selectionHandlers = attachSelectionHandlers(cy, { onNodeTap });
+			cleanups.push(selectionHandlers);
 
-		// Edge creation handlers
-		const edgeCreationHandlers = attachEdgeCreationHandlers(cy, eh, {
-			onCreateEdge,
-			getMouseModelPos: () => lastMouseModelPos,
-		});
+			// Group drag handlers
+			const groupDragHandlers = attachGroupDragHandlers(cy, {
+				getProjectId: () => projectId,
+				onUpdateNodeParent,
+				savePositions,
+				isResizing: () => resizeHandlers.isResizing(),
+				hidePortOverlay: () => { portOverlay.style.display = 'none'; },
+				trackTimeout,
+			});
+			cleanups.push(groupDragHandlers);
+
+			// Edge creation handlers
+			const edgeCreationHandlers = attachEdgeCreationHandlers(cy, eh, {
+				onCreateEdge,
+				getMouseModelPos: () => lastMouseModelPos,
+			});
+			cleanups.push(edgeCreationHandlers);
+		}
 
 		// Zoom tracking
 		cy.on('pan zoom', () => { onZoomChange?.(cy!.zoom()); });
@@ -206,11 +222,7 @@
 		syncElements();
 
 		return () => {
-			edgeCreationHandlers.cleanup();
-			groupDragHandlers.cleanup();
-			selectionHandlers.cleanup();
-			portHandlers.cleanup();
-			resizeHandlers.cleanup();
+			for (const h of cleanups) h.cleanup();
 		};
 	});
 

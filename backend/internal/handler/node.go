@@ -27,7 +27,7 @@ func NewNodeHandler(nodeRepo *repository.NodeRepo, edgeRepo *repository.EdgeRepo
 
 func (h *NodeHandler) List(c echo.Context) error {
 	ctx := c.Request().Context()
-	projectID := c.Param("projectId")
+	projectID := mw.ResolveProjectID(c)
 
 	var nodeType, status *string
 	if t := c.QueryParam("type"); t != "" {
@@ -76,7 +76,7 @@ func (h *NodeHandler) graphResponse(c echo.Context, projectID string) error {
 
 // Graph returns nodes and edges together in a single response to ensure consistency.
 func (h *NodeHandler) Graph(c echo.Context) error {
-	return h.graphResponse(c, c.Param("projectId"))
+	return h.graphResponse(c, mw.ResolveProjectID(c))
 }
 
 func (h *NodeHandler) SharedGraph(c echo.Context) error {
@@ -90,7 +90,7 @@ func (h *NodeHandler) Layout(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	projectID := c.Param("projectId")
+	projectID := mw.ResolveProjectID(c)
 
 	algorithm := req.Algorithm
 	if algorithm == "" {
@@ -156,7 +156,7 @@ func (h *NodeHandler) Import(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	projectID := c.Param("projectId")
+	projectID := mw.ResolveProjectID(c)
 
 	tx, err := h.nodeRepo.Pool().Begin(ctx)
 	if err != nil {
@@ -275,7 +275,7 @@ func (h *NodeHandler) Import(c echo.Context) error {
 
 func (h *NodeHandler) Get(c echo.Context) error {
 	ctx := c.Request().Context()
-	projectID := c.Param("projectId")
+	projectID := mw.ResolveProjectID(c)
 	nodeID := c.Param("nodeId")
 
 	node, err := h.nodeRepo.FindByID(ctx, nodeID, projectID)
@@ -326,7 +326,7 @@ func (h *NodeHandler) Create(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	projectID := c.Param("projectId")
+	projectID := mw.ResolveProjectID(c)
 	userID := mw.GetUserID(c)
 
 	status := model.NodeStatus(req.Status)
@@ -353,12 +353,15 @@ func (h *NodeHandler) Create(c echo.Context) error {
 
 	created, err := h.nodeRepo.Create(ctx, node)
 	if err != nil {
+		log.Printf("[ERROR] nodeRepo.Create: %v", err)
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to create node"))
 	}
 
-	// Record history
-	title := created.Title
-	_ = h.historyRepo.Create(ctx, created.ID, projectID, userID, model.HistoryActionCreated, strPtr("title"), nil, &title)
+	// Record history (skip for anonymous shared access)
+	if userID != mw.AnonymousUserID {
+		title := created.Title
+		_ = h.historyRepo.Create(ctx, created.ID, projectID, userID, model.HistoryActionCreated, strPtr("title"), nil, &title)
+	}
 
 	h.hub.Publish(service.Event{Type: service.EventNodeCreated, ProjectID: projectID, Data: created, UserID: userID})
 	return c.JSON(http.StatusCreated, dto.OK(created))
@@ -374,7 +377,7 @@ func (h *NodeHandler) Update(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	projectID := c.Param("projectId")
+	projectID := mw.ResolveProjectID(c)
 	nodeID := c.Param("nodeId")
 	userID := mw.GetUserID(c)
 
@@ -438,43 +441,23 @@ func (h *NodeHandler) Update(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update node"))
 	}
 
-	// Record history
-	for field, val := range fields {
-		action := model.HistoryActionUpdated
-		if field == "status" {
-			action = model.HistoryActionStatusChanged
+	// Record history (skip for anonymous shared access)
+	if userID != mw.AnonymousUserID {
+		for field, val := range fields {
+			action := model.HistoryActionUpdated
+			if field == "status" {
+				action = model.HistoryActionStatusChanged
+			}
+			oldVal := getOldValue(existing, field)
+			newVal := fmt.Sprintf("%v", val)
+			_ = h.historyRepo.Create(ctx, nodeID, projectID, userID, action, &field, oldVal, &newVal)
 		}
-		oldVal := getOldValue(existing, field)
-		newVal := fmt.Sprintf("%v", val)
-		_ = h.historyRepo.Create(ctx, nodeID, projectID, userID, action, &field, oldVal, &newVal)
 	}
 
 	// Waterfall propagation
 	var propagated []service.StatusChange
 	if req.Status != nil && model.NodeStatus(*req.Status) != existing.Status {
-		newStatus := model.NodeStatus(*req.Status)
-		if newStatus == model.NodeStatusPass || newStatus == model.NodeStatusFail {
-			allNodes, _ := h.nodeRepo.FindByProjectID(ctx, projectID, nil, nil)
-			allEdges, _ := h.edgeRepo.FindByProjectID(ctx, projectID)
-
-			wNodes := make([]service.WaterfallNode, len(allNodes))
-			for i, n := range allNodes {
-				wNodes[i] = service.WaterfallNode{ID: n.ID, Status: n.Status, ParentID: n.ParentID}
-			}
-			wEdges := make([]service.WaterfallEdge, len(allEdges))
-			for i, e := range allEdges {
-				wEdges[i] = service.WaterfallEdge{SourceID: e.SourceID, TargetID: e.TargetID, EdgeType: e.EdgeType}
-			}
-
-			propagated = service.ComputeWaterfall(nodeID, newStatus, wNodes, wEdges)
-			for _, wc := range propagated {
-				_ = h.nodeRepo.UpdateStatus(ctx, wc.NodeID, wc.NewStatus)
-				field := "status"
-				old := string(wc.OldStatus)
-				nw := string(wc.NewStatus)
-				_ = h.historyRepo.Create(ctx, wc.NodeID, projectID, userID, model.HistoryActionStatusChanged, &field, &old, &nw)
-			}
-		}
+		propagated = h.propagateWaterfall(ctx, projectID, nodeID, model.NodeStatus(*req.Status), userID)
 	}
 
 	h.hub.Publish(service.Event{Type: service.EventNodeUpdated, ProjectID: projectID, Data: updated, UserID: userID})
@@ -483,7 +466,7 @@ func (h *NodeHandler) Update(c echo.Context) error {
 
 func (h *NodeHandler) Delete(c echo.Context) error {
 	ctx := c.Request().Context()
-	projectID := c.Param("projectId")
+	projectID := mw.ResolveProjectID(c)
 	nodeID := c.Param("nodeId")
 
 	if err := h.nodeRepo.Delete(ctx, nodeID, projectID); err != nil {
@@ -505,7 +488,7 @@ func (h *NodeHandler) BatchUpdatePositions(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	projectID := c.Param("projectId")
+	projectID := mw.ResolveProjectID(c)
 
 	positions := make([]struct {
 		ID     string
@@ -540,7 +523,7 @@ func (h *NodeHandler) BatchDelete(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	projectID := c.Param("projectId")
+	projectID := mw.ResolveProjectID(c)
 
 	if err := h.nodeRepo.BatchDelete(ctx, projectID, req.IDs); err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to delete nodes"))
@@ -560,7 +543,7 @@ func (h *NodeHandler) BatchUpdateStatus(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	projectID := c.Param("projectId")
+	projectID := mw.ResolveProjectID(c)
 
 	if err := h.nodeRepo.BatchUpdateStatus(ctx, projectID, req.IDs, model.NodeStatus(req.Status)); err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update status"))
@@ -568,6 +551,46 @@ func (h *NodeHandler) BatchUpdateStatus(c echo.Context) error {
 
 	h.hub.Publish(service.Event{Type: service.EventNodeUpdated, ProjectID: projectID, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
+}
+
+// propagateWaterfall computes and applies status changes to downstream nodes.
+func (h *NodeHandler) propagateWaterfall(ctx context.Context, projectID, nodeID string, newStatus model.NodeStatus, userID string) []service.StatusChange {
+	if newStatus != model.NodeStatusPass && newStatus != model.NodeStatusFail {
+		return nil
+	}
+
+	allNodes, _ := h.nodeRepo.FindByProjectID(ctx, projectID, nil, nil)
+	allEdges, _ := h.edgeRepo.FindByProjectID(ctx, projectID)
+
+	wNodes := make([]service.WaterfallNode, len(allNodes))
+	for i, n := range allNodes {
+		wNodes[i] = service.WaterfallNode{ID: n.ID, Status: n.Status, ParentID: n.ParentID}
+	}
+	wEdges := make([]service.WaterfallEdge, len(allEdges))
+	for i, e := range allEdges {
+		wEdges[i] = service.WaterfallEdge{SourceID: e.SourceID, TargetID: e.TargetID, EdgeType: e.EdgeType}
+	}
+
+	propagated := service.ComputeWaterfall(nodeID, newStatus, wNodes, wEdges)
+	if len(propagated) == 0 {
+		return propagated
+	}
+
+	// Batch update: group by new status
+	byStatus := make(map[model.NodeStatus][]string)
+	for _, wc := range propagated {
+		byStatus[wc.NewStatus] = append(byStatus[wc.NewStatus], wc.NodeID)
+	}
+	for status, ids := range byStatus {
+		_ = h.nodeRepo.BatchUpdateStatus(ctx, projectID, ids, status)
+	}
+
+	// Batch history insert
+	if userID != mw.AnonymousUserID {
+		h.historyRepo.BatchCreateStatusChanges(ctx, projectID, userID, propagated)
+	}
+
+	return propagated
 }
 
 // detectParentCycle walks up the parent chain from targetParentID.

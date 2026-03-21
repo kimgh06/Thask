@@ -22,7 +22,7 @@ func NewEdgeHandler(edgeRepo *repository.EdgeRepo, hub *service.Hub) *EdgeHandle
 
 func (h *EdgeHandler) List(c echo.Context) error {
 	ctx := c.Request().Context()
-	projectID := c.Param("projectId")
+	projectID := mw.ResolveProjectID(c)
 
 	edges, err := h.edgeRepo.FindByProjectID(ctx, projectID)
 	if err != nil {
@@ -45,7 +45,7 @@ func (h *EdgeHandler) Create(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	projectID := c.Param("projectId")
+	projectID := mw.ResolveProjectID(c)
 
 	if req.SourceID == req.TargetID {
 		return c.JSON(http.StatusBadRequest, dto.Err("Self-referencing edges are not allowed"))
@@ -91,7 +91,7 @@ func (h *EdgeHandler) Update(c echo.Context) error {
 
 func (h *EdgeHandler) Delete(c echo.Context) error {
 	ctx := c.Request().Context()
-	projectID := c.Param("projectId")
+	projectID := mw.ResolveProjectID(c)
 	edgeID := c.Param("edgeId")
 
 	if err := h.edgeRepo.Delete(ctx, edgeID); err != nil {

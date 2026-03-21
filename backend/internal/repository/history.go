@@ -2,9 +2,12 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/thask/backend/internal/model"
+	"github.com/thask/backend/internal/service"
 )
 
 type HistoryRepo struct {
@@ -22,6 +25,21 @@ func (r *HistoryRepo) Create(ctx context.Context, nodeID, projectID, userID stri
 		nodeID, projectID, userID, action, fieldName, oldValue, newValue,
 	)
 	return err
+}
+
+func (r *HistoryRepo) BatchCreateStatusChanges(ctx context.Context, projectID, userID string, changes []service.StatusChange) {
+	if len(changes) == 0 {
+		return
+	}
+	values := make([]string, len(changes))
+	args := []any{projectID, userID, string(model.HistoryActionStatusChanged), "status"}
+	for i, wc := range changes {
+		base := len(args)
+		values[i] = fmt.Sprintf("($%d, $1, $2, $3, $4, $%d, $%d)", base+1, base+2, base+3)
+		args = append(args, wc.NodeID, string(wc.OldStatus), string(wc.NewStatus))
+	}
+	query := `INSERT INTO node_history (node_id, project_id, user_id, action, field_name, old_value, new_value) VALUES ` + strings.Join(values, ", ")
+	r.pool.Exec(ctx, query, args...)
 }
 
 func (r *HistoryRepo) FindByNodeID(ctx context.Context, nodeID string, limit int) ([]model.NodeHistoryEntry, error) {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	mw "github.com/thask/backend/internal/middleware"
@@ -36,6 +37,9 @@ func (h *EventHandler) Stream(c echo.Context) error {
 	w.Flush()
 
 	ctx := c.Request().Context()
+	heartbeat := time.NewTicker(30 * time.Second)
+	defer heartbeat.Stop()
+
 	for {
 		select {
 		case event, ok := <-ch:
@@ -47,6 +51,9 @@ func (h *EventHandler) Stream(c echo.Context) error {
 				continue
 			}
 			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, data)
+			w.Flush()
+		case <-heartbeat.C:
+			fmt.Fprintf(w, ": heartbeat\n\n")
 			w.Flush()
 		case <-ctx.Done():
 			return nil
