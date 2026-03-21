@@ -114,9 +114,13 @@ var graphLayoutCmd = &cobra.Command{
 			return fmt.Errorf("--project or THASK_PROJECT required")
 		}
 		algo, _ := cmd.Flags().GetString("algorithm")
+		preserve, _ := cmd.Flags().GetBool("preserve-edges")
 		body := map[string]any{}
 		if algo != "" {
 			body["algorithm"] = algo
+		}
+		if preserve {
+			body["preserveEdges"] = true
 		}
 		data, err := apiClient.Post("/api/projects/"+pid+"/graph/layout", body)
 		if err != nil {
@@ -140,6 +144,7 @@ func init() {
 	graphExportCmd.Flags().String("file", "graph.json", "Output file path")
 
 	graphLayoutCmd.Flags().String("algorithm", "", "Layout algorithm: dagre (default), grid")
+	graphLayoutCmd.Flags().Bool("preserve-edges", false, "Preserve edge waypoints during layout")
 
 	graphCmd.AddCommand(graphGetCmd)
 	graphCmd.AddCommand(graphExportCmd)

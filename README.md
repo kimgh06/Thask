@@ -24,7 +24,7 @@ Dependency visualization for AI-assisted development teams.
 
 <!-- TODO: Add hero screenshot/GIF here -->
 
-[**Live Demo** — Thask Documentation Graph](https://thask.kimgh06.com/shared/562a734b85200bbdd65a65e18e066dc377b7dcfd3c86edb1eab4e6aece9a9bbf)
+[**Live Demo** — Documentation Graph](https://thask.kimgh06.com/shared/562a734b85200bbdd65a65e18e066dc377b7dcfd3c86edb1eab4e6aece9a9bbf) · [**Architecture Graph**](https://thask.kimgh06.com/shared/de5cb3d3587d2479d6c875f873bd6479f031187e4054fd8cc93eafca8c840691)
 
 </div>
 

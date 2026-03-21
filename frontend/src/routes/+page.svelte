@@ -70,19 +70,36 @@
 			</div>
 		</div>
 
-		<!-- Live embed -->
-		<div class="hero-embed">
-			<div class="embed-frame">
-				<iframe
-					src="https://thask.kimgh06.com/shared/562a734b85200bbdd65a65e18e066dc377b7dcfd3c86edb1eab4e6aece9a9bbf"
-					title="Thask Documentation Graph — Live Demo"
-					loading="lazy"
-				></iframe>
+		<!-- Live embeds -->
+		<div class="hero-embeds">
+			<div class="hero-embed">
+				<h3 class="embed-title">Documentation Graph</h3>
+				<div class="embed-frame">
+					<iframe
+						src="https://thask.kimgh06.com/shared/562a734b85200bbdd65a65e18e066dc377b7dcfd3c86edb1eab4e6aece9a9bbf"
+						title="Thask Documentation Graph"
+						loading="lazy"
+					></iframe>
+				</div>
+				<p class="embed-caption">
+					Docs dependency map — built with <code>thask</code> CLI.
+					<a href="https://thask.kimgh06.com/shared/562a734b85200bbdd65a65e18e066dc377b7dcfd3c86edb1eab4e6aece9a9bbf" target="_blank" rel="noopener">Full view</a>
+				</p>
 			</div>
-			<p class="embed-caption">
-				Live documentation graph — built with <code>thask</code> CLI.
-				<a href="https://thask.kimgh06.com/shared/562a734b85200bbdd65a65e18e066dc377b7dcfd3c86edb1eab4e6aece9a9bbf" target="_blank" rel="noopener">Open full view</a>
-			</p>
+			<div class="hero-embed">
+				<h3 class="embed-title">Architecture Graph</h3>
+				<div class="embed-frame">
+					<iframe
+						src="https://thask.kimgh06.com/shared/de5cb3d3587d2479d6c875f873bd6479f031187e4054fd8cc93eafca8c840691"
+						title="Thask Architecture Graph"
+						loading="lazy"
+					></iframe>
+				</div>
+				<p class="embed-caption">
+					Full service flow — Frontend → Middleware → Handlers → Services → DB.
+					<a href="https://thask.kimgh06.com/shared/de5cb3d3587d2479d6c875f873bd6479f031187e4054fd8cc93eafca8c840691" target="_blank" rel="noopener">Full view</a>
+				</p>
+			</div>
 		</div>
 
 		<!-- Node type strip -->
@@ -315,9 +332,22 @@
 		border-color: var(--color-text-dim);
 	}
 
-	/* Live embed */
-	.hero-embed {
+	/* Live embeds */
+	.hero-embeds {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1.5rem;
 		margin-bottom: 3rem;
+	}
+	.hero-embed {
+	}
+	.embed-title {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--color-text-muted);
+		letter-spacing: 0.04em;
+		margin-bottom: 0.5rem;
 	}
 	.embed-frame {
 		border: 1px solid var(--color-border);
@@ -518,6 +548,9 @@
 		}
 		.hero-desc br {
 			display: none;
+		}
+		.hero-embeds {
+			grid-template-columns: 1fr;
 		}
 		.features-grid {
 			grid-template-columns: 1fr;

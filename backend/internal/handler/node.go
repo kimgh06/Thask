@@ -113,15 +113,15 @@ func (h *NodeHandler) Layout(c echo.Context) error {
 		edges = []model.Edge{}
 	}
 
-	layoutPositions := service.CalculateLayout(nodes, edges, algorithm)
+	layoutResult := service.CalculateLayout(nodes, edges, algorithm)
 
 	positions := make([]struct {
 		ID     string
 		X, Y   float64
 		Width  *float64
 		Height *float64
-	}, len(layoutPositions))
-	for i, lp := range layoutPositions {
+	}, len(layoutResult.Positions))
+	for i, lp := range layoutResult.Positions {
 		positions[i] = struct {
 			ID     string
 			X, Y   float64
@@ -134,9 +134,31 @@ func (h *NodeHandler) Layout(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to save layout"))
 	}
 
+	// Apply auto-routed edge waypoints (or reset if no obstacles)
+	if !req.PreserveEdges {
+		for _, route := range layoutResult.EdgeRoutes {
+			var wps any
+			if len(route.Waypoints) > 0 {
+				pts := make([]map[string]float64, len(route.Waypoints))
+				for i, wp := range route.Waypoints {
+					pts[i] = map[string]float64{"x": wp.X, "y": wp.Y}
+				}
+				wps = pts
+			} else {
+				wps = []any{}
+			}
+			_, _ = h.edgeRepo.UpdateRouting(ctx, route.ID, nil, nil, wps)
+		}
+	}
+
 	nodes, _ = h.nodeRepo.FindByProjectID(ctx, projectID, nil, nil)
 	if nodes == nil {
 		nodes = []model.Node{}
+	}
+	// Refetch edges to include reset waypoints
+	edges, _ = h.edgeRepo.FindByProjectID(ctx, projectID)
+	if edges == nil {
+		edges = []model.Edge{}
 	}
 
 	h.hub.Publish(service.Event{Type: service.EventGraphLayout, ProjectID: projectID, UserID: mw.GetUserID(c)})

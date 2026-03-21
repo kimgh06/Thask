@@ -99,13 +99,16 @@ type NodeDetail struct {
 }
 
 type Edge struct {
-	ID        string   `json:"id" db:"id"`
-	ProjectID string   `json:"projectId" db:"project_id"`
-	SourceID  string   `json:"sourceId" db:"source_id"`
-	TargetID  string   `json:"targetId" db:"target_id"`
-	EdgeType  EdgeType `json:"edgeType" db:"edge_type"`
-	Label     *string  `json:"label" db:"label"`
-	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+	ID         string    `json:"id" db:"id"`
+	ProjectID  string    `json:"projectId" db:"project_id"`
+	SourceID   string    `json:"sourceId" db:"source_id"`
+	TargetID   string    `json:"targetId" db:"target_id"`
+	EdgeType   EdgeType  `json:"edgeType" db:"edge_type"`
+	Label      *string   `json:"label" db:"label"`
+	SourcePort string    `json:"sourcePort" db:"source_port"`
+	TargetPort string    `json:"targetPort" db:"target_port"`
+	Waypoints  any       `json:"waypoints" db:"waypoints"`
+	CreatedAt  time.Time `json:"createdAt" db:"created_at"`
 }
 
 type NodeHistory struct {

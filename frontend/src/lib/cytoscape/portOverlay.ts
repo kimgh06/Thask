@@ -11,7 +11,7 @@ interface PortOverlayOptions {
 	isOnGroupBorder: (pos: { x: number; y: number }, node: cytoscape.NodeSingular) => boolean;
 }
 
-const PORT_SIZE = 20;
+const PORT_SIZE = 12;
 
 export function attachPortOverlay(
 	cy: cytoscape.Core,
@@ -47,9 +47,13 @@ export function attachPortOverlay(
 
 		const positions = [
 			{ cls: 'port-top', x: cxR - half, y: rbb.y1 - PORT_SIZE },
+			{ cls: 'port-top-right', x: rbb.x2 - half, y: rbb.y1 - half },
 			{ cls: 'port-right', x: rbb.x2, y: cyR - half },
+			{ cls: 'port-bottom-right', x: rbb.x2 - half, y: rbb.y2 - half },
 			{ cls: 'port-bottom', x: cxR - half, y: rbb.y2 },
+			{ cls: 'port-bottom-left', x: rbb.x1 - half, y: rbb.y2 - half },
 			{ cls: 'port-left', x: rbb.x1 - PORT_SIZE, y: cyR - half },
+			{ cls: 'port-top-left', x: rbb.x1 - half, y: rbb.y1 - half },
 		];
 
 		for (const p of positions) {
@@ -61,11 +65,12 @@ export function attachPortOverlay(
 		}
 	}
 
-	// DOM listeners on port overlay
 	function onPortMouseDown(e: MouseEvent) {
-		if (!(e.target as HTMLElement).classList.contains('port-dot')) return;
+		const target = e.target as HTMLElement;
+		if (!target.classList.contains('port-dot')) return;
 		e.preventDefault();
 		e.stopPropagation();
+
 		if (portSource) {
 			portOverlay.style.display = 'none';
 			eh.start(portSource);
@@ -92,7 +97,6 @@ export function attachPortOverlay(
 	portOverlay.addEventListener('mouseenter', onPortMouseEnter);
 	portOverlay.addEventListener('mouseleave', onPortMouseLeave);
 
-	// Cytoscape node hover → show/hide ports
 	cy.on('mouseover', 'node', (e) => {
 		const node = e.target as cytoscape.NodeSingular;
 		if (eh.active || node.grabbed() || options.isResizing()) return;
@@ -117,6 +121,7 @@ export function attachPortOverlay(
 
 	return {
 		getPortSource: () => portSource,
+
 		cleanup: () => {
 			if (portHideTimer) clearTimeout(portHideTimer);
 			portOverlay.removeEventListener('mousedown', onPortMouseDown);
@@ -125,3 +130,4 @@ export function attachPortOverlay(
 		},
 	};
 }
+

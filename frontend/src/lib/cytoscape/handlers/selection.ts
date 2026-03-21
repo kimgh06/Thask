@@ -62,11 +62,28 @@ export function attachSelectionHandlers(
 		graphStore.toggleCollapsed(evt.target.id());
 	}
 
+	// Edge hover — highlight connected nodes
+	function onEdgeMouseOver(e: cytoscape.EventObject) {
+		const edge = e.target;
+		edge.source().addClass('edge-hover-connected');
+		edge.target().addClass('edge-hover-connected');
+		edge.style({ opacity: 1, width: 2.5 });
+	}
+	function onEdgeMouseOut(e: cytoscape.EventObject) {
+		const edge = e.target;
+		edge.source().removeClass('edge-hover-connected');
+		edge.target().removeClass('edge-hover-connected');
+		// Reset to base style (let stylesheet handle it)
+		edge.removeStyle('opacity width');
+	}
+
 	cy.on('tap', 'node', onTapNode);
 	cy.on('tap', onTapBackground);
 	cy.on('tap', 'edge', onTapEdge);
 	cy.on('boxselect', 'node', onBoxSelect);
 	cy.on('dbltap', 'node[nodeType="GROUP"]', onDblTapGroup);
+	cy.on('mouseover', 'edge', onEdgeMouseOver);
+	cy.on('mouseout', 'edge', onEdgeMouseOut);
 
 	return {
 		cleanup: () => {
@@ -75,6 +92,8 @@ export function attachSelectionHandlers(
 			cy.off('tap', 'edge', onTapEdge);
 			cy.off('boxselect', 'node', onBoxSelect);
 			cy.off('dbltap', 'node[nodeType="GROUP"]', onDblTapGroup);
+			cy.off('mouseover', 'edge', onEdgeMouseOver);
+			cy.off('mouseout', 'edge', onEdgeMouseOut);
 		},
 	};
 }

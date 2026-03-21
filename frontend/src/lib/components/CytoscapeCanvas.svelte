@@ -15,6 +15,8 @@
 	import { attachGroupDragHandlers } from '$lib/cytoscape/handlers/groupDrag';
 	import { initEdgehandles, attachEdgeCreationHandlers, isOnGroupBorder } from '$lib/cytoscape/handlers/edgeCreation';
 	import { attachSelectionHandlers } from '$lib/cytoscape/handlers/selection';
+	import { attachWaypointHandlers } from '$lib/cytoscape/handlers/edgeWaypoints';
+	import { attachStatusDots } from '$lib/cytoscape/statusDot';
 
 	// Register extensions once at module level
 	let extensionsRegistered = false;
@@ -172,6 +174,10 @@
 		const selectionHandlers = attachSelectionHandlers(cy, { onNodeTap });
 		cleanups.push(selectionHandlers);
 
+		// Status indicator dots (bottom-right corner of each node)
+		const statusDots = attachStatusDots(cy);
+		cleanups.push(statusDots);
+
 		if (!readonly) {
 			// Initialize edgehandles
 			const eh = initEdgehandles(cy);
@@ -210,6 +216,12 @@
 				getMouseModelPos: () => lastMouseModelPos,
 			});
 			cleanups.push(edgeCreationHandlers);
+
+			// Waypoint editing
+			const waypointHandlers = attachWaypointHandlers(cy, {
+				getApiBase: () => resolvedApiBase,
+			});
+			cleanups.push(waypointHandlers);
 		}
 
 		// Zoom tracking
@@ -252,18 +264,18 @@
 
 <div class="relative h-full w-full cytoscape-canvas-bg" style="min-height: 400px">
 	<div bind:this={container} class="h-full w-full"></div>
-	<!-- Port overlay for edge creation — 4 dots around hovered node -->
+	<!-- Port overlay for edge creation — 8 dots around hovered node -->
 	<div
 		bind:this={portOverlay}
 		style="display: none; position: absolute; top: 0; left: 0; pointer-events: none;"
 	>
-		{#each ['port-top', 'port-right', 'port-bottom', 'port-left'] as cls}
+		{#each ['port-top', 'port-top-right', 'port-right', 'port-bottom-right', 'port-bottom', 'port-bottom-left', 'port-left', 'port-top-left'] as cls}
 			<div
 				class="port-dot {cls}"
 				style="
 					position: absolute;
-					width: 18px;
-					height: 18px;
+					width: 12px;
+					height: 12px;
 					border-radius: 50%;
 					background: #c9a84c;
 					border: 2px solid #a8893a;

@@ -82,15 +82,21 @@ type BatchStatusRequest struct {
 }
 
 type CreateEdgeRequest struct {
-	SourceID string  `json:"sourceId" validate:"required,uuid"`
-	TargetID string  `json:"targetId" validate:"required,uuid"`
-	EdgeType string  `json:"edgeType" validate:"omitempty,oneof=depends_on blocks related parent_child triggers"`
-	Label    *string `json:"label" validate:"omitempty,max=100"`
+	SourceID   string  `json:"sourceId" validate:"required,uuid"`
+	TargetID   string  `json:"targetId" validate:"required,uuid"`
+	EdgeType   string  `json:"edgeType" validate:"omitempty,oneof=depends_on blocks related parent_child triggers"`
+	Label      *string `json:"label" validate:"omitempty,max=100"`
+	SourcePort string  `json:"sourcePort" validate:"omitempty,oneof=auto N NE E SE S SW W NW"`
+	TargetPort string  `json:"targetPort" validate:"omitempty,oneof=auto N NE E SE S SW W NW"`
+	Waypoints  any     `json:"waypoints"`
 }
 
 type UpdateEdgeRequest struct {
-	EdgeType *string `json:"edgeType" validate:"omitempty,oneof=depends_on blocks related parent_child triggers"`
-	Label    *string `json:"label" validate:"omitempty,max=100"`
+	EdgeType   *string `json:"edgeType" validate:"omitempty,oneof=depends_on blocks related parent_child triggers"`
+	Label      *string `json:"label" validate:"omitempty,max=100"`
+	SourcePort *string `json:"sourcePort" validate:"omitempty,oneof=auto N NE E SE S SW W NW"`
+	TargetPort *string `json:"targetPort" validate:"omitempty,oneof=auto N NE E SE S SW W NW"`
+	Waypoints  any     `json:"waypoints"`
 }
 
 type UpdateMemberRoleRequest struct {
@@ -115,7 +121,8 @@ type UpdateProjectMemberRequest struct {
 }
 
 type LayoutRequest struct {
-	Algorithm string `json:"algorithm" validate:"omitempty,oneof=dagre grid"`
+	Algorithm     string `json:"algorithm" validate:"omitempty,oneof=dagre grid"`
+	PreserveEdges bool   `json:"preserveEdges"`
 }
 
 type CreateAPIKeyRequest struct {

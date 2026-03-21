@@ -52,7 +52,8 @@ export function getGraphStyles(): StylesheetStyle[] {
         shape,
         'border-color': TYPE_COLORS[type as keyof typeof TYPE_COLORS] ?? COLORS.border,
         'background-color': TYPE_COLORS[type as keyof typeof TYPE_COLORS] ?? COLORS.border,
-        'background-opacity': 0.125,
+        'background-opacity': 0.35,
+        'border-width': 2.5,
       } as Record<string, string | number>,
     })),
 
@@ -77,39 +78,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       } as Record<string, string | number>,
     },
 
-    // Status colors (override border) — exclude GROUP nodes to keep their dashed style
-    {
-      selector: 'node[status="PASS"][nodeType!="GROUP"]',
-      style: {
-        'border-color': STATUS_COLORS.PASS,
-        'background-color': STATUS_COLORS.PASS,
-        'background-opacity': 0.094,
-      },
-    },
-    {
-      selector: 'node[status="FAIL"][nodeType!="GROUP"]',
-      style: {
-        'border-color': STATUS_COLORS.FAIL,
-        'background-color': STATUS_COLORS.FAIL,
-        'background-opacity': 0.094,
-      },
-    },
-    {
-      selector: 'node[status="IN_PROGRESS"][nodeType!="GROUP"]',
-      style: {
-        'border-color': STATUS_COLORS.IN_PROGRESS,
-        'background-color': STATUS_COLORS.IN_PROGRESS,
-        'background-opacity': 0.094,
-      },
-    },
-    {
-      selector: 'node[status="BLOCKED"][nodeType!="GROUP"]',
-      style: {
-        'border-color': STATUS_COLORS.BLOCKED,
-        'background-color': STATUS_COLORS.BLOCKED,
-        'background-opacity': 0.094,
-      },
-    },
+    // Status is shown via DOM overlay dots (not border color)
+    // Border color stays as TYPE color for visual consistency
 
     // Selected node — brass gold glow
     {
@@ -174,17 +144,35 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'edge',
       style: {
         width: 1.5,
+        opacity: 0.75,
         'line-color': '#3d3a36',
         'target-arrow-color': '#3d3a36',
         'target-arrow-shape': 'triangle',
+        'target-arrow-fill': 'filled',
         'curve-style': 'bezier',
-        'arrow-scale': 1,
-        'font-size': 10,
+        'control-point-step-size': 40,
+        'arrow-scale': 1.3,
+        'font-size': 11,
+        'min-zoomed-font-size': 8,
         'text-rotation': 'autorotate',
         color: COLORS.textDim,
         'text-outline-color': COLORS.bg,
-        'text-outline-width': 2,
+        'text-outline-width': 3,
+        'text-background-color': COLORS.bg,
+        'text-background-opacity': 0.85,
+        'text-background-padding': '3px',
+        'text-background-shape': 'roundrectangle',
+        'text-margin-y': -8,
       },
+    },
+    // Edge hover
+    {
+      selector: 'edge:active',
+      style: {
+        opacity: 1,
+        width: 2.5,
+        'z-index': 999,
+      } as Record<string, string | number>,
     },
     // Edge label — only when label data exists
     {
@@ -194,26 +182,53 @@ export function getGraphStyles(): StylesheetStyle[] {
       },
     },
 
-    // Edge types
-    {
-      selector: 'edge[edgeType="blocks"]',
-      style: { 'line-color': EDGE_COLORS.blocks, 'target-arrow-color': EDGE_COLORS.blocks, 'line-style': 'dashed' },
-    },
+    // Edge types — differentiated by color, width, style, and arrow
     {
       selector: 'edge[edgeType="depends_on"]',
-      style: { 'line-color': EDGE_COLORS.depends_on, 'target-arrow-color': EDGE_COLORS.depends_on },
+      style: { 'line-color': EDGE_COLORS.depends_on, 'target-arrow-color': EDGE_COLORS.depends_on, width: 1.5 },
+    },
+    {
+      selector: 'edge[edgeType="blocks"]',
+      style: {
+        'line-color': EDGE_COLORS.blocks,
+        'target-arrow-color': EDGE_COLORS.blocks,
+        'line-style': 'dashed',
+        'line-dash-pattern': [8, 4],
+        width: 2,
+        'target-arrow-shape': 'tee',
+      } as Record<string, any>,
     },
     {
       selector: 'edge[edgeType="triggers"]',
-      style: { 'line-color': EDGE_COLORS.triggers, 'target-arrow-color': EDGE_COLORS.triggers },
+      style: {
+        'line-color': EDGE_COLORS.triggers,
+        'target-arrow-color': EDGE_COLORS.triggers,
+        width: 1.5,
+        'target-arrow-shape': 'triangle-backcurve',
+      },
     },
     {
       selector: 'edge[edgeType="related"]',
-      style: { 'line-color': EDGE_COLORS.related, 'target-arrow-color': EDGE_COLORS.related },
+      style: {
+        'line-color': EDGE_COLORS.related,
+        'target-arrow-color': EDGE_COLORS.related,
+        'line-style': 'dotted',
+        'line-dash-pattern': [3, 3],
+        width: 1,
+        opacity: 0.4,
+        'arrow-scale': 0.9,
+      } as Record<string, any>,
     },
     {
       selector: 'edge[edgeType="parent_child"]',
-      style: { 'line-color': EDGE_COLORS.parent_child, 'target-arrow-color': EDGE_COLORS.parent_child, 'line-style': 'dashed' },
+      style: {
+        'line-color': EDGE_COLORS.parent_child,
+        'target-arrow-color': EDGE_COLORS.parent_child,
+        'line-style': 'dashed',
+        'line-dash-pattern': [5, 5],
+        width: 1,
+        'target-arrow-shape': 'none',
+      } as Record<string, any>,
     },
 
     // Selected edge — brass gold highlight
@@ -221,6 +236,7 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'edge.edge-selected',
       style: {
         width: 3,
+        opacity: 1,
         'line-color': COLORS.accent,
         'target-arrow-color': COLORS.accent,
         'overlay-color': COLORS.accent,
@@ -228,6 +244,16 @@ export function getGraphStyles(): StylesheetStyle[] {
         'overlay-padding': 4,
         'z-index': 999,
       } as Record<string, string | number>,
+    },
+
+    // Edge hover — connected nodes highlight
+    {
+      selector: 'node.edge-hover-connected',
+      style: {
+        'border-width': 2,
+        'border-color': COLORS.accent,
+        'border-opacity': 0.6,
+      },
     },
 
     // Edges connecting to GROUP nodes — snap to outline
@@ -244,6 +270,17 @@ export function getGraphStyles(): StylesheetStyle[] {
         'source-endpoint': 'outside-to-node',
         'source-distance-from-node': 2,
       } as Record<string, string | number>,
+    },
+
+    // Segment-based routing for edges with waypoints
+    {
+      selector: 'edge[curveStyle="segments"]',
+      style: {
+        'curve-style': 'segments',
+        'segment-distances': 'data(segmentDistances)',
+        'segment-weights': 'data(segmentWeights)',
+        'edge-distances': 'node-position',
+      } as Record<string, any>,
     },
 
     // Edgehandles: ghost edge (follows cursor during drag)

@@ -2,6 +2,36 @@ import type cytoscape from 'cytoscape';
 import type { GraphNode, GraphEdge, NodeType, NodeStatus } from '$lib/types';
 import { getFcoseLayout, getPresetLayout } from './layouts';
 
+
+
+function waypointsToSegments(
+	src: { x: number; y: number },
+	tgt: { x: number; y: number },
+	waypoints: Array<{ x: number; y: number }>
+): { distances: number[]; weights: number[] } {
+	const dx = tgt.x - src.x;
+	const dy = tgt.y - src.y;
+	const len = Math.sqrt(dx * dx + dy * dy) || 1;
+	const nx = -dy / len; // normal x
+	const ny = dx / len;  // normal y
+
+	const distances: number[] = [];
+	const weights: number[] = [];
+
+	for (const wp of waypoints) {
+		// Project waypoint onto source-target line
+		const wx = wp.x - src.x;
+		const wy = wp.y - src.y;
+		const weight = (wx * dx + wy * dy) / (len * len);
+		const dist = wx * nx + wy * ny;
+		if (!isFinite(weight) || !isFinite(dist)) continue;
+		weights.push(Math.max(0.01, Math.min(0.99, weight)));
+		distances.push(dist);
+	}
+
+	return { distances, weights };
+}
+
 /** Compute nesting depth of a node via parentId chain. */
 export function computeDepth(
 	nodeId: string | null,
@@ -152,7 +182,24 @@ export function syncElements(ctx: SyncContext): boolean {
 				edgeType: edge.edgeType,
 				sourceIsGroup: nodeMap.get(edge.sourceId)?.type === 'GROUP',
 				targetIsGroup: nodeMap.get(edge.targetId)?.type === 'GROUP',
+				sourcePort: edge.sourcePort || 'auto',
+				targetPort: edge.targetPort || 'auto',
+				waypoints: edge.waypoints || [],
 			};
+
+			// Waypoint-based segments
+			const srcNode = nodeMap.get(edge.sourceId);
+			const tgtNode = nodeMap.get(edge.targetId);
+			if (edge.waypoints && edge.waypoints.length > 0 && srcNode && tgtNode) {
+				data.curveStyle = 'segments';
+				const result = waypointsToSegments(
+					{ x: srcNode.positionX, y: srcNode.positionY },
+					{ x: tgtNode.positionX, y: tgtNode.positionY },
+					edge.waypoints
+				);
+				data.segmentDistances = result.distances;
+				data.segmentWeights = result.weights;
+			}
 
 			if (existing.length) {
 				existing.data(data);

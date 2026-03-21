@@ -56,7 +56,13 @@ func (h *EdgeHandler) Create(c echo.Context) error {
 		edgeType = model.EdgeTypeRelated
 	}
 
-	edge, err := h.edgeRepo.Create(ctx, projectID, req.SourceID, req.TargetID, edgeType, req.Label)
+	var edge *model.Edge
+	var err error
+	if req.SourcePort != "" || req.TargetPort != "" || req.Waypoints != nil {
+		edge, err = h.edgeRepo.CreateWithRouting(ctx, projectID, req.SourceID, req.TargetID, edgeType, req.Label, req.SourcePort, req.TargetPort, req.Waypoints)
+	} else {
+		edge, err = h.edgeRepo.Create(ctx, projectID, req.SourceID, req.TargetID, edgeType, req.Label)
+	}
 	if err != nil {
 		return c.JSON(http.StatusConflict, dto.Err("Edge already exists or invalid"))
 	}
@@ -83,6 +89,14 @@ func (h *EdgeHandler) Update(c echo.Context) error {
 	edge, err := h.edgeRepo.Update(ctx, edgeID, edgeType, req.Label)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update edge"))
+	}
+
+	// Update routing if provided
+	if req.SourcePort != nil || req.TargetPort != nil || req.Waypoints != nil {
+		edge, err = h.edgeRepo.UpdateRouting(ctx, edgeID, req.SourcePort, req.TargetPort, req.Waypoints)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update edge routing"))
+		}
 	}
 
 	h.hub.Publish(service.Event{Type: service.EventEdgeUpdated, ProjectID: edge.ProjectID, Data: edge, UserID: mw.GetUserID(c)})

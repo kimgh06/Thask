@@ -56,6 +56,9 @@ export interface GraphEdge {
 	targetId: string;
 	edgeType: EdgeType;
 	label: string | null;
+	sourcePort: string;
+	targetPort: string;
+	waypoints: Array<{ x: number; y: number }>;
 	createdAt: string;
 }
 
