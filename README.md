@@ -24,6 +24,8 @@ Dependency visualization for AI-assisted development teams.
 
 <!-- TODO: Add hero screenshot/GIF here -->
 
+[**Live Demo** — Thask Documentation Graph](https://thask.kimgh06.com/shared/562a734b85200bbdd65a65e18e066dc377b7dcfd3c86edb1eab4e6aece9a9bbf)
+
 </div>
 
 ---
@@ -88,6 +90,10 @@ Full CLI for terminal workflows (`thask node list --pretty`). MCP server mode fo
 ### Role-Based Access
 
 Four team roles — Owner, Admin, Member, Viewer — with granular permissions. API key authentication for programmatic access.
+
+### Project Sharing
+
+Share projects via link with viewer or editor access. Manage per-project members with granular roles. Public shared views support realtime collaboration.
 
 ---
 
@@ -376,6 +382,8 @@ Place a reverse proxy (e.g. nginx, Caddy, Cloudflare Tunnel) in front to handle 
 - [x] API key authentication (Bearer token)
 - [x] Role-based access control (owner/admin/member/viewer)
 - [x] Team member management (invite, roles, transfer)
+- [x] Project sharing with public links (viewer/editor modes)
+- [x] CLI sharing commands (share, unshare, invite, kick)
 
 ### v0.2 — Collaboration & Export
 - [ ] Real-time collaboration (WebSocket / SSE)

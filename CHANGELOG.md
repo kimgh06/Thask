@@ -19,6 +19,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - User settings page in frontend UI
 - Shell aliases (`thask aliases install`) for common CLI commands
 - `thask install` / `thask uninstall` for system-wide binary installation
+- Project sharing: link sharing (viewer/editor mode) with public share URLs
+- Project member invitations with editor/viewer roles
+- Shared view page with realtime SSE updates and conditional editing
+- CLI sharing commands: `project share/unshare/members/invite/kick`
+- CLI `graph export` command for JSON file export
+- SharedAccess middleware with 30-second cache and rate limiting (5 req/sec)
+- Route registration refactored to `routes.go`
 
 ## [0.1.0] - 2026-03-20
 
