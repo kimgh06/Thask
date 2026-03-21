@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v4"
+	mw "github.com/thask/backend/internal/middleware"
 	"github.com/thask/backend/internal/service"
 )
 
@@ -18,7 +19,7 @@ func NewEventHandler(hub *service.Hub) *EventHandler {
 }
 
 func (h *EventHandler) Stream(c echo.Context) error {
-	projectID := c.Param("projectId")
+	projectID := mw.GetProjectID(c)
 
 	w := c.Response()
 	w.Header().Set("Content-Type", "text/event-stream")

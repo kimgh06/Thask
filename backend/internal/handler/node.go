@@ -48,10 +48,9 @@ func (h *NodeHandler) List(c echo.Context) error {
 	return c.JSON(http.StatusOK, dto.OK(nodes))
 }
 
-// Graph returns nodes and edges together in a single response to ensure consistency.
-func (h *NodeHandler) Graph(c echo.Context) error {
+// graphResponse is the shared implementation for Graph and SharedGraph.
+func (h *NodeHandler) graphResponse(c echo.Context, projectID string) error {
 	ctx := c.Request().Context()
-	projectID := c.Param("projectId")
 
 	nodes, err := h.nodeRepo.FindByProjectID(ctx, projectID, nil, nil)
 	if err != nil {
@@ -73,6 +72,15 @@ func (h *NodeHandler) Graph(c echo.Context) error {
 		"nodes": nodes,
 		"edges": edges,
 	}))
+}
+
+// Graph returns nodes and edges together in a single response to ensure consistency.
+func (h *NodeHandler) Graph(c echo.Context) error {
+	return h.graphResponse(c, c.Param("projectId"))
+}
+
+func (h *NodeHandler) SharedGraph(c echo.Context) error {
+	return h.graphResponse(c, mw.GetProjectID(c))
 }
 
 func (h *NodeHandler) Layout(c echo.Context) error {

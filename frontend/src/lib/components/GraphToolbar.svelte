@@ -15,6 +15,7 @@
 		Download,
 		FileJson,
 		Upload,
+		Share2,
 	} from 'lucide-svelte';
 	import type { GraphNode, NodeType, NodeStatus } from '$lib/types';
 	import { NODE_TYPES, STATUS_COLORS } from '$lib/constants';
@@ -40,6 +41,7 @@
 		onRedo: () => void;
 		canUndo: boolean;
 		canRedo: boolean;
+		onShare?: () => void;
 	}
 
 	let {
@@ -61,6 +63,7 @@
 		onRedo,
 		canUndo,
 		canRedo,
+		onShare,
 	}: Props = $props();
 
 	const STATUS_ITEMS: { value: NodeStatus; color: string }[] = [
@@ -250,6 +253,19 @@
 				</div>
 			{/if}
 		</div>
+
+		{#if onShare}
+			<!-- Divider -->
+			<div class="w-px h-5 mx-0.5" style="background: var(--color-border);"></div>
+
+			<button
+				onclick={onShare}
+				class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
+				data-tooltip="Share"
+			>
+				<Share2 size={16} />
+			</button>
+		{/if}
 	</div>
 
 	<!-- Filter bar (slides in smoothly) -->
