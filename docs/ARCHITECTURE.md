@@ -24,7 +24,7 @@ Thask uses a **monorepo with separate backend, frontend, and CLI** services. The
 │  Backend (Go + Echo v4)                                  │
 ├──────────────────────────────────────────────────────────┤
 │  Middleware Layer                                        │
-│  CORS · RateLimiter · Auth · ProjectAccess · TeamAccess  │
+│  CORS · RateLimiter · Auth · ProjectAccess · TeamAccess · SharedAccess  │
 ├──────────────────────────────────────────────────────────┤
 │  Handler Layer (HTTP → Business Logic)                   │
 │  auth · team · node · edge · impact · summary · api_key  │
@@ -90,7 +90,8 @@ cli/
 
 backend/
 ├── cmd/server/
-│   └── main.go                    # Entrypoint: DB, migrations, routes, graceful shutdown
+│   ├── main.go                    # Entrypoint: DB, migrations, graceful shutdown
+│   └── routes.go                  # Route registration and middleware wiring
 ├── internal/
 │   ├── config/
 │   │   └── config.go              # Env var loading (DATABASE_URL, SESSION_SECRET, etc.)
@@ -109,7 +110,8 @@ backend/
 │   ├── middleware/
 │   │   ├── auth.go                # Cookie → session → user context injection
 │   │   ├── role.go                # TeamAccess (slug resolution + membership), RequireRole (minimum role check)
-│   │   └── project_access.go      # Team membership verification (centralized)
+│   │   ├── project_access.go      # Team membership verification (centralized)
+│   │   └── shared_access.go       # SharedAccess: share token validation, 30-second cache, role mapping
 │   ├── model/
 │   │   ├── enums.go               # NodeType, NodeStatus, EdgeType, TeamRole constants
 │   │   └── models.go              # All data models with JSON/DB tags
@@ -190,6 +192,7 @@ frontend/
 | `SessionRepo` | Token-based sessions, validate, cleanup expired |
 | `TeamRepo` | Team CRUD, membership management |
 | `ProjectRepo` | Project CRUD, `VerifyAccess` (centralized auth check) |
+| `ProjectMemberRepo` | Per-project member CRUD, list with user join |
 | `NodeRepo` | Node CRUD, batch positions, filtered queries, status updates |
 | `EdgeRepo` | Edge CRUD, find connected edges |
 | `HistoryRepo` | Audit log creation and retrieval |

@@ -117,6 +117,31 @@ Frontend connects via `EventSource` at `/api/projects/:projectId/events`. Change
 
 ---
 
+## Shared View
+
+Projects can be shared via public links. Shared views support two modes:
+
+| Mode | Access | URL |
+|---|---|---|
+| `viewer` | Read-only: view graph, pan, zoom, search | `/shared/{token}` |
+| `editor` | Full access: create/edit/delete nodes and edges | `/shared/{token}` |
+
+### Features
+- Full Cytoscape canvas (same as authenticated view)
+- Realtime updates via SSE (debounced 300ms)
+- Export to PNG/JSON (editor mode)
+- Toolbar hidden in viewer mode
+- Sign-in button for anonymous users
+- Managed via ShareDialog component or CLI (`thask project share`)
+
+### Security
+- Share tokens are hashed (SHA256) in the database
+- Disabling sharing invalidates old tokens (new token on re-enable)
+- Public routes rate-limited to 5 requests/second
+- 30-second middleware cache to prevent token enumeration
+
+---
+
 ## Impact Mode
 
 Highlights nodes affected by recent changes for QA risk assessment.

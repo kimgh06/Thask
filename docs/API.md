@@ -439,6 +439,122 @@ Constraints: no self-loops (validated server-side).
 
 ---
 
+## Project Sharing
+
+### GET /api/projects/:projectId/sharing
+
+Get sharing settings and member list. Requires `admin` role.
+
+```json
+// Response 200
+{
+  "data": {
+    "linkSharing": "viewer",
+    "shareUrl": "/shared/abc123...",
+    "members": [
+      { "id": "uuid", "projectId": "uuid", "userId": "uuid", "role": "editor", "createdAt": "...", "user": { "id": "uuid", "email": "...", "displayName": "..." } }
+    ]
+  }
+}
+```
+
+### PUT /api/projects/:projectId/sharing
+
+Enable or disable link sharing. Requires `admin` role. Disabling clears the share token; re-enabling generates a new one (old links become invalid).
+
+```json
+// Request
+{ "linkSharing": "viewer" }
+
+// Response 200
+{ "data": { "linkSharing": "viewer", "shareUrl": "/shared/abc123..." } }
+```
+
+| Value | Description |
+|---|---|
+| `off` | Sharing disabled (default) |
+| `viewer` | Anyone with the link can view |
+| `editor` | Anyone with the link can edit |
+
+### POST /api/projects/:projectId/sharing/members
+
+Invite a user to the project. Requires `admin` role.
+
+```json
+// Request
+{ "email": "user@example.com", "role": "editor" }
+
+// Response 201
+{ "data": { "success": true } }
+```
+
+| Field | Validation |
+|---|---|
+| `email` | Required, valid email |
+| `role` | Required: `editor` or `viewer` |
+
+### PATCH /api/projects/:projectId/sharing/members/:userId
+
+Update a project member's role. Requires `admin` role.
+
+```json
+// Request
+{ "role": "viewer" }
+
+// Response 200
+{ "data": { "success": true } }
+```
+
+### DELETE /api/projects/:projectId/sharing/members/:userId
+
+Remove a project member. Requires `admin` role.
+
+```json
+// Response 200
+{ "data": { "success": true } }
+```
+
+---
+
+## Shared Access (Public)
+
+Public endpoints for accessing shared projects. No authentication required. Rate limited to 5 requests/second.
+
+### GET /api/shared/:shareToken
+
+Get shared project info (limited fields).
+
+```json
+// Response 200
+{ "data": { "id": "uuid", "name": "Project", "description": "...", "linkSharing": "viewer" } }
+```
+
+### GET /api/shared/:shareToken/graph
+
+Get full graph (nodes + edges) for a shared project.
+
+### GET /api/shared/:shareToken/events
+
+SSE stream for realtime updates on a shared project. Same event types as authenticated SSE.
+
+### Write endpoints (editor mode only)
+
+When `linkSharing` is `editor`, these endpoints are available:
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/shared/:shareToken/nodes` | Create node |
+| PATCH | `/api/shared/:shareToken/nodes/:nodeId` | Update node |
+| DELETE | `/api/shared/:shareToken/nodes/:nodeId` | Delete node |
+| PATCH | `/api/shared/:shareToken/nodes/positions` | Batch update positions |
+| POST | `/api/shared/:shareToken/edges` | Create edge |
+| PATCH | `/api/shared/:shareToken/edges/:edgeId` | Update edge |
+| DELETE | `/api/shared/:shareToken/edges/:edgeId` | Delete edge |
+
+Request/response formats are identical to the authenticated project endpoints.
+
+---
+
 ## Realtime Events (SSE)
 
 ### GET /api/projects/:projectId/events
@@ -535,6 +651,7 @@ Returns project and team counts for the authenticated user.
 | TeamAccess | `/api/teams/:teamSlug/*` | Resolves slug, verifies membership, sets team role |
 | ProjectAccess | `/api/projects/:projectId/*` | Verifies team membership for the project |
 | RequireRole | Specific routes | Enforces minimum role (owner/admin/member) |
+| SharedAccess | `/api/shared/:shareToken/*` | Token validation, role mapping, 30s cache, anonymous context |
 
 ---
 

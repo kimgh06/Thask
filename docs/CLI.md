@@ -262,6 +262,57 @@ thask project get 550e8400-e29b-41d4-a716-446655440000
 thask project get  # uses --project flag
 ```
 
+### project share [\--mode viewer\|editor]
+
+Enable link sharing for a project. Default mode is `viewer`.
+
+```bash
+thask project share -p <projectId>
+thask project share -p <projectId> --mode editor
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--mode` | `viewer` | Sharing mode: `viewer` (read-only) or `editor` (full access) |
+
+### project unshare
+
+Disable link sharing. Clears the share token (old links become invalid).
+
+```bash
+thask project unshare -p <projectId>
+```
+
+### project members
+
+List project sharing settings and members.
+
+```bash
+thask project members -p <projectId>
+```
+
+### project invite \--email \<email\> [\--role editor\|viewer]
+
+Invite a user to the project.
+
+```bash
+thask project invite -p <projectId> --email user@example.com
+thask project invite -p <projectId> --email user@example.com --role editor
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--email` | (required) | Email of user to invite |
+| `--role` | `viewer` | Role: `editor` or `viewer` |
+
+### project kick \--user \<userId\>
+
+Remove a user from the project.
+
+```bash
+thask project kick -p <projectId> --user <userId>
+```
+
 ---
 
 ## node (alias: n)
@@ -351,7 +402,18 @@ Update a node. All fields are optional.
 ```bash
 thask node update 550e8400-e29b-41d4-a716-446655440000 --title "Updated title" --status PASS
 thask n u 550e8400-e29b-41d4-a716-446655440000 --type BUG --tags "urgent,backend"
+thask n u 550e8400-e29b-41d4-a716-446655440000 --parent <groupId>   # move into GROUP
+thask n u 550e8400-e29b-41d4-a716-446655440000 --parent none        # remove from GROUP
 ```
+
+| Flag | Description |
+|---|---|
+| `--title` | New title |
+| `--status` | New status: PASS, FAIL, IN\_PROGRESS, BLOCKED |
+| `--type` | New type: FLOW, BRANCH, TASK, BUG, API, UI, GROUP |
+| `--description` | New description |
+| `--tags` | Comma-separated tags |
+| `--parent` | Parent GROUP node ID, or `none` to unparent |
 
 ### node delete \<nodeId\> | d, rm
 
@@ -471,6 +533,19 @@ Output:
   }
 }
 ```
+
+### graph export [\--file \<path\>]
+
+Export graph to a JSON file.
+
+```bash
+thask graph export -p <projectId>
+thask graph export -p <projectId> --file my-graph.json
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--file` | `graph.json` | Output file path |
 
 ### graph import --file \<path\> [\--mode merge\|replace]
 

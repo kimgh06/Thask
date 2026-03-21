@@ -13,11 +13,11 @@ Users ◄──── Sessions
   │
   ├──── TeamMembers ────► Teams
   │                         │
-  │                         └──── Projects
-  │                                 │
-  │                          ┌──────┴──────┐
-  │                          │             │
-  │                        Nodes ◄──── Edges
+  │                         └──── Projects ◄────┐
+  │                                 │            │
+  │                          ┌──────┴──────┐     │
+  │                          │             │     │
+  │                        Nodes ◄──── Edges   ProjectMembers
   │                          │
   │                     NodeHistory
   │                          │
@@ -101,6 +101,8 @@ Unique: `(team_id, user_id)`
 | updated_at | timestamptz | default now() |
 
 Index: `idx_projects_team_id (team_id)`
+
+> **Added in migration 003:** `link_sharing` (TEXT, default `'off'`), `share_token` (TEXT, nullable), `share_token_hash` (TEXT, UNIQUE, nullable)
 
 ### nodes
 
@@ -188,6 +190,20 @@ API keys for programmatic access (CLI, MCP, CI/CD).
 **Indexes:**
 - `idx_api_keys_user` — `user_id`
 - `idx_api_keys_hash` — `key_hash`
+
+### project_members
+
+Per-project access control for individual users.
+
+| Column | Type | Constraints |
+|---|---|---|
+| `id` | UUID | PK, default `gen_random_uuid()` |
+| `project_id` | UUID | FK → `projects(id)` ON DELETE CASCADE |
+| `user_id` | UUID | FK → `users(id)` ON DELETE CASCADE |
+| `role` | TEXT | CHECK (`editor`, `viewer`), DEFAULT `viewer` |
+| `created_at` | TIMESTAMPTZ | NOT NULL, default `now()` |
+
+**Constraints:** UNIQUE(`project_id`, `user_id`)
 
 ---
 
