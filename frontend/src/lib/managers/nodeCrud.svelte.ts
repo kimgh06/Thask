@@ -117,11 +117,10 @@ export function createNodeCrud(deps: NodeCrudDeps) {
 
 	async function handleUpdateNodeParent(nodeId: string, parentId: string | null) {
 		const projectId = deps.getProjectId();
+		// Only update parentId locally — position stays as-is to prevent syncElements from resetting
+		deps.setNodes(deps.getNodes().map((n) => (n.id === nodeId ? { ...n, parentId } : n)));
 		const res = await api.patch<NodeUpdateResult>(`/api/projects/${projectId}/nodes/${nodeId}`, { parentId: parentId ?? '' });
-		if (res.error) { console.error('Failed to update node parent:', res.error); return; }
-		if (res.data) {
-			deps.setNodes(deps.getNodes().map((n) => (n.id === nodeId ? res.data!.node : n)));
-		}
+		if (res.error) { console.error('Failed to update node parent:', res.error); }
 	}
 
 	async function handleBatchType(type: NodeType) {

@@ -155,8 +155,10 @@ export function syncElements(ctx: SyncContext): boolean {
 
 			if (existing.length) {
 				existing.data(data);
-				// Update position if it changed (e.g. after server-side layout)
-				if (hasPositions) {
+				// Update position if changed — skip if node was recently interacted with
+				// (prevents position reset during reparent or drag operations)
+				const recentlyMoved = (Date.now() - (existing.scratch('_lastDragTime') ?? 0)) < 1000;
+				if (hasPositions && !existing.grabbed() && !recentlyMoved) {
 					const curPos = existing.position();
 					if (Math.abs(curPos.x - node.positionX) > 0.5 || Math.abs(curPos.y - node.positionY) > 0.5) {
 						existing.position({ x: node.positionX, y: node.positionY });

@@ -157,7 +157,9 @@
 	async function handleUpdateNodeParent(nodeId: string, parentId: string | null) {
 		if (!isEditor) return;
 		await api.patch(`${sharedApiBase}/nodes/${nodeId}`, { parentId });
-		loadGraph();
+		// Don't call loadGraph() — position save happens immediately in groupDrag handler
+		// SSE will handle sync if needed
+		nodes = nodes.map((n) => n.id === nodeId ? { ...n, parentId } : n);
 	}
 
 	async function handleUpdateNode(nodeId: string, data: Record<string, unknown>) {

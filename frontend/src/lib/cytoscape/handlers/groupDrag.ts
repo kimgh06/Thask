@@ -113,8 +113,14 @@ export function attachGroupDragHandlers(
 		}
 
 		if (newParentId !== oldParentId) {
+			const pos = node.position();
 			node.data('parentId', newParentId);
+			node.position(pos);
+			// Mark as recently dragged so syncElements won't reset position
+			node.scratch('_lastDragTime', Date.now());
+			// Save parent + positions concurrently (non-blocking)
 			options.onUpdateNodeParent?.(node.id(), newParentId);
+			requestAnimationFrame(() => options.savePositions());
 		}
 		currentDropTarget = null;
 
@@ -147,6 +153,9 @@ export function attachGroupDragHandlers(
 			}
 			preDragPositions = [];
 		}
+
+		// Mark node as recently dragged (prevents syncElements from resetting position)
+		node.scratch('_lastDragTime', Date.now());
 
 		if (dragTimeout) clearTimeout(dragTimeout);
 		dragTimeout = options.trackTimeout(() => options.savePositions(), 500);
