@@ -46,9 +46,31 @@ func main() {
 	historyRepo := repository.NewHistoryRepo(pool)
 	apiKeyRepo := repository.NewAPIKeyRepo(pool)
 	pmRepo := repository.NewProjectMemberRepo(pool)
+	idempotencyRepo := repository.NewIdempotencyRepo(pool)
 
 	// Event Hub
 	hub := service.NewHub()
+
+	// Periodic cleanup of expired idempotency keys (every hour)
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		// Run once at startup
+		if n, err := idempotencyRepo.Cleanup(ctx); err != nil {
+			slog.Warn("idempotency cleanup failed", "error", err)
+		} else if n > 0 {
+			slog.Info("cleaned up expired idempotency keys", "count", n)
+		}
+		for range ticker.C {
+			cleanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if n, err := idempotencyRepo.Cleanup(cleanCtx); err != nil {
+				slog.Warn("idempotency cleanup failed", "error", err)
+			} else if n > 0 {
+				slog.Info("cleaned up expired idempotency keys", "count", n)
+			}
+			cancel()
+		}
+	}()
 
 	// Handlers
 	h := Handlers{
@@ -74,16 +96,19 @@ func main() {
 		Output: os.Stdout,
 	}))
 	e.Use(echoMw.Recover())
-	e.Use(echoMw.CORSWithConfig(echoMw.CORSConfig{
+	// Internal CORS (for /api/ routes — frontend only)
+	internalCORS := echoMw.CORSWithConfig(echoMw.CORSConfig{
 		AllowOrigins:     []string{cfg.FrontendURL},
 		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 		AllowHeaders:     []string{echo.HeaderContentType, echo.HeaderAuthorization},
 		AllowCredentials: true,
-	}))
+	})
+	e.Use(internalCORS)
 	e.Use(echoMw.RateLimiter(echoMw.NewRateLimiterMemoryStore(20)))
 
 	// Routes
 	RegisterRoutes(e, h, sessionRepo, apiKeyRepo, teamRepo, projectRepo, pmRepo)
+	RegisterV1Routes(e, h, cfg, sessionRepo, apiKeyRepo, teamRepo, projectRepo, pmRepo, idempotencyRepo)
 
 	// Graceful shutdown
 	go func() {

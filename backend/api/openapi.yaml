@@ -1,0 +1,782 @@
+openapi: "3.1.0"
+info:
+  title: Thask API
+  version: "1.0.0"
+  description: |
+    Graph-based project management API. Authenticate with a Bearer token (API key).
+
+    API keys can be created from the web UI or via `POST /api/auth/api-keys`.
+    Keys use the `thsk_` prefix (e.g., `thsk_aBcDeFg...`).
+  contact:
+    name: Thask
+servers:
+  - url: /api/v1
+    description: V1 API
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: "API key with `thsk_` prefix"
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [AUTHENTICATION_REQUIRED, FORBIDDEN, NOT_FOUND, VALIDATION_ERROR, CONFLICT, RATE_LIMITED, BODY_TOO_LARGE, INTERNAL_ERROR]
+            message:
+              type: string
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  reason:
+                    type: string
+
+    Pagination:
+      type: object
+      properties:
+        limit:
+          type: integer
+        hasMore:
+          type: boolean
+        nextCursor:
+          type: string
+          nullable: true
+
+    Node:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [FLOW, BRANCH, TASK, BUG, API, UI, GROUP]
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [PASS, FAIL, IN_PROGRESS, BLOCKED]
+        assigneeId:
+          type: string
+          format: uuid
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+        positionX:
+          type: number
+        positionY:
+          type: number
+        width:
+          type: number
+          nullable: true
+        height:
+          type: number
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Edge:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        sourceId:
+          type: string
+          format: uuid
+        targetId:
+          type: string
+          format: uuid
+        edgeType:
+          type: string
+          enum: [depends_on, blocks, related, parent_child, triggers]
+        label:
+          type: string
+          nullable: true
+        sourcePort:
+          type: string
+        targetPort:
+          type: string
+        waypoints:
+          type: array
+          items:
+            type: object
+            properties:
+              x:
+                type: number
+              y:
+                type: number
+        createdAt:
+          type: string
+          format: date-time
+
+    Team:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        createdBy:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        teamId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+paths:
+  /:
+    get:
+      summary: API version info
+      security: []
+      responses:
+        "200":
+          description: Version information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                  status:
+                    type: string
+
+  /teams:
+    get:
+      summary: List teams
+      tags: [Teams]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: after
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor
+      responses:
+        "200":
+          description: Teams list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Team"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /teams/{teamSlug}:
+    get:
+      summary: Get team by slug
+      tags: [Teams]
+      parameters:
+        - name: teamSlug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Team details
+        "404":
+          description: Team not found
+
+  /teams/{teamSlug}/members:
+    get:
+      summary: List team members
+      tags: [Teams]
+      parameters:
+        - name: teamSlug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Team members
+
+  /teams/{teamSlug}/projects:
+    get:
+      summary: List team projects
+      tags: [Teams]
+      parameters:
+        - name: teamSlug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Team projects
+
+  /projects/{projectId}:
+    get:
+      summary: Get project
+      tags: [Projects]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Project details
+    patch:
+      summary: Update project
+      tags: [Projects]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        "200":
+          description: Updated project
+
+  /projects/{projectId}/graph:
+    get:
+      summary: Get full graph (nodes + edges)
+      description: Returns all nodes and edges in the project. Not paginated.
+      tags: [Graph]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Full graph
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      nodes:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Node"
+                      edges:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Edge"
+
+  /projects/{projectId}/nodes:
+    get:
+      summary: List nodes (paginated)
+      tags: [Nodes]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [FLOW, BRANCH, TASK, BUG, API, UI, GROUP]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PASS, FAIL, IN_PROGRESS, BLOCKED]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: after
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor
+      responses:
+        "200":
+          description: Paginated nodes list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Node"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+    post:
+      summary: Create node
+      tags: [Nodes]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, title]
+              properties:
+                type:
+                  type: string
+                  enum: [FLOW, BRANCH, TASK, BUG, API, UI, GROUP]
+                title:
+                  type: string
+                  maxLength: 300
+                description:
+                  type: string
+                status:
+                  type: string
+                  enum: [PASS, FAIL, IN_PROGRESS, BLOCKED]
+                tags:
+                  type: array
+                  items:
+                    type: string
+                positionX:
+                  type: number
+                positionY:
+                  type: number
+      responses:
+        "201":
+          description: Created node
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Node"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /projects/{projectId}/nodes/{nodeId}:
+    get:
+      summary: Get node detail
+      tags: [Nodes]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Node detail with history and connected edges
+    patch:
+      summary: Update node
+      tags: [Nodes]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                status:
+                  type: string
+                  enum: [PASS, FAIL, IN_PROGRESS, BLOCKED]
+                type:
+                  type: string
+                  enum: [FLOW, BRANCH, TASK, BUG, API, UI, GROUP]
+                description:
+                  type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
+                parentId:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: Updated node
+    delete:
+      summary: Delete node
+      tags: [Nodes]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Node deleted
+
+  /projects/{projectId}/edges:
+    get:
+      summary: List edges (paginated)
+      tags: [Edges]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: after
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor
+      responses:
+        "200":
+          description: Paginated edges list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Edge"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+    post:
+      summary: Create edge
+      tags: [Edges]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceId, targetId]
+              properties:
+                sourceId:
+                  type: string
+                  format: uuid
+                targetId:
+                  type: string
+                  format: uuid
+                edgeType:
+                  type: string
+                  enum: [depends_on, blocks, related, parent_child, triggers]
+                  default: related
+                label:
+                  type: string
+      responses:
+        "201":
+          description: Created edge
+
+  /projects/{projectId}/edges/{edgeId}:
+    patch:
+      summary: Update edge
+      tags: [Edges]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: edgeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                edgeType:
+                  type: string
+                  enum: [depends_on, blocks, related, parent_child, triggers]
+                label:
+                  type: string
+      responses:
+        "200":
+          description: Updated edge
+    delete:
+      summary: Delete edge
+      tags: [Edges]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: edgeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Edge deleted
+
+  /projects/{projectId}/impact:
+    get:
+      summary: Analyze impact
+      tags: [Graph]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: nodeId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: depth
+          in: query
+          schema:
+            type: integer
+            default: 2
+      responses:
+        "200":
+          description: Impact analysis result
+
+  /projects/{projectId}/graph/import:
+    post:
+      summary: Import graph
+      tags: [Graph]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode, nodes]
+              properties:
+                mode:
+                  type: string
+                  enum: [replace, merge]
+                nodes:
+                  type: array
+                  items:
+                    type: object
+                edges:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        "200":
+          description: Import result
+
+  /projects/{projectId}/graph/layout:
+    post:
+      summary: Auto-layout graph
+      tags: [Graph]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                algorithm:
+                  type: string
+                  enum: [dagre, grid]
+                  default: dagre
+                preserveEdges:
+                  type: boolean
+                  default: false
+      responses:
+        "200":
+          description: Layout result
+
+  /projects/{projectId}/sharing:
+    get:
+      summary: Get sharing config
+      tags: [Sharing]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Sharing configuration
+    put:
+      summary: Update link sharing
+      tags: [Sharing]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [linkSharing]
+              properties:
+                linkSharing:
+                  type: string
+                  enum: [off, viewer, editor]
+      responses:
+        "200":
+          description: Updated sharing config

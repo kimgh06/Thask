@@ -206,6 +206,54 @@ func (r *NodeRepo) BatchUpdateStatus(ctx context.Context, projectID string, ids 
 	return err
 }
 
+// FindByProjectIDPaginated returns nodes with cursor-based pagination.
+// Uses (created_at, id) keyset for stable ordering.
+// Returns up to limit+1 rows; if len(result) > limit, hasMore=true and trim the last row.
+func (r *NodeRepo) FindByProjectIDPaginated(ctx context.Context, projectID string, nodeType, status *string, limit int, afterTime *time.Time, afterID *string) ([]model.Node, bool, error) {
+	args := []any{projectID}
+	where := "WHERE project_id = $1"
+	argIdx := 2
+
+	if nodeType != nil {
+		where += fmt.Sprintf(" AND type = $%d", argIdx)
+		args = append(args, *nodeType)
+		argIdx++
+	}
+	if status != nil {
+		where += fmt.Sprintf(" AND status = $%d", argIdx)
+		args = append(args, *status)
+		argIdx++
+	}
+	if afterTime != nil && afterID != nil {
+		where += fmt.Sprintf(" AND (created_at, id) > ($%d, $%d)", argIdx, argIdx+1)
+		args = append(args, *afterTime, *afterID)
+		argIdx += 2
+	}
+
+	query := fmt.Sprintf(
+		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at FROM nodes %s ORDER BY created_at ASC, id ASC LIMIT $%d`,
+		where, argIdx,
+	)
+	args = append(args, limit+1)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	nodes, err := scanNodes(rows)
+	if err != nil {
+		return nil, false, err
+	}
+
+	hasMore := len(nodes) > limit
+	if hasMore {
+		nodes = nodes[:limit]
+	}
+	return nodes, hasMore, nil
+}
+
 // scanNodes is a helper to scan rows into []model.Node
 func scanNodes(rows interface{ Next() bool; Scan(dest ...any) error }) ([]model.Node, error) {
 	var nodes []model.Node

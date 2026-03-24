@@ -18,6 +18,9 @@ const (
 	ContextUserEmail   = "user_email"
 	ContextDisplayName = "user_display_name"
 	SessionCookieName  = "thask_session"
+
+	// V1 API key context
+	ContextAPIKeyID = "api_key_id"
 )
 
 func Auth(sessionRepo *repository.SessionRepo, apiKeyRepo ...*repository.APIKeyRepo) echo.MiddlewareFunc {
@@ -53,6 +56,7 @@ func Auth(sessionRepo *repository.SessionRepo, apiKeyRepo ...*repository.APIKeyR
 						c.Set(ContextUserID, user.ID)
 						c.Set(ContextUserEmail, user.Email)
 						c.Set(ContextDisplayName, user.DisplayName)
+						c.Set(ContextAPIKeyID, apiKey.ID)
 						return next(c)
 					}
 					return c.JSON(http.StatusUnauthorized, dto.Err("Invalid API key"))
@@ -67,3 +71,4 @@ func Auth(sessionRepo *repository.SessionRepo, apiKeyRepo ...*repository.APIKeyR
 func GetUserID(c echo.Context) string {
 	return c.Get(ContextUserID).(string)
 }
+
