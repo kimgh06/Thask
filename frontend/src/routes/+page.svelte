@@ -15,6 +15,7 @@
 		{ title: 'Impact Mode', desc: 'BFS-powered blast radius analysis from any node.' },
 		{ title: 'CLI & MCP', desc: 'Terminal-first workflow. Claude Code and Cursor integration.' },
 		{ title: 'Project Sharing', desc: 'Share graphs via link. Viewer or editor access.' },
+		{ title: 'REST API', desc: 'Versioned /api/v1/ with OpenAPI spec, interactive docs, and idempotency.' },
 		{ title: 'Self-Hosted', desc: 'One command. Your data stays on your server.' },
 	];
 </script>
@@ -38,6 +39,7 @@
 			<span class="nav-name">Thask</span>
 		</a>
 		<div class="nav-links">
+			<a href="/docs" class="nav-link">Docs</a>
 			<a href="https://github.com/kimgh06/Thask" target="_blank" rel="noopener" class="nav-link">GitHub</a>
 			<a href="/login" class="nav-cta">Sign in</a>
 		</div>
