@@ -71,6 +71,119 @@ Middleware chain: `Auth` → `TeamAccess` (resolves slug, verifies membership, s
 
 ---
 
+## V1 External API
+
+The versioned API at `/api/v1/` is designed for external integrations, CI/CD pipelines, and third-party applications. It uses the same handlers as the internal `/api/` routes but adds:
+
+- **Structured error responses** with error codes
+- **CORS for external domains** (configurable via `V1_ALLOWED_ORIGINS`)
+- **Idempotency support** via `Idempotency-Key` header
+- **`X-API-Version: v1` header** on all responses
+- **1MB request body limit**
+
+### Base URL
+
+```
+/api/v1
+```
+
+### Version Info
+
+```bash
+GET /api/v1
+# => {"version":"v1","status":"stable"}
+```
+
+### Interactive Docs
+
+- **Scalar UI:** `GET /api/v1/docs`
+- **OpenAPI Spec:** `GET /api/v1/openapi.yaml`
+
+### V1 Error Format
+
+V1 routes return structured errors instead of plain strings:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Field validation failed",
+    "details": [{"field": "title", "reason": "required"}]
+  }
+}
+```
+
+| HTTP Status | Error Code |
+|---|---|
+| 400 | `VALIDATION_ERROR` |
+| 401 | `AUTHENTICATION_REQUIRED` |
+| 403 | `FORBIDDEN` |
+| 404 | `NOT_FOUND` |
+| 409 | `CONFLICT` |
+| 413 | `BODY_TOO_LARGE` |
+| 429 | `RATE_LIMITED` |
+| 5xx | `INTERNAL_ERROR` |
+
+> Internal `/api/` routes continue to return `{"error": "string"}` for backward compatibility.
+
+### Idempotency
+
+Add `Idempotency-Key` header to POST/PATCH/DELETE requests to prevent duplicate operations on retry:
+
+```bash
+curl -X POST -H "Authorization: Bearer thsk_..." \
+  -H "Idempotency-Key: unique-request-id" \
+  /api/v1/projects/{id}/nodes \
+  -d '{"type":"TASK","title":"My Task"}'
+```
+
+- Max key length: 256 characters
+- TTL: 24 hours
+- Scoped per API key
+- Replayed responses include `X-Idempotency-Replayed: true` header
+- Method and path must match the original request
+
+### V1 Endpoints
+
+All v1 endpoints mirror their `/api/` counterparts with the same request/response format (except error responses). Available endpoints:
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/v1` | No | Version info |
+| GET | `/api/v1/docs` | No | Interactive API docs |
+| GET | `/api/v1/openapi.yaml` | No | OpenAPI 3.1 spec |
+| GET | `/api/v1/teams` | Yes | List teams |
+| GET | `/api/v1/teams/:slug` | Yes | Get team |
+| GET | `/api/v1/teams/:slug/members` | Yes | List members |
+| GET | `/api/v1/teams/:slug/projects` | Yes | List projects |
+| GET | `/api/v1/projects/:id` | Yes | Get project |
+| GET | `/api/v1/projects/:id/graph` | Yes | Full graph (not paginated) |
+| GET | `/api/v1/projects/:id/nodes` | Yes | List nodes |
+| GET | `/api/v1/projects/:id/nodes/:nodeId` | Yes | Get node detail |
+| GET | `/api/v1/projects/:id/edges` | Yes | List edges |
+| GET | `/api/v1/projects/:id/impact` | Yes | Impact analysis |
+| PATCH | `/api/v1/projects/:id` | Yes (member+) | Update project |
+| POST | `/api/v1/projects/:id/nodes` | Yes (member+) | Create node |
+| PATCH | `/api/v1/projects/:id/nodes/:nodeId` | Yes (member+) | Update node |
+| DELETE | `/api/v1/projects/:id/nodes/:nodeId` | Yes (member+) | Delete node |
+| POST | `/api/v1/projects/:id/edges` | Yes (member+) | Create edge |
+| PATCH | `/api/v1/projects/:id/edges/:edgeId` | Yes (member+) | Update edge |
+| DELETE | `/api/v1/projects/:id/edges/:edgeId` | Yes (member+) | Delete edge |
+| POST | `/api/v1/projects/:id/graph/import` | Yes (member+) | Import graph |
+| POST | `/api/v1/projects/:id/graph/layout` | Yes (member+) | Auto-layout |
+| GET | `/api/v1/projects/:id/sharing` | Yes (admin+) | Get sharing config |
+| PUT | `/api/v1/projects/:id/sharing` | Yes (admin+) | Update sharing |
+
+**Not available on v1:** auth routes, batch position/status/delete, SSE events, shared/embed routes, team management writes.
+
+### V1 Middleware Chain
+
+```
+External CORS → BodyLimit(1MB) → V1ResponseWrapper → Auth → Idempotency → [TeamAccess/ProjectAccess] → [RequireRole] → Handler
+```
+
+---
+
 ## API Keys
 
 ### POST /api/auth/api-keys
@@ -652,6 +765,10 @@ Returns project and team counts for the authenticated user.
 | ProjectAccess | `/api/projects/:projectId/*` | Verifies team membership for the project |
 | RequireRole | Specific routes | Enforces minimum role (owner/admin/member) |
 | SharedAccess | `/api/shared/:shareToken/*` | Token validation, role mapping, 30s cache, anonymous context |
+| V1ResponseWrapper | `/api/v1/*` | Transforms error responses to structured v1 format |
+| V1BodyLimit | `/api/v1/*` | Rejects request bodies over 1MB |
+| Idempotency | `/api/v1/*` (mutations) | Deduplicates requests via Idempotency-Key header |
+| External CORS | `/api/v1/*` | Configurable origin allowlist for external consumers |
 
 ---
 

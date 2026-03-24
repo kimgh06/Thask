@@ -87,6 +87,10 @@ Five edge types with distinct colors: `depends_on`, `blocks`, `related`, `parent
 
 Full CLI for terminal workflows (`thask node list --pretty`). MCP server mode for AI agent integration — Claude Code and Cursor can query and modify your graph directly. [CLI Reference](docs/CLI.md) · [MCP Guide](docs/MCP.md)
 
+### External API (v1)
+
+Versioned REST API at `/api/v1/` for third-party integrations. OpenAPI 3.1 spec, interactive Scalar docs, structured error responses, and idempotency support. Authenticate with existing API keys. [API Guide](backend/api/README.md) · [Interactive Docs](/api/v1/docs)
+
 ### Role-Based Access
 
 Four team roles — Owner, Admin, Member, Viewer — with granular permissions. API key authentication for programmatic access.
@@ -288,6 +292,8 @@ Users ──< TeamMembers >── Teams ──< Projects ──< Nodes ──< N
 | `SESSION_SECRET` | Random string for session signing | — |
 | `PORT` | Backend server port | `7244` |
 | `FRONTEND_URL` | Frontend URL for CORS | `http://localhost:7243` |
+| `V1_ALLOWED_ORIGINS` | Comma-separated CORS origins for `/api/v1/` | `*` |
+| `MAX_REQUEST_BODY_BYTES` | Max request body size for v1 routes (bytes) | `1048576` (1MB) |
 
 ### Frontend (`frontend/.env`)
 
@@ -342,6 +348,7 @@ Place a reverse proxy (e.g. nginx, Caddy, Cloudflare Tunnel) in front to handle 
 - [Keyboard Shortcuts](docs/SHORTCUTS.md) — All shortcuts and interactions
 - [CLI Reference](docs/CLI.md) — Installation, commands, shell aliases
 - [MCP Guide](docs/MCP.md) — AI agent integration (Claude Code, Cursor)
+- [V1 API Guide](backend/api/README.md) — External API quickstart for third-party developers
 
 ---
 
@@ -385,19 +392,27 @@ Place a reverse proxy (e.g. nginx, Caddy, Cloudflare Tunnel) in front to handle 
 - [x] Project sharing with public links (viewer/editor modes)
 - [x] CLI sharing commands (share, unshare, invite, kick)
 
-### v0.2 — Collaboration & Export
-- [ ] Real-time collaboration (WebSocket / SSE)
-- [ ] Graph snapshot — export as PNG / SVG
-- [ ] PDF report generation (impact summary)
-- [ ] Activity feed (recent changes across team)
-- [ ] Comment threads on nodes
+### v0.2 — External API & Collaboration (Done)
+- [x] Real-time collaboration via SSE
+- [x] Graph export as PNG / JSON
+- [x] Graph import (replace/merge mode)
+- [x] Versioned external API (`/api/v1/`) with OpenAPI spec
+- [x] Interactive API docs (Scalar UI at `/api/v1/docs`)
+- [x] Structured error responses for v1
+- [x] Idempotency support for API consumers
+- [x] CORS configuration for external domains
+- [x] Edge waypoints (draggable bend points)
+- [x] SVG edge rendering with snap guides
+- [x] Embeddable graph views (`/embed/:shareToken`)
+- [x] OG image generation for shared links
 
 ### v0.3 — Automation & Integration
-- [ ] API token auth for CI/CD pipelines
-- [ ] Webhook triggers on status change
+- [ ] Webhook triggers on graph changes
+- [ ] Per-API-key rate limiting with standard headers
+- [ ] API key scoping (project-level, read-only)
 - [ ] GitHub / GitLab issue sync
 - [ ] Slack / Discord notifications
-- [ ] Bulk import / export (JSON, CSV)
+- [ ] TypeScript / Python SDK generation
 
 ### v0.4 — UX & Templates
 - [ ] Graph templates (preset flow patterns)
@@ -405,10 +420,12 @@ Place a reverse proxy (e.g. nginx, Caddy, Cloudflare Tunnel) in front to handle 
 - [ ] Custom node colors & icons
 - [ ] Minimap
 - [ ] Mobile responsive layout
+- [ ] Comment threads on nodes
+- [ ] Activity feed (recent changes across team)
 
 ### Future
 - [ ] Version history & graph diffing
-- [ ] Role-based permissions (view-only, edit, admin)
+- [ ] PDF report generation (impact summary)
 - [ ] Plugin system for custom node types
 - [ ] AI-assisted impact prediction
 - [ ] Self-hosted SSO (SAML / OIDC)
