@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/thask/backend/internal/dto"
@@ -35,6 +37,42 @@ func (h *NodeHandler) List(c echo.Context) error {
 	}
 	if s := c.QueryParam("status"); s != "" {
 		status = &s
+	}
+
+	// V1 paginated path
+	if c.Get(mw.ContextIsV1) == true {
+		limitParam, _ := strconv.Atoi(c.QueryParam("limit"))
+		limit := dto.ClampLimit(limitParam, 100)
+
+		var afterTime *time.Time
+		var afterID *string
+		if cursor := c.QueryParam("after"); cursor != "" {
+			t, id, err := dto.DecodeCursor(cursor)
+			if err != nil {
+				return c.JSON(http.StatusBadRequest, dto.V1Err(400, "Invalid cursor"))
+			}
+			afterTime = &t
+			afterID = &id
+		}
+
+		nodes, hasMore, err := h.nodeRepo.FindByProjectIDPaginated(ctx, projectID, nodeType, status, limit, afterTime, afterID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, dto.V1Err(500, "Failed to fetch nodes"))
+		}
+		if nodes == nil {
+			nodes = []model.Node{}
+		}
+
+		var nextCursor *string
+		if hasMore && len(nodes) > 0 {
+			last := nodes[len(nodes)-1]
+			c := dto.EncodeCursor(last.CreatedAt, last.ID)
+			nextCursor = &c
+		}
+		return c.JSON(http.StatusOK, dto.PaginatedResponse{
+			Data:       nodes,
+			Pagination: dto.PaginationMeta{Limit: limit, HasMore: hasMore, NextCursor: nextCursor},
+		})
 	}
 
 	nodes, err := h.nodeRepo.FindByProjectID(ctx, projectID, nodeType, status)

@@ -2,6 +2,8 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/thask/backend/internal/dto"
@@ -23,6 +25,42 @@ func NewEdgeHandler(edgeRepo *repository.EdgeRepo, hub *service.Hub) *EdgeHandle
 func (h *EdgeHandler) List(c echo.Context) error {
 	ctx := c.Request().Context()
 	projectID := mw.ResolveProjectID(c)
+
+	// V1 paginated path
+	if c.Get(mw.ContextIsV1) == true {
+		limitParam, _ := strconv.Atoi(c.QueryParam("limit"))
+		limit := dto.ClampLimit(limitParam, 100)
+
+		var afterTime *time.Time
+		var afterID *string
+		if cursor := c.QueryParam("after"); cursor != "" {
+			t, id, err := dto.DecodeCursor(cursor)
+			if err != nil {
+				return c.JSON(http.StatusBadRequest, dto.V1Err(400, "Invalid cursor"))
+			}
+			afterTime = &t
+			afterID = &id
+		}
+
+		edges, hasMore, err := h.edgeRepo.FindByProjectIDPaginated(ctx, projectID, limit, afterTime, afterID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, dto.V1Err(500, "Failed to fetch edges"))
+		}
+		if edges == nil {
+			edges = []model.Edge{}
+		}
+
+		var nextCursor *string
+		if hasMore && len(edges) > 0 {
+			last := edges[len(edges)-1]
+			c := dto.EncodeCursor(last.CreatedAt, last.ID)
+			nextCursor = &c
+		}
+		return c.JSON(http.StatusOK, dto.PaginatedResponse{
+			Data:       edges,
+			Pagination: dto.PaginationMeta{Limit: limit, HasMore: hasMore, NextCursor: nextCursor},
+		})
+	}
 
 	edges, err := h.edgeRepo.FindByProjectID(ctx, projectID)
 	if err != nil {
@@ -78,7 +116,13 @@ func (h *EdgeHandler) Update(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
+	projectID := mw.ResolveProjectID(c)
 	edgeID := c.Param("edgeId")
+
+	// Verify edge belongs to this project
+	if err := h.edgeRepo.VerifyProject(ctx, edgeID, projectID); err != nil {
+		return c.JSON(http.StatusNotFound, dto.Err("Edge not found"))
+	}
 
 	var edgeType *model.EdgeType
 	if req.EdgeType != nil {
@@ -108,7 +152,7 @@ func (h *EdgeHandler) Delete(c echo.Context) error {
 	projectID := mw.ResolveProjectID(c)
 	edgeID := c.Param("edgeId")
 
-	if err := h.edgeRepo.Delete(ctx, edgeID); err != nil {
+	if err := h.edgeRepo.DeleteScoped(ctx, edgeID, projectID); err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to delete edge"))
 	}
 

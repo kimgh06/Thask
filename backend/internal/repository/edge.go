@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/thask/backend/internal/model"
@@ -126,7 +128,70 @@ func (r *EdgeRepo) ResetWaypoints(ctx context.Context, projectID string) error {
 	return err
 }
 
+func (r *EdgeRepo) VerifyProject(ctx context.Context, edgeID, projectID string) error {
+	var exists bool
+	err := r.pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM edges WHERE id = $1 AND project_id = $2)`,
+		edgeID, projectID,
+	).Scan(&exists)
+	if err != nil || !exists {
+		return fmt.Errorf("edge not found in project")
+	}
+	return nil
+}
+
 func (r *EdgeRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM edges WHERE id = $1`, id)
 	return err
+}
+
+func (r *EdgeRepo) DeleteScoped(ctx context.Context, id, projectID string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM edges WHERE id = $1 AND project_id = $2`, id, projectID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("edge not found")
+	}
+	return nil
+}
+
+// FindByProjectIDPaginated returns edges with cursor-based pagination.
+func (r *EdgeRepo) FindByProjectIDPaginated(ctx context.Context, projectID string, limit int, afterTime *time.Time, afterID *string) ([]model.Edge, bool, error) {
+	args := []any{projectID}
+	where := "WHERE project_id = $1"
+	argIdx := 2
+
+	if afterTime != nil && afterID != nil {
+		where += fmt.Sprintf(" AND (created_at, id) > ($%d, $%d)", argIdx, argIdx+1)
+		args = append(args, *afterTime, *afterID)
+		argIdx += 2
+	}
+
+	query := fmt.Sprintf(
+		`SELECT %s FROM edges %s ORDER BY created_at ASC, id ASC LIMIT $%d`,
+		edgeCols, where, argIdx,
+	)
+	args = append(args, limit+1)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	var edges []model.Edge
+	for rows.Next() {
+		e, err := scanEdge(rows)
+		if err != nil {
+			return nil, false, err
+		}
+		edges = append(edges, *e)
+	}
+
+	hasMore := len(edges) > limit
+	if hasMore {
+		edges = edges[:limit]
+	}
+	return edges, hasMore, nil
 }
