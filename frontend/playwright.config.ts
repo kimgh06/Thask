@@ -25,8 +25,9 @@ export default defineConfig({
 		reuseExistingServer: true,
 		timeout: 30_000,
 		env: {
-			PUBLIC_API_URL: 'http://localhost:7244',
+			PORT: '7243',
 			ORIGIN: 'http://localhost:7243',
+			BACKEND_URL: 'http://localhost:7244',
 		},
 	},
 });
