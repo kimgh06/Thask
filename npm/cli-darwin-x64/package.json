@@ -1,0 +1,12 @@
+{
+  "name": "@thask-org/cli-darwin-x64",
+  "version": "0.3.0",
+  "description": "Thask CLI binary for darwin x64",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kimgh06/Thask"
+  },
+  "os": ["darwin"],
+  "cpu": ["x64"]
+}

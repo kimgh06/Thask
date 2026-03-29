@@ -1,0 +1,33 @@
+{
+  "name": "@thask-org/cli",
+  "version": "0.3.0",
+  "description": "Graph-based dependency visualization for AI-assisted development",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kimgh06/Thask"
+  },
+  "homepage": "https://thask.kimgh06.com",
+  "keywords": [
+    "dependency-graph",
+    "mcp",
+    "claude-code",
+    "cursor",
+    "ai-tools",
+    "devtools",
+    "cli"
+  ],
+  "bin": {
+    "thask": "bin/thask.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "@thask-org/cli-darwin-arm64": "0.3.0",
+    "@thask-org/cli-darwin-x64": "0.3.0",
+    "@thask-org/cli-linux-arm64": "0.3.0",
+    "@thask-org/cli-linux-x64": "0.3.0",
+    "@thask-org/cli-win32-x64": "0.3.0"
+  }
+}
