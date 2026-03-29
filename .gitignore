@@ -35,3 +35,4 @@ pgdata/
 .omc/
 .claude/settings.json
 .playwright-mcpdist/
+OPERATIONS.md

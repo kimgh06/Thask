@@ -114,8 +114,9 @@ Get Thask working with Claude Code in 3 minutes:
 
 3. **Install the CLI:**
    ```bash
-   cd cli && go build -o thask ./cmd/thask && ./thask install
+   npm install -g @thask-org/cli
    ```
+   Or build from source: `cd cli && go build -o thask ./cmd/thask && ./thask install`
 
 4. **Configure:**
    ```bash

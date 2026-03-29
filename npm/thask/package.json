@@ -1,6 +1,6 @@
 {
   "name": "@thask-org/cli",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "Graph-based dependency visualization for AI-assisted development",
   "license": "MIT",
   "repository": {
@@ -24,10 +24,10 @@
     "node": ">=18"
   },
   "optionalDependencies": {
-    "@thask-org/cli-darwin-arm64": "0.3.0",
-    "@thask-org/cli-darwin-x64": "0.3.0",
-    "@thask-org/cli-linux-arm64": "0.3.0",
-    "@thask-org/cli-linux-x64": "0.3.0",
-    "@thask-org/cli-win32-x64": "0.3.0"
+    "@thask-org/cli-darwin-arm64": "0.5.0",
+    "@thask-org/cli-darwin-x64": "0.5.0",
+    "@thask-org/cli-linux-arm64": "0.5.0",
+    "@thask-org/cli-linux-x64": "0.5.0",
+    "@thask-org/cli-win32-x64": "0.5.0"
   }
 }

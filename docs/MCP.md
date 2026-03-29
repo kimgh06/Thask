@@ -21,7 +21,7 @@ All without leaving the editor.
 
 1. **Thask server running** — locally via `docker compose up` or a remote instance
 2. **API token** — create via web UI (Settings > API Keys) or set via CLI config
-3. **Thask CLI installed** — `go install` or download binary from releases
+3. **Thask CLI installed** — `npm install -g @thask-org/cli` or build from source (`cd cli && go build -o thask ./cmd/thask`)
 
 ---
 
@@ -37,6 +37,19 @@ Create or edit `.claude/mcp.json` in your project root:
     "thask": {
       "command": "thask",
       "args": ["mcp", "serve", "--url", "http://localhost:7244", "--token", "YOUR_API_KEY"]
+    }
+  }
+}
+```
+
+Or use npx (no global install needed):
+
+```json
+{
+  "mcpServers": {
+    "thask": {
+      "command": "npx",
+      "args": ["-y", "@thask-org/cli", "mcp", "serve", "--url", "http://localhost:7244", "--token", "YOUR_API_KEY"]
     }
   }
 }

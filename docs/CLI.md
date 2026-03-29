@@ -2,7 +2,15 @@
 
 The Thask CLI provides command-line access to projects, nodes, edges, and graphs. All commands output JSON by default.
 
-**Installation:** `thask install` (adds binary to PATH)
+**Installation:**
+
+```bash
+# Option 1: npm (recommended)
+npm install -g @thask-org/cli
+
+# Option 2: Build from source
+cd cli && go build -o thask ./cmd/thask && ./thask install
+```
 
 **Base config:** `~/.config/thask/config.json` (keys: `url`, `token`, `team`, `project`)
 
