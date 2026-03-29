@@ -1,13 +1,17 @@
 package scan
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"go/parser"
 	"go/token"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type ScanNode struct {
@@ -160,6 +164,55 @@ func Run(opts ScanOptions) (*ScanResult, error) {
 		Nodes: nodes,
 		Edges: edges,
 	}, nil
+}
+
+// RunPlugin runs an external scanner plugin.
+// The plugin must accept --path <dir> and write ImportGraphRequest-compatible JSON to stdout.
+func RunPlugin(pluginPath string, projectPath string, maxFiles int) (*ScanResult, error) {
+	absPath, err := filepath.Abs(pluginPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid plugin path: %w", err)
+	}
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("plugin not found: %w", err)
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("plugin path is a directory, not an executable: %s", absPath)
+	}
+	if info.Mode()&0111 == 0 {
+		return nil, fmt.Errorf("plugin is not executable: %s", absPath)
+	}
+
+	args := []string{"--path", projectPath}
+	if maxFiles > 0 {
+		args = append(args, "--max-files", fmt.Sprintf("%d", maxFiles))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, absPath, args...)
+	cmd.Stderr = os.Stderr
+
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("plugin exited with code %d", exitErr.ExitCode())
+		}
+		return nil, fmt.Errorf("failed to run plugin: %w", err)
+	}
+
+	var result ScanResult
+	if err := json.Unmarshal(output, &result); err != nil {
+		return nil, fmt.Errorf("plugin output is not valid JSON: %w", err)
+	}
+
+	if result.Mode == "" {
+		result.Mode = "merge"
+	}
+
+	return &result, nil
 }
 
 func pkgToTitle(pkg, modulePath string) string {

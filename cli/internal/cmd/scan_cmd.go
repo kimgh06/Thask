@@ -15,11 +15,15 @@ var scanCmd = &cobra.Command{
 		path, _ := cmd.Flags().GetString("path")
 		maxFiles, _ := cmd.Flags().GetInt("max-files")
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
+		plugin, _ := cmd.Flags().GetString("plugin")
 
-		result, err := scan.Run(scan.ScanOptions{
-			Path:     path,
-			MaxFiles: maxFiles,
-		})
+		var result *scan.ScanResult
+		var err error
+		if plugin != "" {
+			result, err = scan.RunPlugin(plugin, path, maxFiles)
+		} else {
+			result, err = scan.Run(scan.ScanOptions{Path: path, MaxFiles: maxFiles})
+		}
 		if err != nil {
 			return err
 		}
@@ -48,6 +52,7 @@ func init() {
 	scanCmd.Flags().String("path", ".", "Path to Go project root (must contain go.mod)")
 	scanCmd.Flags().Int("max-files", 500, "Maximum number of .go files to scan")
 	scanCmd.Flags().Bool("dry-run", false, "Print JSON to stdout instead of posting to API")
+	scanCmd.Flags().String("plugin", "", "Path to external scanner plugin executable")
 
 	rootCmd.AddCommand(scanCmd)
 }

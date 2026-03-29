@@ -1,0 +1,53 @@
+name: Release CLI
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: cli/go.sum
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build cross-platform binaries
+        run: make release-cli
+
+      - name: Package binaries
+        run: |
+          cd dist
+          for binary in thask-*; do
+            if [[ "$binary" == *.exe ]]; then
+              tar czf "${binary%.exe}.tar.gz" "$binary"
+            else
+              tar czf "${binary}.tar.gz" "$binary"
+            fi
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz
+          generate_release_notes: true
+
+      - name: Print SHA256 hashes
+        run: |
+          echo "Update Formula/thask.rb with these hashes:"
+          cd dist
+          shasum -a 256 *.tar.gz

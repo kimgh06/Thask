@@ -43,6 +43,13 @@ release-cli:
 test-cli:
 	cd cli && go test ./...
 
+bench:
+	@echo "=== Scanner Benchmark ==="
+	cd cli && go test ./internal/scan/ -bench=. -benchmem -count=1
+	@echo ""
+	@echo "=== Graph Analysis Benchmark ==="
+	cd backend && go test ./internal/service/ -bench=. -benchmem -count=1
+
 test-e2e:
 	cd frontend && npx playwright test
 
@@ -69,5 +76,5 @@ db-down:
 
 # Clean
 clean:
-	rm -rf backend/bin bin/
+	rm -rf backend/bin bin/ dist/
 	rm -rf frontend/build frontend/.svelte-kit

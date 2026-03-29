@@ -42,6 +42,33 @@ func (r *HistoryRepo) BatchCreateStatusChanges(ctx context.Context, projectID, u
 	r.pool.Exec(ctx, query, args...)
 }
 
+func (r *HistoryRepo) FindByProjectID(ctx context.Context, projectID string, limit int) ([]model.NodeHistoryEntry, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT nh.id, nh.action, nh.field_name, nh.old_value, nh.new_value, nh.created_at, u.display_name
+		 FROM node_history nh
+		 INNER JOIN users u ON nh.user_id = u.id
+		 WHERE nh.project_id = $1
+		 ORDER BY nh.created_at DESC
+		 LIMIT $2`, projectID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []model.NodeHistoryEntry
+	for rows.Next() {
+		var e model.NodeHistoryEntry
+		if err := rows.Scan(&e.ID, &e.Action, &e.FieldName, &e.OldValue, &e.NewValue, &e.CreatedAt, &e.UserName); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
 func (r *HistoryRepo) FindByNodeID(ctx context.Context, nodeID string, limit int) ([]model.NodeHistoryEntry, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT nh.id, nh.action, nh.field_name, nh.old_value, nh.new_value, nh.created_at, u.display_name
@@ -62,6 +89,9 @@ func (r *HistoryRepo) FindByNodeID(ctx context.Context, nodeID string, limit int
 			return nil, err
 		}
 		entries = append(entries, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return entries, nil
 }
