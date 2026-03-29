@@ -56,8 +56,41 @@ jobs:
   frontend-e2e:
     name: Frontend E2E
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: thask
+          POSTGRES_PASSWORD: thask_ci_password
+          POSTGRES_DB: thask
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
+
+      # Build and start backend
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: backend/go.sum
+      - name: Build backend
+        working-directory: backend
+        run: go build -o server ./cmd/server
+      - name: Start backend
+        working-directory: backend
+        run: ./server &
+        env:
+          DATABASE_URL: postgresql://thask:thask_ci_password@localhost:5432/thask
+          SESSION_SECRET: ci-test-secret-64-chars-long-enough-for-testing-purposes-here123
+          FRONTEND_URL: http://localhost:7243
+          PORT: '7244'
+
+      # Build and test frontend
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -69,6 +102,14 @@ jobs:
       - name: Install Playwright browsers
         working-directory: frontend
         run: npx playwright install --with-deps
+      - name: Wait for backend
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:7244/health && break
+            sleep 1
+          done
       - name: Run E2E tests
         working-directory: frontend
         run: npx playwright test
+        env:
+          BACKEND_URL: http://localhost:7244
