@@ -62,4 +62,6 @@ export const COLORS = {
 	danger: '#c44040',
 	success: '#5ea87a',
 	warning: '#c26a3d',
+	analysisCycle: '#e07a5f',
+	analysisCriticalPath: '#7ca3c4',
 } as const;

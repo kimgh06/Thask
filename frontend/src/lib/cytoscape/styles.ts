@@ -503,18 +503,18 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node.cycle-node',
       style: {
-        'border-color': '#e07a5f',
+        'border-color': COLORS.analysisCycle,
         'border-width': 3,
         'background-opacity': 0.15,
-        'overlay-color': '#e07a5f',
+        'overlay-color': COLORS.analysisCycle,
         'overlay-opacity': 0.15,
       },
     },
     {
       selector: 'edge.cycle-edge',
       style: {
-        'line-color': '#e07a5f',
-        'target-arrow-color': '#e07a5f',
+        'line-color': COLORS.analysisCycle,
+        'target-arrow-color': COLORS.analysisCycle,
         'width': 2.5,
         'line-style': 'dashed',
         'opacity': 0.85,
@@ -523,18 +523,18 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node.critical-path-node',
       style: {
-        'border-color': '#7ca3c4',
+        'border-color': COLORS.analysisCriticalPath,
         'border-width': 3,
         'background-opacity': 0.15,
-        'overlay-color': '#7ca3c4',
+        'overlay-color': COLORS.analysisCriticalPath,
         'overlay-opacity': 0.15,
       },
     },
     {
       selector: 'edge.critical-path-edge',
       style: {
-        'line-color': '#7ca3c4',
-        'target-arrow-color': '#7ca3c4',
+        'line-color': COLORS.analysisCriticalPath,
+        'target-arrow-color': COLORS.analysisCriticalPath,
         'width': 2.5,
         'opacity': 0.85,
       },
