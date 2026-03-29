@@ -485,5 +485,59 @@ export function getGraphStyles(): StylesheetStyle[] {
         width: 2,
       },
     },
+
+    // Analysis Mode classes
+    {
+      selector: 'node.analysis-dimmed',
+      style: {
+        'opacity': 0.15,
+        'overlay-opacity': 0,
+      },
+    },
+    {
+      selector: 'edge.analysis-dimmed',
+      style: {
+        'opacity': 0.08,
+      },
+    },
+    {
+      selector: 'node.cycle-node',
+      style: {
+        'border-color': '#e07a5f',
+        'border-width': 3,
+        'background-opacity': 0.15,
+        'overlay-color': '#e07a5f',
+        'overlay-opacity': 0.15,
+      },
+    },
+    {
+      selector: 'edge.cycle-edge',
+      style: {
+        'line-color': '#e07a5f',
+        'target-arrow-color': '#e07a5f',
+        'width': 2.5,
+        'line-style': 'dashed',
+        'opacity': 0.85,
+      },
+    },
+    {
+      selector: 'node.critical-path-node',
+      style: {
+        'border-color': '#7ca3c4',
+        'border-width': 3,
+        'background-opacity': 0.15,
+        'overlay-color': '#7ca3c4',
+        'overlay-opacity': 0.15,
+      },
+    },
+    {
+      selector: 'edge.critical-path-edge',
+      style: {
+        'line-color': '#7ca3c4',
+        'target-arrow-color': '#7ca3c4',
+        'width': 2.5,
+        'opacity': 0.85,
+      },
+    },
   ];
 }

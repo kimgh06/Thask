@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/thask/cli/internal/output"
@@ -136,6 +137,51 @@ var graphLayoutCmd = &cobra.Command{
 	},
 }
 
+var graphAnalyzeCmd = &cobra.Command{
+	Use:     "analyze",
+	Aliases: []string{"a"},
+	Short:   "Detect cycles and find critical path",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		pid := resolveProject()
+		if pid == "" {
+			return fmt.Errorf("--project or THASK_PROJECT required")
+		}
+		format, _ := cmd.Flags().GetString("format")
+
+		resp, err := apiClient.Get(fmt.Sprintf("/api/projects/%s/graph/analyze", pid))
+		if err != nil {
+			return err
+		}
+
+		if format == "json" {
+			fmt.Println(string(resp))
+			return nil
+		}
+
+		var result struct {
+			Data struct {
+				Cycles       [][]string `json:"cycles"`
+				CriticalPath []string   `json:"criticalPath"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(resp, &result); err != nil {
+			return err
+		}
+
+		fmt.Printf("Cycles: %d\n", len(result.Data.Cycles))
+		for i, cycle := range result.Data.Cycles {
+			fmt.Printf("  %d. %s\n", i+1, strings.Join(cycle, " -> "))
+		}
+		fmt.Println()
+		fmt.Printf("Critical Path: %d nodes\n", len(result.Data.CriticalPath))
+		if len(result.Data.CriticalPath) > 0 {
+			fmt.Printf("  %s\n", strings.Join(result.Data.CriticalPath, " -> "))
+		}
+
+		return nil
+	},
+}
+
 func init() {
 	graphImportCmd.Flags().String("file", "", "JSON file path (required)")
 	graphImportCmd.Flags().String("mode", "merge", "Import mode: replace or merge")
@@ -146,10 +192,13 @@ func init() {
 	graphLayoutCmd.Flags().String("algorithm", "", "Layout algorithm: dagre (default), grid")
 	graphLayoutCmd.Flags().Bool("preserve-edges", false, "Preserve edge waypoints during layout")
 
+	graphAnalyzeCmd.Flags().String("format", "", "Output format: json (default: human-readable)")
+
 	graphCmd.AddCommand(graphGetCmd)
 	graphCmd.AddCommand(graphExportCmd)
 	graphCmd.AddCommand(graphImportCmd)
 	graphCmd.AddCommand(graphLayoutCmd)
+	graphCmd.AddCommand(graphAnalyzeCmd)
 }
 
 // runLayoutIfFlagged calls layout endpoint if --layout flag is set

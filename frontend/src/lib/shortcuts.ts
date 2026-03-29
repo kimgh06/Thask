@@ -11,6 +11,7 @@ export interface ShortcutActions {
 	fitView: () => void;
 	runLayout: () => void;
 	toggleImpact: () => void;
+	toggleAnalysis: () => void;
 }
 
 export function createKeydownHandler(actions: ShortcutActions): (e: KeyboardEvent) => void {
@@ -72,6 +73,9 @@ export function createKeydownHandler(actions: ShortcutActions): (e: KeyboardEven
 				break;
 			case 'KeyI':
 				actions.toggleImpact();
+				break;
+			case 'KeyA':
+				actions.toggleAnalysis();
 				break;
 			default:
 				return;

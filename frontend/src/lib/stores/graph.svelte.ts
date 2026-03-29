@@ -7,6 +7,7 @@ class GraphStore {
 	typeFilter = $state<NodeType | null>(null);
 	statusFilter = $state<NodeStatus | null>(null);
 	impactMode = $state(false);
+	analysisMode = $state(false);
 	collapsedGroups = $state<Set<string>>(new Set());
 	searchQuery = $state('');
 
@@ -53,6 +54,12 @@ class GraphStore {
 
 	toggleImpactMode() {
 		this.impactMode = !this.impactMode;
+		if (this.impactMode) this.analysisMode = false;
+	}
+
+	toggleAnalysisMode() {
+		this.analysisMode = !this.analysisMode;
+		if (this.analysisMode) this.impactMode = false;
 	}
 
 	toggleCollapsed(groupId: string) {

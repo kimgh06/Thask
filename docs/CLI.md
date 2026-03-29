@@ -569,6 +569,77 @@ thask graph layout -p <projectId> --algorithm grid
 |---|---|---|
 | `--algorithm` | `dagre` | Layout algorithm: `dagre`, `grid` |
 
+### graph analyze [\--format json]
+
+Detect dependency cycles and find the critical path (longest dependency chain). Only traverses `depends_on` and `blocks` edges.
+
+```bash
+thask graph analyze -p <projectId>
+thask graph analyze -p <projectId> --format json
+```
+
+Output (default):
+```
+Cycles: 2
+  1. auth -> service
+  2. auth -> service -> model -> auth
+
+Critical Path: 4 nodes
+  main -> handler -> service -> model
+```
+
+Output (JSON):
+```json
+{
+  "data": {
+    "cycles": [["auth", "service"], ["auth", "service", "model"]],
+    "criticalPath": ["main", "handler", "service", "model"]
+  }
+}
+```
+
+---
+
+## scan
+
+Scan a Go project's internal dependencies and import them as graph nodes/edges.
+
+### scan --path \<dir\> [\--project \<id\>] [\--dry-run] [\--max-files \<n\>]
+
+Parses `go.mod` and `.go` files to extract intra-module package dependencies. Each internal package becomes a node (type: TASK), each import becomes an edge (type: depends_on). Stdlib and external deps are excluded.
+
+```bash
+# Preview scan results without importing
+thask scan --path . --dry-run
+
+# Scan and import to a project (merge mode)
+thask scan --path . --project <projectId>
+
+# Limit file count
+thask scan --path ./backend --max-files 100 --dry-run
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--path` | `.` | Path to Go project root (must contain `go.mod`) |
+| `--project` | - | Target project ID (required unless `--dry-run`) |
+| `--max-files` | `500` | Max `.go` files to scan before aborting |
+| `--dry-run` | `false` | Print JSON to stdout without importing |
+
+Output (`--dry-run`):
+```json
+{
+  "mode": "merge",
+  "nodes": [{"type": "TASK", "title": "internal/handler", ...}],
+  "edges": [{"sourceTitle": "cmd/server", "targetTitle": "internal/handler", "edgeType": "depends_on"}]
+}
+```
+
+Errors:
+- Missing `go.mod`: `no go.mod found in <path>`
+- Too many files: `exceeded maxFiles limit (501/500 files found)`
+- Parse errors in `.go` files: warning to stderr, file skipped
+
 ---
 
 ## impact

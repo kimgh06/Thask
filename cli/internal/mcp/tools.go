@@ -122,6 +122,22 @@ func AllTools() []ToolDef {
 				"algorithm": propEnum("string", "Layout algorithm", []string{"dagre", "grid"}),
 			}, []string{"projectId"}),
 		},
+		{
+			Name:        "thask.scan.run",
+			Description: "Scan a Go project's internal dependencies and import them as graph nodes/edges",
+			InputSchema: objectSchema(map[string]any{
+				"projectId": prop("string", "Target project ID"),
+				"path":      prop("string", "Path to Go project root"),
+				"maxFiles":  prop("number", "Max files to scan (default 500)"),
+			}, []string{"projectId", "path"}),
+		},
+		{
+			Name:        "thask.graph.analyze",
+			Description: "Detect dependency cycles and find the critical path (longest dependency chain) in a project graph",
+			InputSchema: objectSchema(map[string]any{
+				"projectId": prop("string", "Project ID to analyze"),
+			}, []string{"projectId"}),
+		},
 	}
 }
 

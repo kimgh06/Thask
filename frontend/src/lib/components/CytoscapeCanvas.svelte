@@ -147,6 +147,54 @@
 		deactivateImpactMode(cy);
 	}
 
+	export function applyAnalysisClasses(
+		cycleNodeIds: string[],
+		cycleEdgeIds: string[],
+		criticalPathNodeIds: string[],
+		criticalPathEdgeIds: string[],
+	) {
+		if (!cy) return;
+		// Dim everything first
+		cy.elements().addClass('analysis-dimmed');
+
+		// Highlight cycle nodes/edges
+		cycleNodeIds.forEach(id => {
+			const node = cy!.getElementById(id);
+			if (node.length) {
+				node.removeClass('analysis-dimmed');
+				node.addClass('cycle-node');
+			}
+		});
+		cycleEdgeIds.forEach(id => {
+			const edge = cy!.getElementById(id);
+			if (edge.length) {
+				edge.removeClass('analysis-dimmed');
+				edge.addClass('cycle-edge');
+			}
+		});
+
+		// Highlight critical path nodes/edges
+		criticalPathNodeIds.forEach(id => {
+			const node = cy!.getElementById(id);
+			if (node.length) {
+				node.removeClass('analysis-dimmed');
+				node.addClass('critical-path-node');
+			}
+		});
+		criticalPathEdgeIds.forEach(id => {
+			const edge = cy!.getElementById(id);
+			if (edge.length) {
+				edge.removeClass('analysis-dimmed');
+				edge.addClass('critical-path-edge');
+			}
+		});
+	}
+
+	export function clearAnalysisClasses() {
+		if (!cy) return;
+		cy.elements().removeClass('analysis-dimmed cycle-node cycle-edge critical-path-node critical-path-edge');
+	}
+
 	export function startEdgeDrawingFromNode(nodeId: string) {
 		if (!cy || !ehInstance) return;
 		const node = cy.getElementById(nodeId);

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/thask/cli/internal/client"
+	"github.com/thask/cli/internal/scan"
 )
 
 type ToolHandler func(c *client.Client, args map[string]any) (any, error)
@@ -24,6 +25,8 @@ var handlers = map[string]ToolHandler{
 	"thask.graph.import":      handleGraphImport,
 	"thask.impact.analyze":    handleImpactAnalyze,
 	"thask.graph.layout":      handleGraphLayout,
+	"thask.scan.run":          handleScanRun,
+	"thask.graph.analyze":     handleGraphAnalyze,
 }
 
 func HandleToolCall(c *client.Client, name string, args json.RawMessage) (any, error) {
@@ -163,4 +166,32 @@ func handleGraphLayout(c *client.Client, args map[string]any) (any, error) {
 		body["algorithm"] = algo
 	}
 	return c.Post("/api/projects/"+pid+"/graph/layout", body)
+}
+
+func handleScanRun(c *client.Client, args map[string]any) (any, error) {
+	pid := str(args, "projectId")
+	path := str(args, "path")
+	maxFiles := 0
+	if v, ok := args["maxFiles"].(float64); ok {
+		maxFiles = int(v)
+	}
+
+	result, err := scan.Run(scan.ScanOptions{Path: path, MaxFiles: maxFiles})
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = c.Post("/api/projects/"+pid+"/graph/import", result)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{
+		"nodesCreated": len(result.Nodes),
+		"edgesCreated": len(result.Edges),
+	}, nil
+}
+
+func handleGraphAnalyze(c *client.Client, args map[string]any) (any, error) {
+	return c.Get("/api/projects/" + str(args, "projectId") + "/graph/analyze")
 }

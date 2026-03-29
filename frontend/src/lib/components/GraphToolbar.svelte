@@ -12,6 +12,7 @@
 		Filter,
 		X,
 		Zap,
+		GitBranch,
 		Download,
 		FileJson,
 		Upload,
@@ -30,10 +31,12 @@
 		onFitView: () => void;
 		onRunLayout: () => void;
 		onToggleImpact: () => void;
+		onToggleAnalysis: () => void;
 		onExportPNG: () => void;
 		onExportJSON: () => void;
 		onImport: (mode: 'replace' | 'merge') => void;
 		isImpactActive: boolean;
+		isAnalysisActive: boolean;
 		canImpact: boolean;
 		nodes: GraphNode[];
 		onFocusNode: (nodeId: string) => void;
@@ -52,10 +55,12 @@
 		onFitView,
 		onRunLayout,
 		onToggleImpact,
+		onToggleAnalysis,
 		onExportPNG,
 		onExportJSON,
 		onImport,
 		isImpactActive,
+		isAnalysisActive,
 		canImpact,
 		nodes,
 		onFocusNode,
@@ -205,6 +210,14 @@
 			<Zap size={16} />
 		</button>
 
+		<button
+			onclick={onToggleAnalysis}
+			class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors {isAnalysisActive ? 'analysis-active' : 'btn-muted'}"
+			data-tooltip="Analysis Mode (A)"
+		>
+			<GitBranch size={16} />
+		</button>
+
 		<div class="w-px h-5 mx-1 flex-shrink-0" style="background: var(--color-border);"></div>
 
 		<!-- Group 6: Export -->
@@ -343,6 +356,22 @@
 		}
 		50% {
 			box-shadow: 0 0 0 6px rgba(201, 168, 76, 0);
+		}
+	}
+
+	.analysis-active {
+		background: #e07a5f;
+		color: var(--color-bg);
+		animation: pulse-analysis 2s ease-in-out infinite;
+	}
+
+	@keyframes pulse-analysis {
+		0%,
+		100% {
+			box-shadow: 0 0 0 0 rgba(224, 122, 95, 0.4);
+		}
+		50% {
+			box-shadow: 0 0 0 6px rgba(224, 122, 95, 0);
 		}
 	}
 

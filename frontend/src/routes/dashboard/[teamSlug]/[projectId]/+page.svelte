@@ -145,6 +145,42 @@
 		}
 	});
 
+	// Analysis mode
+	$effect(() => {
+		const active = graphStore.analysisMode;
+		const pid = projectId;
+		if (!active) {
+			canvas?.clearAnalysisClasses();
+			return;
+		}
+		api.get<{ cycles: string[][]; criticalPath: string[] }>(`/api/projects/${pid}/graph/analyze`).then((res) => {
+			if (!graphStore.analysisMode || projectId !== pid) return;
+			const cycles: string[][] = res.data?.cycles ?? [];
+			const criticalPath: string[] = res.data?.criticalPath ?? [];
+
+			const cycleNodeIds = [...new Set(cycles.flat())];
+			const cycleEdgeIds: string[] = [];
+			cycles.forEach((cycle) => {
+				for (let i = 0; i < cycle.length; i++) {
+					const src = cycle[i];
+					const tgt = cycle[(i + 1) % cycle.length];
+					const match = edges.find((e) => e.sourceId === src && e.targetId === tgt);
+					if (match) cycleEdgeIds.push(match.id);
+				}
+			});
+
+			const criticalPathEdgeIds: string[] = [];
+			for (let i = 0; i < criticalPath.length - 1; i++) {
+				const src = criticalPath[i];
+				const tgt = criticalPath[i + 1];
+				const match = edges.find((e) => e.sourceId === src && e.targetId === tgt);
+				if (match) criticalPathEdgeIds.push(match.id);
+			}
+
+			canvas?.applyAnalysisClasses(cycleNodeIds, cycleEdgeIds, criticalPath, criticalPathEdgeIds);
+		});
+	});
+
 	async function fetchNodeDetail(nodeId: string) {
 		const requestId = ++detailRequestId;
 		detailLoading = true;
@@ -202,6 +238,7 @@
 		fitView: () => canvas?.fitView(),
 		runLayout: () => canvas?.runLayout(),
 		toggleImpact: () => { if (graphStore.selectedNodeId || graphStore.impactMode) graphStore.toggleImpactMode(); },
+		toggleAnalysis: () => graphStore.toggleAnalysisMode(),
 	});
 </script>
 
@@ -245,10 +282,12 @@
 						onFitView={() => canvas?.fitView()}
 						onRunLayout={() => canvas?.runLayout()}
 						onToggleImpact={() => graphStore.toggleImpactMode()}
+						onToggleAnalysis={() => graphStore.toggleAnalysisMode()}
 						onExportPNG={handleExportPNG}
 						onExportJSON={handleExportJSON}
 						onImport={handleImport}
 						isImpactActive={graphStore.impactMode}
+						isAnalysisActive={graphStore.analysisMode}
 						canImpact={!!graphStore.selectedNodeId}
 						{nodes}
 						onFocusNode={(id) => canvas?.focusNode(id)}

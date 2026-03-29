@@ -13,15 +13,16 @@ import (
 )
 
 type Handlers struct {
-	Auth    *handler.AuthHandler
-	Team    *handler.TeamHandler
-	Project *handler.ProjectHandler
-	Node    *handler.NodeHandler
-	Edge    *handler.EdgeHandler
-	Impact  *handler.ImpactHandler
-	Summary *handler.SummaryHandler
-	APIKey  *handler.APIKeyHandler
-	Event   *handler.EventHandler
+	Auth          *handler.AuthHandler
+	Team          *handler.TeamHandler
+	Project       *handler.ProjectHandler
+	Node          *handler.NodeHandler
+	Edge          *handler.EdgeHandler
+	Impact        *handler.ImpactHandler
+	GraphAnalysis *handler.GraphAnalysisHandler
+	Summary       *handler.SummaryHandler
+	APIKey        *handler.APIKeyHandler
+	Event         *handler.EventHandler
 }
 
 func RegisterRoutes(e *echo.Echo, h Handlers, sessionRepo *repository.SessionRepo, apiKeyRepo *repository.APIKeyRepo, teamRepo *repository.TeamRepo, projectRepo *repository.ProjectRepo, pmRepo *repository.ProjectMemberRepo) {
@@ -96,6 +97,7 @@ func RegisterRoutes(e *echo.Echo, h Handlers, sessionRepo *repository.SessionRep
 	projectGroup.GET("/nodes/:nodeId", h.Node.Get)
 	projectGroup.GET("/edges", h.Edge.List)
 	projectGroup.GET("/impact", h.Impact.Analyze)
+	projectGroup.GET("/graph/analyze", h.GraphAnalysis.Analyze)
 
 	// Write — member+ only
 	projectWrite := projectGroup.Group("", middleware.RequireRole(model.TeamRoleMember))
