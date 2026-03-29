@@ -85,6 +85,7 @@ func RegisterV1Routes(
 	v1Project.GET("/edges", h.Edge.List)         // paginated via v1 context check in handler
 	v1Project.GET("/impact", h.Impact.Analyze)
 	v1Project.GET("/graph/analyze", h.GraphAnalysis.Analyze)
+	v1Project.GET("/activity", h.Activity.List)
 
 	// Write — member+ only
 	v1ProjectWrite := v1Project.Group("", middleware.RequireRole(model.TeamRoleMember))

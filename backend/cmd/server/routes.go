@@ -23,6 +23,7 @@ type Handlers struct {
 	Summary       *handler.SummaryHandler
 	APIKey        *handler.APIKeyHandler
 	Event         *handler.EventHandler
+	Activity      *handler.ActivityHandler
 }
 
 func RegisterRoutes(e *echo.Echo, h Handlers, sessionRepo *repository.SessionRepo, apiKeyRepo *repository.APIKeyRepo, teamRepo *repository.TeamRepo, projectRepo *repository.ProjectRepo, pmRepo *repository.ProjectMemberRepo) {
@@ -98,6 +99,7 @@ func RegisterRoutes(e *echo.Echo, h Handlers, sessionRepo *repository.SessionRep
 	projectGroup.GET("/edges", h.Edge.List)
 	projectGroup.GET("/impact", h.Impact.Analyze)
 	projectGroup.GET("/graph/analyze", h.GraphAnalysis.Analyze)
+	projectGroup.GET("/activity", h.Activity.List)
 
 	// Write — member+ only
 	projectWrite := projectGroup.Group("", middleware.RequireRole(model.TeamRoleMember))

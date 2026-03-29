@@ -74,16 +74,17 @@ func main() {
 
 	// Handlers
 	h := Handlers{
-		Auth:    handler.NewAuthHandler(userRepo, sessionRepo),
-		Team:    handler.NewTeamHandler(teamRepo, projectRepo, userRepo),
-		Project: handler.NewProjectHandler(projectRepo, teamRepo, pmRepo, userRepo),
-		Node:    handler.NewNodeHandler(nodeRepo, edgeRepo, historyRepo, hub),
-		Edge:    handler.NewEdgeHandler(edgeRepo, hub),
+		Auth:          handler.NewAuthHandler(userRepo, sessionRepo),
+		Team:          handler.NewTeamHandler(teamRepo, projectRepo, userRepo),
+		Project:       handler.NewProjectHandler(projectRepo, teamRepo, pmRepo, userRepo),
+		Node:          handler.NewNodeHandler(nodeRepo, edgeRepo, historyRepo, hub),
+		Edge:          handler.NewEdgeHandler(edgeRepo, hub),
 		Impact:        handler.NewImpactHandler(nodeRepo, edgeRepo),
 		GraphAnalysis: handler.NewGraphAnalysisHandler(edgeRepo),
-		Summary: handler.NewSummaryHandler(teamRepo, projectRepo),
-		APIKey:  handler.NewAPIKeyHandler(apiKeyRepo),
-		Event:   handler.NewEventHandler(hub),
+		Summary:       handler.NewSummaryHandler(teamRepo, projectRepo),
+		APIKey:        handler.NewAPIKeyHandler(apiKeyRepo),
+		Event:         handler.NewEventHandler(hub),
+		Activity:      handler.NewActivityHandler(historyRepo),
 	}
 
 	// Echo
