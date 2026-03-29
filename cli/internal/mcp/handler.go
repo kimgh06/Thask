@@ -3,6 +3,8 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/thask/cli/internal/client"
@@ -170,7 +172,17 @@ func handleGraphLayout(c *client.Client, args map[string]any) (any, error) {
 
 func handleScanRun(c *client.Client, args map[string]any) (any, error) {
 	pid := str(args, "projectId")
-	path := str(args, "path")
+	path := filepath.Clean(str(args, "path"))
+
+	// Validate path exists and is a directory
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("invalid path: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("path is not a directory: %s", path)
+	}
+
 	maxFiles := 0
 	if v, ok := args["maxFiles"].(float64); ok {
 		maxFiles = int(v)

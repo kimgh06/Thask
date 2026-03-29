@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,19 +56,23 @@ func Run(opts ScanOptions) (*ScanResult, error) {
 	pkgImports := make(map[string]map[string]bool) // pkg -> set of imported pkgs
 	fileCount := 0
 
-	err = filepath.Walk(opts.Path, func(path string, info os.FileInfo, err error) error {
+	err = filepath.WalkDir(opts.Path, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
+		// Skip symlinks to prevent directory traversal
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
 		// Skip vendor, testdata, hidden dirs, _ prefixed dirs
-		if info.IsDir() {
-			base := info.Name()
+		if d.IsDir() {
+			base := d.Name()
 			if base == "vendor" || base == "testdata" || strings.HasPrefix(base, ".") || strings.HasPrefix(base, "_") {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if !strings.HasSuffix(info.Name(), ".go") || strings.HasSuffix(info.Name(), "_test.go") {
+		if !strings.HasSuffix(d.Name(), ".go") || strings.HasSuffix(d.Name(), "_test.go") {
 			return nil
 		}
 
@@ -168,7 +173,11 @@ func parseModulePath(gomod string) string {
 	for _, line := range strings.Split(gomod, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "module ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "module"))
+			// Handle: module github.com/foo // comment
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				return strings.Trim(parts[1], "\"")
+			}
 		}
 	}
 	return ""
