@@ -278,6 +278,8 @@
 							onFitView={() => canvas?.fitView()}
 							onRunLayout={() => canvas?.runLayout()}
 							onToggleImpact={noop}
+							onToggleAnalysis={noop}
+							isAnalysisActive={false}
 							onExportPNG={() => { const cy = canvas?.getCy(); if (cy) exportPNG(cy); }}
 							onExportJSON={() => exportJSON(nodes, edges)}
 							onImport={noop}

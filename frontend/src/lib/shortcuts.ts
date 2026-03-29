@@ -75,6 +75,7 @@ export function createKeydownHandler(actions: ShortcutActions): (e: KeyboardEven
 				actions.toggleImpact();
 				break;
 			case 'KeyA':
+				if (!e.shiftKey) return;
 				actions.toggleAnalysis();
 				break;
 			default:

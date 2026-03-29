@@ -153,10 +153,15 @@
 			canvas?.clearAnalysisClasses();
 			return;
 		}
-		api.get<{ cycles: string[][]; criticalPath: string[] }>(`/api/projects/${pid}/graph/analyze`).then((res) => {
+		api.get<{ cycles: string[][]; criticalPath: string[]; skippedCycleNodes: string[] }>(`/api/projects/${pid}/graph/analyze`).then((res) => {
 			if (!graphStore.analysisMode || projectId !== pid) return;
 			const cycles: string[][] = res.data?.cycles ?? [];
 			const criticalPath: string[] = res.data?.criticalPath ?? [];
+			const skippedCycleNodes: string[] = res.data?.skippedCycleNodes ?? [];
+
+			if (skippedCycleNodes.length > 0) {
+				console.warn(`[Thask] ${skippedCycleNodes.length} nodes excluded from critical path due to cycles`);
+			}
 
 			const cycleNodeIds = [...new Set(cycles.flat())];
 			const cycleEdgeIds: string[] = [];
@@ -178,6 +183,9 @@
 			}
 
 			canvas?.applyAnalysisClasses(cycleNodeIds, cycleEdgeIds, criticalPath, criticalPathEdgeIds);
+		}).catch(() => {
+			graphStore.analysisMode = false;
+			canvas?.clearAnalysisClasses();
 		});
 	});
 
