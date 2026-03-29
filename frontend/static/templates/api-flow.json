@@ -1,0 +1,28 @@
+{
+  "name": "API Flow",
+  "description": "Request lifecycle from client to database and back",
+  "nodes": [
+    {"type": "UI", "title": "Client App", "status": "PASS", "positionX": 0, "positionY": 200},
+    {"type": "FLOW", "title": "HTTP Request", "status": "IN_PROGRESS", "positionX": 200, "positionY": 200},
+    {"type": "BRANCH", "title": "Auth Middleware", "status": "PASS", "positionX": 400, "positionY": 200},
+    {"type": "BRANCH", "title": "Rate Limiter", "status": "PASS", "positionX": 400, "positionY": 50},
+    {"type": "API", "title": "Route Handler", "status": "IN_PROGRESS", "positionX": 600, "positionY": 200},
+    {"type": "TASK", "title": "Validation", "status": "PASS", "positionX": 800, "positionY": 100},
+    {"type": "TASK", "title": "Business Logic", "status": "IN_PROGRESS", "positionX": 800, "positionY": 200},
+    {"type": "TASK", "title": "Database Query", "status": "IN_PROGRESS", "positionX": 800, "positionY": 300},
+    {"type": "FLOW", "title": "JSON Response", "status": "PASS", "positionX": 1000, "positionY": 200},
+    {"type": "BUG", "title": "Error Handler", "status": "IN_PROGRESS", "positionX": 600, "positionY": 400}
+  ],
+  "edges": [
+    {"sourceTitle": "Client App", "targetTitle": "HTTP Request", "edgeType": "triggers"},
+    {"sourceTitle": "HTTP Request", "targetTitle": "Rate Limiter", "edgeType": "depends_on"},
+    {"sourceTitle": "HTTP Request", "targetTitle": "Auth Middleware", "edgeType": "depends_on"},
+    {"sourceTitle": "Auth Middleware", "targetTitle": "Route Handler", "edgeType": "triggers"},
+    {"sourceTitle": "Route Handler", "targetTitle": "Validation", "edgeType": "triggers"},
+    {"sourceTitle": "Route Handler", "targetTitle": "Business Logic", "edgeType": "triggers"},
+    {"sourceTitle": "Business Logic", "targetTitle": "Database Query", "edgeType": "depends_on"},
+    {"sourceTitle": "Database Query", "targetTitle": "JSON Response", "edgeType": "triggers"},
+    {"sourceTitle": "Route Handler", "targetTitle": "Error Handler", "edgeType": "related"},
+    {"sourceTitle": "Error Handler", "targetTitle": "JSON Response", "edgeType": "triggers"}
+  ]
+}

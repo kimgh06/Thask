@@ -1,0 +1,22 @@
+{
+  "name": "Sprint Board",
+  "description": "Kanban-style sprint with tasks, bugs, and milestones",
+  "nodes": [
+    {"type": "GROUP", "title": "Backlog", "status": "IN_PROGRESS", "positionX": 0, "positionY": 0, "width": 300, "height": 400},
+    {"type": "GROUP", "title": "In Progress", "status": "IN_PROGRESS", "positionX": 350, "positionY": 0, "width": 300, "height": 400},
+    {"type": "GROUP", "title": "Done", "status": "PASS", "positionX": 700, "positionY": 0, "width": 300, "height": 400},
+    {"type": "TASK", "title": "User authentication", "status": "IN_PROGRESS", "positionX": 400, "positionY": 80},
+    {"type": "TASK", "title": "Database schema", "status": "PASS", "positionX": 750, "positionY": 80},
+    {"type": "TASK", "title": "API endpoints", "status": "IN_PROGRESS", "positionX": 400, "positionY": 180},
+    {"type": "BUG", "title": "Login timeout issue", "status": "BLOCKED", "positionX": 50, "positionY": 80},
+    {"type": "TASK", "title": "Frontend forms", "status": "IN_PROGRESS", "positionX": 50, "positionY": 180},
+    {"type": "FLOW", "title": "Sprint Goal: Auth MVP", "status": "IN_PROGRESS", "positionX": 350, "positionY": -80}
+  ],
+  "edges": [
+    {"sourceTitle": "Database schema", "targetTitle": "API endpoints", "edgeType": "depends_on"},
+    {"sourceTitle": "API endpoints", "targetTitle": "User authentication", "edgeType": "depends_on"},
+    {"sourceTitle": "User authentication", "targetTitle": "Frontend forms", "edgeType": "blocks"},
+    {"sourceTitle": "Login timeout issue", "targetTitle": "User authentication", "edgeType": "blocks"},
+    {"sourceTitle": "Sprint Goal: Auth MVP", "targetTitle": "User authentication", "edgeType": "triggers"}
+  ]
+}

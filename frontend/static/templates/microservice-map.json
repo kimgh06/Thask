@@ -1,0 +1,28 @@
+{
+  "name": "Microservice Map",
+  "description": "Service dependency map with API gateway and data layer",
+  "nodes": [
+    {"type": "API", "title": "API Gateway", "status": "PASS", "positionX": 400, "positionY": 0},
+    {"type": "API", "title": "Auth Service", "status": "PASS", "positionX": 200, "positionY": 200},
+    {"type": "API", "title": "User Service", "status": "IN_PROGRESS", "positionX": 400, "positionY": 200},
+    {"type": "API", "title": "Order Service", "status": "IN_PROGRESS", "positionX": 600, "positionY": 200},
+    {"type": "API", "title": "Payment Service", "status": "BLOCKED", "positionX": 600, "positionY": 400},
+    {"type": "API", "title": "Notification Service", "status": "IN_PROGRESS", "positionX": 200, "positionY": 400},
+    {"type": "UI", "title": "Web Frontend", "status": "IN_PROGRESS", "positionX": 400, "positionY": -150},
+    {"type": "GROUP", "title": "Data Layer", "status": "PASS", "positionX": 300, "positionY": 550, "width": 400, "height": 150},
+    {"type": "TASK", "title": "PostgreSQL", "status": "PASS", "positionX": 350, "positionY": 600},
+    {"type": "TASK", "title": "Redis Cache", "status": "PASS", "positionX": 550, "positionY": 600}
+  ],
+  "edges": [
+    {"sourceTitle": "Web Frontend", "targetTitle": "API Gateway", "edgeType": "depends_on"},
+    {"sourceTitle": "API Gateway", "targetTitle": "Auth Service", "edgeType": "triggers"},
+    {"sourceTitle": "API Gateway", "targetTitle": "User Service", "edgeType": "triggers"},
+    {"sourceTitle": "API Gateway", "targetTitle": "Order Service", "edgeType": "triggers"},
+    {"sourceTitle": "Order Service", "targetTitle": "Payment Service", "edgeType": "depends_on"},
+    {"sourceTitle": "Order Service", "targetTitle": "Notification Service", "edgeType": "triggers"},
+    {"sourceTitle": "User Service", "targetTitle": "Auth Service", "edgeType": "depends_on"},
+    {"sourceTitle": "User Service", "targetTitle": "PostgreSQL", "edgeType": "depends_on"},
+    {"sourceTitle": "Auth Service", "targetTitle": "Redis Cache", "edgeType": "depends_on"},
+    {"sourceTitle": "Order Service", "targetTitle": "PostgreSQL", "edgeType": "depends_on"}
+  ]
+}

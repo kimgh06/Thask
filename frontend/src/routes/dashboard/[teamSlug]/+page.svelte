@@ -1,11 +1,15 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api } from '$lib/api';
 	import type { Project } from '$lib/types';
+	import TemplateSelector from '$lib/components/TemplateSelector.svelte';
 
 	let projects = $state<Project[]>([]);
 	let newProjectName = $state('');
 	let loadError = $state('');
+	let showTemplates = $state(false);
+	let newProjectId = $state('');
 
 	const teamSlug = $derived(page.params.teamSlug);
 
@@ -22,9 +26,15 @@
 
 	async function createProject() {
 		if (!newProjectName) return;
-		await api.post(`/api/teams/${teamSlug}/projects`, { name: newProjectName });
+		const res = await api.post<Project>(`/api/teams/${teamSlug}/projects`, { name: newProjectName });
 		newProjectName = '';
-		loadProjects();
+		if (res.data) {
+			newProjectId = res.data.id;
+			showTemplates = true;
+			loadProjects();
+		} else {
+			loadProjects();
+		}
 	}
 </script>
 
@@ -52,3 +62,11 @@
 		{/each}
 	</div>
 </div>
+
+{#if showTemplates}
+	<TemplateSelector
+		projectId={newProjectId}
+		onApplied={() => { showTemplates = false; goto(`/dashboard/${teamSlug}/${newProjectId}`); }}
+		onclose={() => { showTemplates = false; goto(`/dashboard/${teamSlug}/${newProjectId}`); }}
+	/>
+{/if}

@@ -6,6 +6,7 @@
 	import { getGraphStyles } from '$lib/cytoscape/styles';
 	import { getFcoseLayout, runGroupAwareLayout } from '$lib/cytoscape/layouts';
 	import { graphStore } from '$lib/stores/graph.svelte';
+	import { themeStore } from '$lib/stores/theme.svelte';
 	import { api } from '$lib/api';
 	import type { GraphNode, GraphEdge, StatusChange } from '$lib/types';
 	import { activateImpactMode, deactivateImpactMode } from '$lib/cytoscape/impact';
@@ -205,7 +206,7 @@
 	onMount(() => {
 		cy = cytoscape({
 			container,
-			style: getGraphStyles(),
+			style: getGraphStyles(themeStore.current),
 			layout: { name: 'preset' },
 			minZoom: 0.2,
 			maxZoom: 4,
@@ -291,6 +292,14 @@
 		activeTimeouts = [];
 		cy?.destroy();
 		cy = null;
+	});
+
+	// Re-apply Cytoscape styles when theme changes
+	$effect(() => {
+		const theme = themeStore.current;
+		if (cy) {
+			cy.style().clear().fromJson(getGraphStyles(theme)).update();
+		}
 	});
 
 	// React to data changes after mount

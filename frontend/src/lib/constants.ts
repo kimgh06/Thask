@@ -65,3 +65,26 @@ export const COLORS = {
 	analysisCycle: '#e07a5f',
 	analysisCriticalPath: '#7ca3c4',
 } as const;
+
+export const LIGHT_COLORS = {
+	bg: '#f5f4f0',
+	surface: '#ffffff',
+	surfaceHover: '#f0eeea',
+	border: '#d4d0c8',
+	borderSubtle: '#e8e5de',
+	text: '#1a1918',
+	textMuted: '#5c5a56',
+	textDim: '#8a8780',
+	accent: '#b8942f',
+	accentHover: '#a6842a',
+	accentMuted: 'rgba(184, 148, 47, 0.15)',
+	danger: '#c44040',
+	success: '#3d8a55',
+	warning: '#b8942f',
+	analysisCycle: '#e07a5f',
+	analysisCriticalPath: '#7ca3c4',
+} as const;
+
+export function getThemeColors(theme: 'dark' | 'light') {
+	return theme === 'light' ? LIGHT_COLORS : COLORS;
+}

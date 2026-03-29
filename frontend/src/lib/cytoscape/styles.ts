@@ -1,7 +1,8 @@
 import type { StylesheetStyle } from 'cytoscape';
-import { TYPE_COLORS, STATUS_COLORS, NODE_SHAPES, EDGE_COLORS, COLORS } from '$lib/constants';
+import { TYPE_COLORS, STATUS_COLORS, NODE_SHAPES, EDGE_COLORS, getThemeColors } from '$lib/constants';
 
-export function getGraphStyles(): StylesheetStyle[] {
+export function getGraphStyles(theme: 'dark' | 'light' = 'dark'): StylesheetStyle[] {
+  const C = getThemeColors(theme);
   return [
     // Base node
     {
@@ -14,14 +15,14 @@ export function getGraphStyles(): StylesheetStyle[] {
         'font-family': 'JetBrains Mono, monospace',
         'text-wrap': 'wrap',
         'text-max-width': '100px',
-        color: COLORS.text,
-        'text-outline-color': COLORS.bg,
+        color: C.text,
+        'text-outline-color': C.bg,
         'text-outline-width': 2,
         width: 72,
         height: 72,
         'border-width': 2,
-        'border-color': COLORS.border,
-        'background-color': COLORS.surface,
+        'border-color': C.border,
+        'background-color': C.surface,
         'overlay-padding': 4,
         'z-index': 10,
       },
@@ -50,8 +51,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: `node[nodeType="${type}"]`,
       style: {
         shape,
-        'border-color': TYPE_COLORS[type as keyof typeof TYPE_COLORS] ?? COLORS.border,
-        'background-color': TYPE_COLORS[type as keyof typeof TYPE_COLORS] ?? COLORS.border,
+        'border-color': TYPE_COLORS[type as keyof typeof TYPE_COLORS] ?? C.border,
+        'background-color': TYPE_COLORS[type as keyof typeof TYPE_COLORS] ?? C.border,
         'background-opacity': 0.35,
         'border-width': 2.5,
       } as Record<string, string | number>,
@@ -65,7 +66,7 @@ export function getGraphStyles(): StylesheetStyle[] {
         height: 'data(height)',
         shape: 'round-rectangle',
         'border-style': 'dashed',
-        'border-color': COLORS.border,
+        'border-color': C.border,
         'border-width': 1.5,
         'background-opacity': 0.06,
         'background-color': TYPE_COLORS.GROUP,
@@ -73,7 +74,7 @@ export function getGraphStyles(): StylesheetStyle[] {
         'text-halign': 'center',
         'font-size': 13,
         'font-weight': 600,
-        color: COLORS.textMuted,
+        color: C.textMuted,
         'z-index': 'data(depth)',
       } as Record<string, string | number>,
     },
@@ -86,8 +87,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'node:selected',
       style: {
         'border-width': 3,
-        'border-color': COLORS.accent,
-        'overlay-color': COLORS.accent,
+        'border-color': C.accent,
+        'overlay-color': C.accent,
         'overlay-opacity': 0.12,
         'overlay-padding': 6,
       },
@@ -98,8 +99,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'node.search-highlight',
       style: {
         'border-width': 5,
-        'border-color': COLORS.accent,
-        'overlay-color': COLORS.accent,
+        'border-color': C.accent,
+        'overlay-color': C.accent,
         'overlay-opacity': 0.25,
         'overlay-padding': 10,
         'z-index': 999,
@@ -111,8 +112,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'node.multi-selected',
       style: {
         'border-width': 3,
-        'border-color': COLORS.accent,
-        'overlay-color': COLORS.accent,
+        'border-color': C.accent,
+        'overlay-color': C.accent,
         'overlay-opacity': 0.1,
       },
     },
@@ -121,11 +122,11 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node.drop-target',
       style: {
-        'border-color': COLORS.accent,
+        'border-color': C.accent,
         'border-width': 2.5,
         'border-style': 'solid',
         'background-opacity': 0.12,
-        'background-color': COLORS.accent,
+        'background-color': C.accent,
       } as Record<string, string | number>,
     },
 
@@ -133,7 +134,7 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node.resizing',
       style: {
-        'border-color': COLORS.accent,
+        'border-color': C.accent,
         'border-width': 3,
         'border-style': 'solid',
       } as Record<string, string | number>,
@@ -145,8 +146,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       style: {
         width: 1.5,
         opacity: 0.75,
-        'line-color': '#3d3a36',
-        'target-arrow-color': '#3d3a36',
+        'line-color': C.border,
+        'target-arrow-color': C.border,
         'target-arrow-shape': 'triangle',
         'target-arrow-fill': 'filled',
         'curve-style': 'bezier',
@@ -155,10 +156,10 @@ export function getGraphStyles(): StylesheetStyle[] {
         'font-size': 11,
         'min-zoomed-font-size': 8,
         'text-rotation': 'autorotate',
-        color: COLORS.textDim,
-        'text-outline-color': COLORS.bg,
+        color: C.textDim,
+        'text-outline-color': C.bg,
         'text-outline-width': 3,
-        'text-background-color': COLORS.bg,
+        'text-background-color': C.bg,
         'text-background-opacity': 0.85,
         'text-background-padding': '3px',
         'text-background-shape': 'roundrectangle',
@@ -237,9 +238,9 @@ export function getGraphStyles(): StylesheetStyle[] {
       style: {
         width: 3,
         opacity: 1,
-        'line-color': COLORS.accent,
-        'target-arrow-color': COLORS.accent,
-        'overlay-color': COLORS.accent,
+        'line-color': C.accent,
+        'target-arrow-color': C.accent,
+        'overlay-color': C.accent,
         'overlay-opacity': 0.12,
         'overlay-padding': 4,
         'z-index': 999,
@@ -251,7 +252,7 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'node.edge-hover-connected',
       style: {
         'border-width': 2,
-        'border-color': COLORS.accent,
+        'border-color': C.accent,
         'border-opacity': 0.6,
       },
     },
@@ -287,8 +288,8 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: '.eh-ghost-edge',
       style: {
-        'line-color': COLORS.accent,
-        'target-arrow-color': COLORS.accent,
+        'line-color': C.accent,
+        'target-arrow-color': C.accent,
         'target-arrow-shape': 'triangle',
         'line-style': 'dashed',
         width: 1.5,
@@ -301,8 +302,8 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'edge.eh-preview',
       style: {
-        'line-color': COLORS.accent,
-        'target-arrow-color': COLORS.accent,
+        'line-color': C.accent,
+        'target-arrow-color': C.accent,
         'target-arrow-shape': 'triangle',
         'line-style': 'solid',
         width: 2,
@@ -336,8 +337,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: '.eh-source',
       style: {
         'border-width': 3,
-        'border-color': COLORS.accent,
-        'overlay-color': COLORS.accent,
+        'border-color': C.accent,
+        'overlay-color': C.accent,
         'overlay-opacity': 0.1,
         'overlay-padding': 6,
       },
@@ -347,8 +348,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: '.eh-target',
       style: {
         'border-width': 3,
-        'border-color': COLORS.success,
-        'overlay-color': COLORS.success,
+        'border-color': C.success,
+        'overlay-color': C.success,
         'overlay-opacity': 0.1,
       },
     },
@@ -356,7 +357,7 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node[nodeType="GROUP"].eh-target',
       style: {
-        'border-color': COLORS.border,
+        'border-color': C.border,
         'border-width': 1.5,
         'overlay-opacity': 0,
       } as Record<string, string | number>,
@@ -366,8 +367,8 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'node.eh-target-resolved',
       style: {
         'border-width': 3,
-        'border-color': COLORS.success,
-        'overlay-color': COLORS.success,
+        'border-color': C.success,
+        'overlay-color': C.success,
         'overlay-opacity': 0.1,
       },
     },
@@ -383,10 +384,10 @@ export function getGraphStyles(): StylesheetStyle[] {
         'text-valign': 'center',
         'border-style': 'solid',
         'border-width': 1.5,
-        'border-color': COLORS.border,
+        'border-color': C.border,
         'background-opacity': 0.15,
-        'background-color': COLORS.surface,
-        color: COLORS.textMuted,
+        'background-color': C.surface,
+        color: C.textMuted,
       } as Record<string, string | number>,
     },
 
@@ -429,10 +430,10 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'node[status].impact-changed',
       style: {
         'border-width': 3,
-        'border-color': COLORS.accent,
-        'background-color': COLORS.accent,
+        'border-color': C.accent,
+        'background-color': C.accent,
         'background-opacity': 0.15,
-        'overlay-color': COLORS.accent,
+        'overlay-color': C.accent,
         'overlay-opacity': 0.15,
         'overlay-padding': 8,
       },
@@ -443,10 +444,10 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'node[status].impact-affected',
       style: {
         'border-width': 2.5,
-        'border-color': COLORS.accentHover,
-        'background-color': COLORS.accentHover,
+        'border-color': C.accentHover,
+        'background-color': C.accentHover,
         'background-opacity': 0.1,
-        'overlay-color': COLORS.accentHover,
+        'overlay-color': C.accentHover,
         'overlay-opacity': 0.1,
       },
     },
@@ -468,10 +469,10 @@ export function getGraphStyles(): StylesheetStyle[] {
       selector: 'node[status].impact-fail',
       style: {
         'border-width': 3,
-        'border-color': COLORS.danger,
-        'background-color': COLORS.danger,
+        'border-color': C.danger,
+        'background-color': C.danger,
         'background-opacity': 0.18,
-        'overlay-color': COLORS.danger,
+        'overlay-color': C.danger,
         'overlay-opacity': 0.18,
         'overlay-padding': 8,
       },
@@ -503,18 +504,18 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node.cycle-node',
       style: {
-        'border-color': COLORS.analysisCycle,
+        'border-color': C.analysisCycle,
         'border-width': 3,
         'background-opacity': 0.15,
-        'overlay-color': COLORS.analysisCycle,
+        'overlay-color': C.analysisCycle,
         'overlay-opacity': 0.15,
       },
     },
     {
       selector: 'edge.cycle-edge',
       style: {
-        'line-color': COLORS.analysisCycle,
-        'target-arrow-color': COLORS.analysisCycle,
+        'line-color': C.analysisCycle,
+        'target-arrow-color': C.analysisCycle,
         'width': 2.5,
         'line-style': 'dashed',
         'opacity': 0.85,
@@ -523,18 +524,18 @@ export function getGraphStyles(): StylesheetStyle[] {
     {
       selector: 'node.critical-path-node',
       style: {
-        'border-color': COLORS.analysisCriticalPath,
+        'border-color': C.analysisCriticalPath,
         'border-width': 3,
         'background-opacity': 0.15,
-        'overlay-color': COLORS.analysisCriticalPath,
+        'overlay-color': C.analysisCriticalPath,
         'overlay-opacity': 0.15,
       },
     },
     {
       selector: 'edge.critical-path-edge',
       style: {
-        'line-color': COLORS.analysisCriticalPath,
-        'target-arrow-color': COLORS.analysisCriticalPath,
+        'line-color': C.analysisCriticalPath,
+        'target-arrow-color': C.analysisCriticalPath,
         'width': 2.5,
         'opacity': 0.85,
       },

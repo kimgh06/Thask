@@ -27,6 +27,23 @@
 	--color-primary-hover: var(--color-accent-hover);
 }
 
+[data-theme="light"] {
+	--color-bg: #f5f4f0;
+	--color-surface: #ffffff;
+	--color-surface-hover: #f0eeea;
+	--color-border: #d4d0c8;
+	--color-border-subtle: #e8e5de;
+	--color-text: #1a1918;
+	--color-text-muted: #5c5a56;
+	--color-text-dim: #8a8780;
+	--color-accent: #b8942f;
+	--color-accent-hover: #a6842a;
+	--color-accent-muted: rgba(184, 148, 47, 0.15);
+	--color-danger: #c44040;
+	--color-success: #3d8a55;
+	--color-warning: #b8942f;
+}
+
 body {
 	background-color: var(--color-bg);
 	color: var(--color-text);
@@ -36,6 +53,6 @@ body {
 /* Dot grid background for the graph canvas */
 .cytoscape-canvas-bg {
 	background-color: var(--color-bg);
-	background-image: radial-gradient(circle, #1b1a1e 1px, transparent 1px);
+	background-image: radial-gradient(circle, var(--color-border-subtle) 1px, transparent 1px);
 	background-size: 24px 24px;
 }

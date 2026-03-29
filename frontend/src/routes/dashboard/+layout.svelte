@@ -3,8 +3,9 @@
 	import { page } from '$app/state';
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { teamsStore } from '$lib/stores/teams.svelte';
-	import { LayoutDashboard, Users, FolderOpen, LogOut, ChevronDown, ChevronRight, Settings, UserCog } from 'lucide-svelte';
+	import { LayoutDashboard, Users, FolderOpen, LogOut, ChevronDown, ChevronRight, Settings, UserCog, Sun, Moon } from 'lucide-svelte';
 	import ProjectMenu from '$lib/components/ProjectMenu.svelte';
+	import { themeStore } from '$lib/stores/theme.svelte';
 
 	let { children } = $props();
 	let collapsedTeams = $state<Set<string>>(new Set());

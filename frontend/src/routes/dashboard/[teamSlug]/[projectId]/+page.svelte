@@ -14,6 +14,7 @@
 	import { exportPNG, exportJSON, importJSON } from '$lib/export';
 	import { realtimeStore } from '$lib/stores/realtime.svelte';
 	import ShareDialog from '$lib/components/ShareDialog.svelte';
+	import ActivityFeed from '$lib/components/ActivityFeed.svelte';
 
 	let nodes = $state<GraphNode[]>([]);
 	let edges = $state<GraphEdge[]>([]);
@@ -25,6 +26,7 @@
 	const projectId = $derived(page.params.projectId ?? '');
 
 	let canvas = $state<ReturnType<typeof CytoscapeCanvas> | undefined>(undefined);
+	let activityFeed = $state<ReturnType<typeof ActivityFeed> | undefined>(undefined);
 
 	// Node detail state
 	let selectedNodeDetail = $state<NodeDetail | null>(null);
@@ -108,7 +110,10 @@
 		loadGraph();
 
 		// Real-time sync
-		realtimeStore.connect(projectId, loadGraph);
+		realtimeStore.connect(projectId, () => {
+			loadGraph();
+			activityFeed?.refresh();
+		});
 		return () => realtimeStore.disconnect();
 	});
 
@@ -342,6 +347,13 @@
 				onStartEdgeDrawing={handleStartEdgeDrawing}
 			/>
 		{/if}
+
+		<!-- Activity Feed Panel -->
+		{#if !loading && !loadError}
+			<div class="activity-panel">
+				<ActivityFeed bind:this={activityFeed} {projectId} />
+			</div>
+		{/if}
 	</div>
 </div>
 
@@ -352,3 +364,13 @@
 		onClose={() => { showShareDialog = false; }}
 	/>
 {/if}
+
+<style>
+	.activity-panel {
+		width: 240px;
+		flex-shrink: 0;
+		overflow-y: auto;
+		border-left: 1px solid var(--color-border);
+		background: var(--color-surface);
+	}
+</style>
