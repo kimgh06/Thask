@@ -319,7 +319,7 @@ export function attachWaypointHandlers(
 		const cyEl = cy.container();
 		if (!cyEl) return null;
 		svgOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-		svgOverlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:4;overflow:visible;';
+		svgOverlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:4;overflow:hidden;';
 		cyEl.appendChild(svgOverlay);
 		return svgOverlay;
 	}

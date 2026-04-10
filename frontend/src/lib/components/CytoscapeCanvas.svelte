@@ -91,8 +91,46 @@
 		await api.patch(`${resolvedApiBase}/nodes/positions`, { positions });
 	}
 
-	export function runLayout() {
+	export async function runLayout(algorithm: string = 'dagre') {
 		if (!cy || cy.nodes().length === 0) return;
+		if (readonly || !resolvedApiBase) {
+			// Fallback to client-side layout for readonly/shared views
+			runClientLayout();
+			return;
+		}
+		try {
+			const res = await api.post(`${resolvedApiBase}/graph/layout`, { algorithm });
+			if (res.data) {
+				const serverData = res.data as { nodes?: Array<{ id: string; positionX: number; positionY: number; width?: number; height?: number }>; edges?: Array<{ id: string; waypoints?: Array<{ x: number; y: number }> }> };
+				const serverNodes = serverData.nodes || [];
+				serverNodes.forEach((sn) => {
+					const ele = cy!.getElementById(sn.id);
+					if (ele.length) {
+						ele.animate({
+							position: { x: sn.positionX, y: sn.positionY },
+							duration: 400,
+							easing: 'ease-out-cubic' as any,
+						});
+						if (sn.width) ele.data('width', sn.width);
+						if (sn.height) ele.data('height', sn.height);
+					}
+				});
+				// Apply taxi routing for clean orthogonal edges after layout
+				cy!.edges().forEach((edge: any) => {
+					edge.data('waypoints', []);
+					edge.removeData('segmentDistances');
+					edge.removeData('segmentWeights');
+					edge.addClass('taxi-routed');
+				});
+				setTimeout(() => cy?.fit(undefined, 50), 450);
+			}
+		} catch {
+			runClientLayout();
+		}
+	}
+
+	function runClientLayout() {
+		if (!cy) return;
 		const hasChildren = cy.nodes('[parentId]').length > 0;
 		if (hasChildren) {
 			runGroupAwareLayout(cy, () => savePositions());

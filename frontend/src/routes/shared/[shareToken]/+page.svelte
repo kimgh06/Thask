@@ -276,7 +276,7 @@
 							onZoomIn={() => canvas?.zoomIn()}
 							onZoomOut={() => canvas?.zoomOut()}
 							onFitView={() => canvas?.fitView()}
-							onRunLayout={() => canvas?.runLayout()}
+							onRunLayout={(algorithm) => canvas?.runLayout(algorithm)}
 							onToggleImpact={noop}
 							onToggleAnalysis={noop}
 							isAnalysisActive={false}

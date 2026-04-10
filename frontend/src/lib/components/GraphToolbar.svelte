@@ -29,7 +29,7 @@
 		onZoomIn: () => void;
 		onZoomOut: () => void;
 		onFitView: () => void;
-		onRunLayout: () => void;
+		onRunLayout: (algorithm?: string) => void;
 		onToggleImpact: () => void;
 		onToggleAnalysis: () => void;
 		onExportPNG: () => void;
@@ -151,7 +151,7 @@
 			<Maximize size={16} />
 		</button>
 		<button
-			onclick={onRunLayout}
+			onclick={() => onRunLayout()}
 			class="toolbar-btn w-8 h-8 flex items-center justify-center rounded-lg transition-colors btn-muted"
 			data-tooltip="Auto Layout (L)"
 		>

@@ -249,7 +249,7 @@
 		zoomIn: () => canvas?.zoomIn(),
 		zoomOut: () => canvas?.zoomOut(),
 		fitView: () => canvas?.fitView(),
-		runLayout: () => canvas?.runLayout(),
+		runLayout: (algorithm?: string) => canvas?.runLayout(algorithm),
 		toggleImpact: () => { if (graphStore.selectedNodeId || graphStore.impactMode) graphStore.toggleImpactMode(); },
 		toggleAnalysis: () => graphStore.toggleAnalysisMode(),
 	});
@@ -293,7 +293,7 @@
 						onZoomIn={() => canvas?.zoomIn()}
 						onZoomOut={() => canvas?.zoomOut()}
 						onFitView={() => canvas?.fitView()}
-						onRunLayout={() => canvas?.runLayout()}
+						onRunLayout={(algorithm) => canvas?.runLayout(algorithm)}
 						onToggleImpact={() => graphStore.toggleImpactMode()}
 						onToggleAnalysis={() => graphStore.toggleAnalysisMode()}
 						onExportPNG={handleExportPNG}
@@ -372,5 +372,7 @@
 		overflow-y: auto;
 		border-left: 1px solid var(--color-border);
 		background: var(--color-surface);
+		position: relative;
+		z-index: 10;
 	}
 </style>

@@ -151,7 +151,7 @@ export function getGraphStyles(theme: 'dark' | 'light' = 'dark'): StylesheetStyl
         'target-arrow-shape': 'triangle',
         'target-arrow-fill': 'filled',
         'curve-style': 'bezier',
-        'control-point-step-size': 40,
+        'control-point-step-size': 60,
         'arrow-scale': 1.3,
         'font-size': 11,
         'min-zoomed-font-size': 8,
@@ -281,6 +281,17 @@ export function getGraphStyles(theme: 'dark' | 'light' = 'dark'): StylesheetStyl
         'segment-distances': 'data(segmentDistances)',
         'segment-weights': 'data(segmentWeights)',
         'edge-distances': 'node-position',
+      } as Record<string, any>,
+    },
+
+    // Taxi (orthogonal) routing — applied after auto-layout
+    {
+      selector: 'edge.taxi-routed',
+      style: {
+        'curve-style': 'taxi',
+        'taxi-direction': 'auto',
+        'taxi-turn': '30px',
+        'taxi-turn-min-distance': '10px',
       } as Record<string, any>,
     },
 
