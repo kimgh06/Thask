@@ -10,12 +10,12 @@ import (
 const (
 	nodeW       = 72.0
 	nodeH       = 72.0
-	cellPad     = 40.0
+	cellPad     = 60.0
 	groupPadX   = 30.0
 	groupPadTop = 45.0
 	groupPadBot = 30.0
-	layerSpaceX = 250.0
-	layerSpaceY = 180.0
+	layerGapX   = 80.0 // horizontal gap between layers
+	layerGapY   = 60.0 // vertical gap between nodes in same layer
 	minGroupW   = 160.0
 	minGroupH   = 100.0
 	routePad    = 30.0 // padding around obstacles for edge routing
@@ -53,14 +53,13 @@ func CalculateLayout(nodes []model.Node, edges []model.Edge, algorithm string) L
 	return LayoutResult{Positions: positions, EdgeRoutes: edgeRoutes}
 }
 
-// --- Edge routing: obstacle avoidance ---
+// --- Edge routing: Manhattan-style orthogonal routing ---
 
 type bbox struct {
 	minX, minY, maxX, maxY float64
 }
 
 func routeEdges(positions []LayoutPosition, edges []model.Edge, nodes []model.Node) []EdgeRoute {
-	// Build set of top-level node IDs (exclude children inside groups)
 	topLevel := make(map[string]bool)
 	for _, n := range nodes {
 		if n.ParentID == nil {
@@ -68,13 +67,12 @@ func routeEdges(positions []LayoutPosition, edges []model.Edge, nodes []model.No
 		}
 	}
 
-	// Build bounding boxes for top-level nodes only
 	posMap := make(map[string]Point)
 	boxes := make(map[string]bbox)
 	for _, lp := range positions {
 		posMap[lp.ID] = Point{lp.X, lp.Y}
 		if !topLevel[lp.ID] {
-			continue // skip child nodes as obstacles
+			continue
 		}
 		w := nodeW
 		h := nodeH
@@ -101,13 +99,11 @@ func routeEdges(positions []LayoutPosition, edges []model.Edge, nodes []model.No
 			continue
 		}
 
-		// Find obstacles: nodes whose bbox intersects the source→target line
 		var obstacles []bbox
 		for id, box := range boxes {
 			if id == edge.SourceID || id == edge.TargetID {
 				continue
 			}
-			// Expand box slightly for padding
 			expanded := bbox{
 				minX: box.minX - routePad/2,
 				minY: box.minY - routePad/2,
@@ -124,77 +120,59 @@ func routeEdges(positions []LayoutPosition, edges []model.Edge, nodes []model.No
 			continue
 		}
 
-		// Sort obstacles by distance from source
 		sort.Slice(obstacles, func(i, j int) bool {
 			di := math.Hypot(((obstacles[i].minX+obstacles[i].maxX)/2)-srcPos.X, ((obstacles[i].minY+obstacles[i].maxY)/2)-srcPos.Y)
 			dj := math.Hypot(((obstacles[j].minX+obstacles[j].maxX)/2)-srcPos.X, ((obstacles[j].minY+obstacles[j].maxY)/2)-srcPos.Y)
 			return di < dj
 		})
 
-		waypoints := generateDetour(srcPos, tgtPos, obstacles, boxes)
+		waypoints := manhattanRoute(srcPos, tgtPos, obstacles)
 		routes = append(routes, EdgeRoute{ID: edge.ID, Waypoints: waypoints})
 	}
 	return routes
 }
 
-func generateDetour(src, tgt Point, obstacles []bbox, allBoxes map[string]bbox) []Point {
-	var waypoints []Point
+// manhattanRoute generates orthogonal (L/Z-shaped) waypoints around obstacles.
+func manhattanRoute(src, tgt Point, obstacles []bbox) []Point {
+	if len(obstacles) == 0 {
+		return nil
+	}
+
+	// Merge all obstacle bounding boxes into a single avoidance zone
+	combined := obstacles[0]
+	for _, obs := range obstacles[1:] {
+		combined.minX = math.Min(combined.minX, obs.minX)
+		combined.minY = math.Min(combined.minY, obs.minY)
+		combined.maxX = math.Max(combined.maxX, obs.maxX)
+		combined.maxY = math.Max(combined.maxY, obs.maxY)
+	}
+
+	// Determine whether to route above or below the obstacle zone
+	midY := (combined.minY + combined.maxY) / 2
 	avgY := (src.Y + tgt.Y) / 2
 
-	for _, obs := range obstacles {
-		midY := (obs.minY + obs.maxY) / 2
-
-		if avgY < midY {
-			waypoints = append(waypoints,
-				Point{(obs.minX + obs.maxX) / 2, obs.minY - routePad},
-			)
-		} else {
-			waypoints = append(waypoints,
-				Point{(obs.minX + obs.maxX) / 2, obs.maxY + routePad},
-			)
-		}
+	var routeY float64
+	if avgY < midY {
+		routeY = combined.minY - routePad
+	} else {
+		routeY = combined.maxY + routePad
 	}
 
-	// Validate: check each segment for remaining intersections (1 pass max to avoid infinite loops)
-	allPoints := make([]Point, 0, len(waypoints)+2)
-	allPoints = append(allPoints, src)
-	allPoints = append(allPoints, waypoints...)
-	allPoints = append(allPoints, tgt)
+	// Manhattan route: src → horizontal out → vertical to routeY → horizontal to tgt.X → down to tgt
+	var waypoints []Point
 
-	var extra []Point
-	for i := 0; i < len(allPoints)-1; i++ {
-		for _, box := range allBoxes {
-			expanded := bbox{
-				minX: box.minX - routePad/2,
-				minY: box.minY - routePad/2,
-				maxX: box.maxX + routePad/2,
-				maxY: box.maxY + routePad/2,
-			}
-			if lineIntersectsBox(allPoints[i], allPoints[i+1], expanded) {
-				midY := (box.minY + box.maxY) / 2
-				segAvgY := (allPoints[i].Y + allPoints[i+1].Y) / 2
-				if segAvgY < midY {
-					extra = append(extra, Point{(box.minX + box.maxX) / 2, box.minY - routePad})
-				} else {
-					extra = append(extra, Point{(box.minX + box.maxX) / 2, box.maxY + routePad})
-				}
-			}
-		}
-	}
-
-	if len(extra) > 0 {
-		waypoints = append(waypoints, extra...)
-		// Sort all waypoints by X to maintain left-to-right order
-		sort.Slice(waypoints, func(i, j int) bool {
-			return waypoints[i].X < waypoints[j].X
-		})
+	// Only add waypoints if they actually change direction
+	if math.Abs(src.Y-routeY) > 1 || math.Abs(tgt.Y-routeY) > 1 {
+		waypoints = append(waypoints,
+			Point{src.X, routeY},  // go vertical from source
+			Point{tgt.X, routeY},  // go horizontal at avoidance level
+		)
 	}
 
 	return waypoints
 }
 
 // lineIntersectsBox checks if line segment p1→p2 intersects axis-aligned bounding box.
-// Uses parametric line-AABB intersection (slab method).
 func lineIntersectsBox(p1, p2 Point, box bbox) bool {
 	dx := p2.X - p1.X
 	dy := p2.Y - p1.Y
@@ -231,7 +209,7 @@ func lineIntersectsBox(p1, p2 Point, box bbox) bool {
 	return tmin <= tmax
 }
 
-// --- Hierarchical layout (dagre-style) ---
+// --- Hierarchical layout (dagre-style) with dynamic spacing ---
 
 func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
@@ -258,11 +236,11 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 			continue
 		}
 		kids := children[n.ID]
-		w, h := autoSizeGroup(kids)
+		w, h := computeGroupSizeAndLayout(kids, edges, nodeMap, childRelPos)
 		groupSizes[n.ID] = [2]float64{w, h}
-		positionChildrenRelative(kids, w, h, childRelPos)
 	}
 
+	// BFS layer assignment
 	inDegree := make(map[string]int)
 	outEdges := make(map[string][]string)
 	topSet := make(map[string]bool)
@@ -315,17 +293,50 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 	}
 
 	layerNodes := make(map[int][]string)
+	maxLayer := 0
 	for _, id := range topLevel {
 		l := layers[id]
 		layerNodes[l] = append(layerNodes[l], id)
+		if l > maxLayer {
+			maxLayer = l
+		}
 	}
 
+	// Dynamic X spacing: compute per-layer max width
+	layerMaxW := make(map[int]float64)
+	for l := 0; l <= maxLayer; l++ {
+		maxW := nodeW
+		for _, id := range layerNodes[l] {
+			if sz, ok := groupSizes[id]; ok && sz[0] > maxW {
+				maxW = sz[0]
+			}
+		}
+		layerMaxW[l] = maxW
+	}
+
+	// Cumulative X positioning
+	layerX := make(map[int]float64)
+	cumX := 0.0
+	for l := 0; l <= maxLayer; l++ {
+		layerX[l] = cumX + layerMaxW[l]/2
+		cumX += layerMaxW[l] + layerGapX
+	}
+
+	// Dynamic Y spacing per layer
 	positions := make(map[string][2]float64)
 	for layer, ids := range layerNodes {
+		// Compute max height for nodes in this layer
+		maxH := nodeH
+		for _, id := range ids {
+			if sz, ok := groupSizes[id]; ok && sz[1] > maxH {
+				maxH = sz[1]
+			}
+		}
+		spacing := maxH + layerGapY
 		count := len(ids)
 		for i, id := range ids {
-			x := float64(layer) * layerSpaceX
-			y := (float64(i) - float64(count-1)/2.0) * layerSpaceY
+			x := layerX[layer]
+			y := (float64(i) - float64(count-1)/2.0) * spacing
 			positions[id] = [2]float64{x, y}
 		}
 	}
@@ -362,6 +373,7 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 func gridLayout(nodes []model.Node) []LayoutPosition {
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
 	cols := int(math.Ceil(math.Sqrt(float64(len(nodes)))))
+	spacing := nodeW + cellPad + layerGapX
 	result := make([]LayoutPosition, len(nodes))
 
 	for i, n := range nodes {
@@ -369,8 +381,8 @@ func gridLayout(nodes []model.Node) []LayoutPosition {
 		row := i / cols
 		result[i] = LayoutPosition{
 			ID: n.ID,
-			X:  float64(col) * layerSpaceX,
-			Y:  float64(row) * layerSpaceY,
+			X:  float64(col) * spacing,
+			Y:  float64(row) * spacing,
 		}
 		if n.Type == model.NodeTypeGroup {
 			w, h := autoSizeGroup(nil)
@@ -403,18 +415,122 @@ func autoSizeGroup(childIDs []string) (float64, float64) {
 	return w, h
 }
 
-func positionChildrenRelative(childIDs []string, groupW, groupH float64, relPos map[string][2]float64) {
+// computeGroupSizeAndLayout computes group dimensions AND positions children.
+// Returns (width, height) of the group. Positions are written to relPos.
+func computeGroupSizeAndLayout(childIDs []string, edges []model.Edge, nodeMap map[string]*model.Node, relPos map[string][2]float64) (float64, float64) {
 	count := len(childIDs)
 	if count == 0 {
-		return
+		return minGroupW, minGroupH
 	}
 
-	cols := int(math.Ceil(math.Sqrt(float64(count))))
+	childSet := make(map[string]bool, count)
+	for _, id := range childIDs {
+		childSet[id] = true
+	}
+
+	var childEdges []model.Edge
+	for _, e := range edges {
+		if childSet[e.SourceID] && childSet[e.TargetID] && e.EdgeType != model.EdgeTypeRelated {
+			childEdges = append(childEdges, e)
+		}
+	}
+
 	cellW := nodeW + cellPad
 	cellH := nodeH + cellPad
 
-	startX := -float64(cols-1) * cellW / 2.0
+	if len(childEdges) > 0 {
+		return layoutChildrenByLayers(childIDs, childEdges, cellW, cellH, relPos)
+	}
+	return layoutChildrenGrid(childIDs, cellW, cellH, relPos)
+}
+
+// layoutChildrenByLayers does mini BFS layering. Returns (groupW, groupH).
+func layoutChildrenByLayers(childIDs []string, childEdges []model.Edge, cellW, cellH float64, relPos map[string][2]float64) (float64, float64) {
+	inDeg := make(map[string]int)
+	succ := make(map[string][]string)
+	for _, id := range childIDs {
+		inDeg[id] = 0
+	}
+	for _, e := range childEdges {
+		succ[e.SourceID] = append(succ[e.SourceID], e.TargetID)
+		inDeg[e.TargetID]++
+	}
+
+	var layerOrder [][]string
+	var queue []string
+	for _, id := range childIDs {
+		if inDeg[id] == 0 {
+			queue = append(queue, id)
+		}
+	}
+	placed := make(map[string]bool)
+	for len(queue) > 0 {
+		layerOrder = append(layerOrder, queue)
+		for _, id := range queue {
+			placed[id] = true
+		}
+		var next []string
+		for _, id := range queue {
+			for _, tgt := range succ[id] {
+				inDeg[tgt]--
+				if inDeg[tgt] == 0 && !placed[tgt] {
+					next = append(next, tgt)
+				}
+			}
+		}
+		queue = next
+	}
+	for _, id := range childIDs {
+		if !placed[id] {
+			layerOrder = append(layerOrder, []string{id})
+			placed[id] = true
+		}
+	}
+
+	numLayers := len(layerOrder)
+	maxPerLayer := 0
+	for _, layer := range layerOrder {
+		if len(layer) > maxPerLayer {
+			maxPerLayer = len(layer)
+		}
+	}
+
+	// Size group to fit ALL children without overlap
+	gridW := float64(numLayers) * cellW
+	gridH := float64(maxPerLayer) * cellH
+	groupW := math.Max(gridW+groupPadX*2, minGroupW)
+	groupH := math.Max(gridH+groupPadTop+groupPadBot, minGroupH)
+
+	// Position children: layers left-to-right, nodes top-to-bottom
+	startX := -float64(numLayers-1) * cellW / 2
+
+	for li, layer := range layerOrder {
+		n := len(layer)
+		startY := -float64(n-1)*cellH/2 + (groupPadTop-groupPadBot)/2
+
+		for ni, id := range layer {
+			relPos[id] = [2]float64{
+				startX + float64(li)*cellW,
+				startY + float64(ni)*cellH,
+			}
+		}
+	}
+
+	return groupW, groupH
+}
+
+// layoutChildrenGrid arranges children in a grid. Returns (groupW, groupH).
+func layoutChildrenGrid(childIDs []string, cellW, cellH float64, relPos map[string][2]float64) (float64, float64) {
+	count := len(childIDs)
+	cols := int(math.Ceil(math.Sqrt(float64(count))))
 	rows := int(math.Ceil(float64(count) / float64(cols)))
+
+	gridW := float64(cols) * cellW
+	gridH := float64(rows) * cellH
+	groupW := math.Max(gridW+groupPadX*2, minGroupW)
+	groupH := math.Max(gridH+groupPadTop+groupPadBot, minGroupH)
+
+	startX := -float64(cols-1) * cellW / 2.0
 	startY := -float64(rows-1)*cellH/2.0 + (groupPadTop-groupPadBot)/2.0
 
 	for i, id := range childIDs {
@@ -425,6 +541,8 @@ func positionChildrenRelative(childIDs []string, groupW, groupH float64, relPos 
 			startY + float64(row)*cellH,
 		}
 	}
+
+	return groupW, groupH
 }
 
 func resolveTopLevel(nodeID string, nodeMap map[string]*model.Node) string {

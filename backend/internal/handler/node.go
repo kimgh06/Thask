@@ -172,22 +172,10 @@ func (h *NodeHandler) Layout(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to save layout"))
 	}
 
-	// Apply auto-routed edge waypoints (or reset if no obstacles)
+	// Reset all edge waypoints so frontend taxi routing takes over
 	if !req.PreserveEdges {
-		for _, route := range layoutResult.EdgeRoutes {
-			var wps any
-			if len(route.Waypoints) > 0 {
-				pts := make([]map[string]float64, len(route.Waypoints))
-				for i, wp := range route.Waypoints {
-					pts[i] = map[string]float64{"x": wp.X, "y": wp.Y}
-				}
-				wps = pts
-			} else {
-				wps = []any{}
-			}
-			if _, err := h.edgeRepo.UpdateRouting(ctx, route.ID, nil, nil, wps); err != nil {
-				slog.Warn("failed to update edge routing", "edgeId", route.ID, "error", err)
-			}
+		if err := h.edgeRepo.ResetWaypoints(ctx, projectID); err != nil {
+			slog.Warn("failed to reset edge waypoints", "error", err)
 		}
 	}
 
