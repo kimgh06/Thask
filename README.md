@@ -77,27 +77,64 @@ Track every node as `PASS` / `FAIL` / `IN_PROGRESS` / `BLOCKED` with color-coded
 
 ### Node Detail Panel
 
-Slide-out panel with full editing — title, description, type, status, tags, connected nodes, and a complete change history audit log.
+Slide-out panel with full editing — title, description (with markdown rendering), type, status, tags, connected nodes, and a complete change history audit log.
 
 ### Edge Relationships
 
-Five edge types with distinct colors: `depends_on`, `blocks`, `related`, `parent_child`, `triggers`. Click any edge to change its type or delete it.
+Five edge types with distinct colors: `depends_on`, `blocks`, `related`, `parent_child`, `triggers`. Draggable waypoints for edge routing. Click any edge to change its type or delete it.
 
 ### CLI & MCP Integration
 
-Full CLI for terminal workflows (`thask node list --pretty`). MCP server mode for AI agent integration — Claude Code and Cursor can query and modify your graph directly. [CLI Reference](docs/CLI.md) · [MCP Guide](docs/MCP.md)
+Full CLI for terminal workflows (`npm install -g @thask-org/cli`). MCP server mode for AI agent integration — Claude Code and Cursor can query and modify your graph directly. [CLI Reference](docs/CLI.md) · [MCP Guide](docs/MCP.md)
+
+### Go Dependency Scanner
+
+Scan Go codebases to auto-generate dependency graphs. `thask scan --path .` parses `go.mod` and imports, creating nodes and edges automatically. Extensible via [plugin system](docs/PLUGINS.md).
+
+### Graph Analysis
+
+Detect dependency cycles (Tarjan DFS) and find the critical path (longest `depends_on`/`blocks` chain). Toggle Analysis Mode (`Shift+A`) to visualize cycles and critical path on the canvas.
 
 ### External API (v1)
 
-Versioned REST API at `/api/v1/` for third-party integrations. OpenAPI 3.1 spec, interactive Scalar docs, structured error responses, and idempotency support. Authenticate with existing API keys. [API Guide](backend/api/README.md) · [Interactive Docs](/api/v1/docs)
+Versioned REST API at `/api/v1/` for third-party integrations. OpenAPI 3.1 spec, interactive Scalar docs, structured error responses, and idempotency support. [API Guide](backend/api/README.md)
 
 ### Role-Based Access
 
-Four team roles — Owner, Admin, Member, Viewer — with granular permissions. API key authentication for programmatic access.
+Four team roles — Owner, Admin, Member, Viewer — with granular permissions. Per-project roles (Editor, Viewer). API key authentication for programmatic access.
 
 ### Project Sharing
 
-Share projects via link with viewer or editor access. Manage per-project members with granular roles. Public shared views support realtime collaboration.
+Share projects via link with viewer or editor access. Manage per-project members with granular roles. Public shared views support realtime collaboration. Embeddable graph views and OG image generation.
+
+### Templates
+
+Start new projects from built-in templates: API Flow, Microservice Map, Sprint Board. One-click apply from the project creation flow.
+
+### Theme System
+
+Light and dark mode with system detection. Persisted per user. Design system uses CSS variables throughout.
+
+---
+
+## How It Works
+
+Thask has two parts:
+
+| | Server (self-hosted) | CLI (local) |
+|---|---|---|
+| **What** | Web UI + REST API + PostgreSQL | Terminal commands + MCP server |
+| **Install** | `docker compose up` | `npm install -g @thask-org/cli` |
+| **Used by** | Humans (browser) | Humans (terminal) + AI agents (MCP) |
+| **Data** | Stores everything (nodes, edges, users) | Reads/writes via server API |
+
+```
+Browser ──→ Thask Server (Docker) ──→ PostgreSQL
+                ↑
+CLI / MCP ──────┘
+```
+
+The **server** runs your graph database and web UI. The **CLI** talks to the server's API — you can create nodes, run scans, and analyze graphs from the terminal. AI agents (Claude Code, Cursor) use the CLI's built-in MCP server.
 
 ---
 
@@ -220,8 +257,9 @@ Open [http://localhost:7243](http://localhost:7243)
 | **State** | Svelte 5 runes ($state, $derived, $effect) |
 | **Database** | PostgreSQL 17 + pgx/v5 (raw SQL) |
 | **Auth** | Session-based (bcrypt + HTTP-only cookies) |
-| **Testing** | Go test (unit) + Playwright (E2E) |
+| **Testing** | Go test (unit + bench) + Playwright (E2E) |
 | **Deploy** | Docker Compose (3 services) |
+| **npm** | `@thask-org/cli` (esbuild pattern, 5 platforms) |
 
 ---
 
@@ -229,16 +267,21 @@ Open [http://localhost:7243](http://localhost:7243)
 
 ```
 backend/
-  cmd/server/           # Go entrypoint
+  cmd/server/           # Go entrypoint, route registration
   internal/
     config/             # Environment configuration
-    dto/                # Request/response structs
-    handler/            # HTTP handlers (auth, team, node, edge, impact)
-    middleware/         # Auth & project access middleware
+    dto/                # Request/response structs, v1 errors, pagination
+    handler/            # HTTP handlers (auth, team, node, edge, impact,
+                        #   graph_analysis, activity, events, og_image, api_key)
+    middleware/         # Auth, role, project access, shared access,
+                        #   idempotency, v1 response
     model/              # Domain models & enums
-    repository/         # Database access layer (pgx)
-    service/            # Business logic (waterfall, impact, auth)
-  migrations/           # SQL migration files
+    repository/         # Database access layer (pgx, 11 repos)
+    service/            # Business logic (waterfall, impact, graph_analysis,
+                        #   layout, eventhub, auth)
+    migrate/            # Migration runner
+  migrations/           # SQL migration files (001~005)
+  api/                  # OpenAPI spec + API guide
 
 frontend/
   src/
@@ -248,23 +291,39 @@ frontend/
       dashboard/        # Dashboard & team pages
         [teamSlug]/
           [projectId]/  # Graph editor page
+          members/      # Team member management
+        settings/       # User settings
+      shared/[shareToken]/  # Public shared view
+      embed/[shareToken]/   # Embeddable graph
+      docs/             # Documentation page
     lib/
       api.ts            # Typed API client
       types.ts          # TypeScript type definitions
-      stores/           # Svelte 5 rune stores (auth, graph)
-      components/       # CytoscapeCanvas, GraphToolbar, AddNodeModal,
-                        # EdgeColorPopover, NodeDetailPanel
-      cytoscape/        # Styles, layouts, impact mode, group helpers
+      markdown.ts       # Markdown renderer (marked + DOMPurify)
+      stores/           # Svelte 5 rune stores (auth, graph, teams,
+                        #   members, realtime, theme, undo)
+      components/       # CytoscapeCanvas, GraphToolbar, DetailSidePanel,
+                        #   MarkdownEditor, ActivityFeed, TemplateSelector,
+                        #   ShareDialog, SearchBar, ProjectMenu, AddNodeModal
+      cytoscape/        # Styles, layouts, impact, sync, resize,
+                        #   portOverlay, groupHelpers, statusDot
+      managers/         # nodeCrud, edgeCrud
   e2e/                  # Playwright E2E tests
+  static/templates/     # Built-in project templates (3)
 
 cli/
   cmd/thask/            # CLI entrypoint
   internal/
-    cmd/                # Cobra commands (node, edge, team, etc.)
-    mcp/                # MCP server (stdio protocol, 12 tools)
+    cmd/                # Cobra commands (node, edge, team, project,
+                        #   graph, impact, scan, mcp, auth, config,
+                        #   aliases, install, version)
+    mcp/                # MCP server (stdio protocol, 12+ tools)
+    scan/               # Go dependency scanner + plugin runner
     client/             # HTTP client for backend API
     config/             # Config file management (~/.config/thask/)
     output/             # Output formatting (JSON, table, quiet)
+
+npm/                    # npm distribution (@thask-org/cli, 5 platforms)
 ```
 
 ---
@@ -273,8 +332,10 @@ cli/
 
 ```
 Users ──< TeamMembers >── Teams ──< Projects ──< Nodes ──< NodeHistory
-                                                    │
-                                                    └──< Edges
+  │                                    │            │
+  └──< ApiKeys                         │            └──< Edges
+                                       │
+                                       └──< ProjectMembers >── Users
 ```
 
 **Node types:** `FLOW` `BRANCH` `TASK` `BUG` `API` `UI` `GROUP`
@@ -344,11 +405,12 @@ Place a reverse proxy (e.g. nginx, Caddy, Cloudflare Tunnel) in front to handle 
 
 - [Architecture](docs/ARCHITECTURE.md) — Layers, data flow, directory structure
 - [Database](docs/DATABASE.md) — ER diagram, tables, indexes, relations
-- [API Reference](docs/API.md) — 22+ endpoints with request/response examples
+- [API Reference](docs/API.md) — 30+ endpoints with request/response examples
 - [Graph Engine](docs/GRAPH.md) — Node types, edge types, GROUP, impact mode
 - [Keyboard Shortcuts](docs/SHORTCUTS.md) — All shortcuts and interactions
 - [CLI Reference](docs/CLI.md) — Installation, commands, shell aliases
 - [MCP Guide](docs/MCP.md) — AI agent integration (Claude Code, Cursor)
+- [Plugins](docs/PLUGINS.md) — Scanner plugin system
 - [V1 API Guide](backend/api/README.md) — External API quickstart for third-party developers
 
 ---
@@ -361,10 +423,14 @@ Place a reverse proxy (e.g. nginx, Caddy, Cloudflare Tunnel) in front to handle 
 | `make dev-db` | Start PostgreSQL only |
 | `make dev-backend` | Start Go backend |
 | `make dev-frontend` | Start SvelteKit frontend |
-| `make build` | Build backend + frontend |
+| `make build` | Build backend + frontend + CLI |
+| `make build-cli` | Build CLI binary |
+| `make release-cli` | Cross-compile CLI for 5 platforms |
 | `make test` | Run Go unit tests + frontend checks |
 | `make test-backend` | Run Go unit tests (verbose) |
+| `make test-cli` | Run CLI tests |
 | `make test-e2e` | Run Playwright E2E tests |
+| `make bench` | Run scanner + graph analysis benchmarks |
 | `make up` | Docker Compose full stack (auto-generates `.env`) |
 | `make down` | Stop Docker Compose |
 | `make clean` | Remove build artifacts |
@@ -407,28 +473,35 @@ Place a reverse proxy (e.g. nginx, Caddy, Cloudflare Tunnel) in front to handle 
 - [x] Embeddable graph views (`/embed/:shareToken`)
 - [x] OG image generation for shared links
 
-### v0.3 — Automation & Integration
-- [ ] Webhook triggers on graph changes
-- [ ] Per-API-key rate limiting with standard headers
-- [ ] API key scoping (project-level, read-only)
-- [ ] GitHub / GitLab issue sync
-- [ ] Slack / Discord notifications
-- [ ] TypeScript / Python SDK generation
+### v0.3 — Scanner + Graph Intelligence (Done)
+- [x] Go dependency scanner (`thask scan`) with `go/ast` parsing
+- [x] Cycle detection (Tarjan DFS) and critical path analysis
+- [x] Analysis Mode frontend (Shift+A toggle, cycles/critical path highlighting)
+- [x] MCP tools: `thask.scan.run`, `thask.graph.analyze`
+- [x] GitHub Actions CI (backend tests, CLI tests, frontend check)
+- [x] Scanner plugin system with documentation
 
-### v0.4 — UX & Templates
-- [ ] Graph templates (preset flow patterns)
-- [ ] Light / dark mode toggle
-- [ ] Custom node colors & icons
-- [ ] Minimap
-- [ ] Mobile responsive layout
-- [ ] Comment threads on nodes
-- [ ] Activity feed (recent changes across team)
+### v0.4 — Community & Ecosystem (Done)
+- [x] npm distribution (`@thask-org/cli`, 5 platform binaries, esbuild pattern)
+- [x] Scanner plugin interface (any executable outputting ImportGraphRequest JSON)
+- [x] Homebrew formula template
+- [x] Performance benchmarks (scanner + graph analysis)
+
+### v0.5 — Visual Polish & Analytics (Done)
+- [x] Light/dark theme system with system detection
+- [x] Activity feed (recent changes with user attribution)
+- [x] Project templates (API Flow, Microservice Map, Sprint Board)
+- [x] Amber Precision design system fully applied
+- [x] Markdown description rendering (marked + DOMPurify)
 
 ### Future
-- [ ] Version history & graph diffing
-- [ ] PDF report generation (impact summary)
-- [ ] Plugin system for custom node types
-- [ ] AI-assisted impact prediction
+- [ ] Graph version snapshots & diffing
+- [ ] Node lifecycle analytics (time-in-status, bottleneck detection)
+- [ ] Webhook triggers on graph changes
+- [ ] GitHub repo sync (auto-update graph on push)
+- [ ] Slack / Discord notifications
+- [ ] Comment threads on nodes
+- [ ] Mobile responsive layout
 - [ ] Self-hosted SSO (SAML / OIDC)
 
 ---
