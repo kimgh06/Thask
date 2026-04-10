@@ -2,6 +2,7 @@
 	import type { GraphNode, NodeType, NodeStatus, NodeHistoryEntry, NodeDetail } from '$lib/types';
 	import { NODE_TYPES, STATUS_OPTIONS, TYPE_COLORS, STATUS_COLORS, STATUS_LABELS } from '$lib/constants';
 	import { Trash2, Clock, Tag, Link2, History, FileText, MoreHorizontal, Cable } from 'lucide-svelte';
+	import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';
 
 	interface Props {
 		node: NodeDetail;
@@ -224,17 +225,13 @@
 <div class="flex-1 overflow-y-auto flex flex-col gap-3 pt-3 -mx-3 px-3">
 	{#if activeTab === 'details'}
 		<div class="flex flex-col gap-1">
-			<label class="text-xs font-medium" style="color: var(--color-text-muted);" for="node-description">Description</label>
-			<textarea
-				id="node-description"
+			<span class="text-xs font-medium" style="color: var(--color-text-muted);">Description</span>
+			<MarkdownEditor
 				bind:value={localDescription}
-				onblur={readonly ? undefined : saveDescription}
-				placeholder={readonly ? 'No description' : 'Add a description...'}
-				rows="4"
-				class="px-3 py-2 rounded-lg text-xs outline-none resize-none"
-				style="background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border);"
+				onsave={(v) => { localDescription = v; saveDescription(); }}
 				{readonly}
-			></textarea>
+				placeholder={readonly ? 'No description' : 'Add a description...'}
+			/>
 		</div>
 
 		<div class="flex flex-col gap-1.5">
