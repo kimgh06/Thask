@@ -48,6 +48,7 @@
 	let container: HTMLDivElement;
 	let cy: cytoscape.Core | null = $state(null);
 	let initialLayoutDone = false;
+	let taxiLayoutActive = $state(false);
 	let activeTimeouts: ReturnType<typeof setTimeout>[] = [];
 	let lastMouseModelPos = { x: 0, y: 0 };
 
@@ -70,6 +71,7 @@
 			typeFilter: graphStore.typeFilter,
 			statusFilter: graphStore.statusFilter,
 			initialLayoutDone,
+			taxiRouted: taxiLayoutActive,
 			onUpdateNodeParent,
 		});
 	}
@@ -122,6 +124,8 @@
 					edge.removeData('segmentWeights');
 					edge.addClass('taxi-routed');
 				});
+				taxiLayoutActive = true;
+				localStorage.setItem(`thask-taxi-${projectId}`, '1');
 				setTimeout(() => cy?.fit(undefined, 50), 450);
 			}
 		} catch {
@@ -254,6 +258,10 @@
 			userPanningEnabled: true,
 			userZoomingEnabled: true,
 		});
+
+		// Restore taxi layout state from localStorage
+		const taxiKey = `thask-taxi-${projectId}`;
+		taxiLayoutActive = localStorage.getItem(taxiKey) === '1';
 
 		const cleanups: Array<{ cleanup: () => void }> = [];
 

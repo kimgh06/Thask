@@ -1,5 +1,6 @@
 import type cytoscape from 'cytoscape';
 import { api } from '$lib/api';
+import { waypointsToSegments } from '$lib/cytoscape/sync';
 
 interface WaypointOptions {
 	getApiBase: () => string;
@@ -386,7 +387,22 @@ export function attachWaypointHandlers(
 		});
 	}
 
-	function updateEdgeSegments(_edge: cytoscape.EdgeSingular) {
+	function updateEdgeSegments(edge: cytoscape.EdgeSingular) {
+		const wps: Array<{ x: number; y: number }> = edge.data('waypoints') || [];
+		if (wps.length === 0) {
+			edge.removeData('curveStyle');
+			edge.removeData('segmentDistances');
+			edge.removeData('segmentWeights');
+		} else {
+			const src = edge.source().position();
+			const tgt = edge.target().position();
+			const { distances, weights } = waypointsToSegments(src, tgt, wps);
+			edge.data({
+				curveStyle: 'segments',
+				segmentDistances: distances,
+				segmentWeights: weights,
+			});
+		}
 		renderWaypointEdges();
 	}
 
@@ -509,7 +525,12 @@ export function attachWaypointHandlers(
 		});
 	}
 
+	function onNodeDrag() {
+		renderWaypointEdges();
+	}
+
 	cy.on('grab', 'node', onNodeGrab);
+	cy.on('drag', 'node', onNodeDrag);
 	cy.on('dragfree', 'node', onNodeDragFree);
 	cy.on('add remove data', 'edge', () => renderWaypointEdges());
 
@@ -522,6 +543,7 @@ export function attachWaypointHandlers(
 			cy.off('mouseout', 'edge', onEdgeMouseOut);
 			cy.off('pan zoom', onViewport);
 			cy.off('grab', 'node', onNodeGrab);
+			cy.off('drag', 'node', onNodeDrag);
 			cy.off('dragfree', 'node', onNodeDragFree);
 			clearMarkers();
 			preDragPositions.clear();

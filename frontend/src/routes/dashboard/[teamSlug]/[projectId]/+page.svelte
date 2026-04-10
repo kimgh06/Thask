@@ -286,7 +286,7 @@
 				/>
 
 				<!-- Floating toolbar -->
-				<div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-40">
+				<div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-50">
 					<GraphToolbar
 						onAddNode={nodeCrud.handleAddNode}
 						onAddGroup={nodeCrud.handleAddGroup}

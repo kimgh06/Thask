@@ -49,8 +49,7 @@ func CalculateLayout(nodes []model.Node, edges []model.Edge, algorithm string) L
 	} else {
 		positions = dagreLayout(nodes, edges)
 	}
-	edgeRoutes := routeEdges(positions, edges, nodes)
-	return LayoutResult{Positions: positions, EdgeRoutes: edgeRoutes}
+	return LayoutResult{Positions: positions}
 }
 
 // --- Edge routing: Manhattan-style orthogonal routing ---

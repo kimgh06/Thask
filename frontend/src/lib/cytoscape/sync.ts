@@ -4,7 +4,7 @@ import { getFcoseLayout, getPresetLayout } from './layouts';
 
 
 
-function waypointsToSegments(
+export function waypointsToSegments(
 	src: { x: number; y: number },
 	tgt: { x: number; y: number },
 	waypoints: Array<{ x: number; y: number }>
@@ -100,6 +100,7 @@ export interface SyncContext {
 	typeFilter: NodeType | null;
 	statusFilter: NodeStatus | null;
 	initialLayoutDone: boolean;
+	taxiRouted?: boolean;
 	onUpdateNodeParent?: (nodeId: string, parentId: string | null) => void;
 }
 
@@ -206,10 +207,27 @@ export function syncElements(ctx: SyncContext): boolean {
 
 			if (existing.length) {
 				existing.data(data);
+				if (data.curveStyle === 'segments') {
+					// Segment routing takes priority over taxi
+					existing.removeClass('taxi-routed');
+				} else {
+					// Clear stale segment data when waypoints are empty
+					existing.removeData('curveStyle');
+					existing.removeData('segmentDistances');
+					existing.removeData('segmentWeights');
+				}
 			} else {
 				cy.add({ group: 'edges', data });
 			}
 		});
+	});
+
+	// Apply or remove taxi routing based on layout state
+	cy.edges().forEach((e) => {
+		const wps = (e.data('waypoints') as Array<{x: number; y: number}>) || [];
+		if (ctx.taxiRouted && wps.length === 0) {
+			e.addClass('taxi-routed');
+		}
 	});
 
 	// Apply collapse state
