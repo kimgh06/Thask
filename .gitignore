@@ -36,3 +36,7 @@ pgdata/
 .claude/settings.json
 .playwright-mcpdist/
 OPERATIONS.md
+.playwright-mcp/
+
+# debug images
+*.png
