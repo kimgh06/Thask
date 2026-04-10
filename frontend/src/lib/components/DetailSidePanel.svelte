@@ -1,13 +1,14 @@
 <script lang="ts">
-	import { slide } from 'svelte/transition';
 	import { X } from 'lucide-svelte';
 	import type { GraphNode, GraphEdge, NodeType, NodeStatus, EdgeType, NodeDetail } from '$lib/types';
 	import NodeDetailView from './panel/NodeDetailView.svelte';
 	import EdgeDetailView from './panel/EdgeDetailView.svelte';
 	import MultiSelectView from './panel/MultiSelectView.svelte';
+	import ActivityFeed from './ActivityFeed.svelte';
 
 	interface Props {
-		panelMode: 'node' | 'edge' | 'multi-select';
+		panelMode: 'node' | 'edge' | 'multi-select' | 'empty';
+		projectId?: string;
 		// Node mode
 		node: NodeDetail | null;
 		allNodes: GraphNode[];
@@ -34,6 +35,7 @@
 
 	let {
 		panelMode,
+		projectId,
 		node,
 		allNodes,
 		selectedEdge,
@@ -54,15 +56,21 @@
 		readonly = false,
 	}: Props = $props();
 
+	let activityFeed = $state<ReturnType<typeof ActivityFeed> | undefined>(undefined);
+
 	let panelTitle = $derived.by(() => {
 		if (panelMode === 'node') return 'Node';
 		if (panelMode === 'edge') return 'Edge';
-		return 'Selection';
+		if (panelMode === 'multi-select') return 'Selection';
+		return 'Activity';
 	});
+
+	export function refreshActivity() {
+		activityFeed?.refresh();
+	}
 </script>
 
 <aside
-	transition:slide={{ axis: 'x', duration: 200 }}
 	class="w-[350px] flex-shrink-0 flex flex-col h-full"
 	style="background: var(--color-surface); border-left: 1px solid var(--color-border);"
 >
@@ -114,4 +122,11 @@
 			/>
 		{/if}
 	</div>
+
+	<!-- Activity Feed (always visible at bottom, only when projectId available) -->
+	{#if projectId}
+		<div class="flex-shrink-0 max-h-[40%] overflow-y-auto">
+			<ActivityFeed bind:this={activityFeed} {projectId} />
+		</div>
+	{/if}
 </aside>

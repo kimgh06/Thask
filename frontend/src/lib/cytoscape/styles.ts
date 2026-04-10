@@ -155,7 +155,7 @@ export function getGraphStyles(theme: 'dark' | 'light' = 'dark'): StylesheetStyl
         'arrow-scale': 1.3,
         'font-size': 11,
         'min-zoomed-font-size': 8,
-        'text-rotation': 'autorotate',
+        'text-rotation': 0,
         color: C.textDim,
         'text-outline-color': C.bg,
         'text-outline-width': 3,

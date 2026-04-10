@@ -14,7 +14,7 @@
 	import { exportPNG, exportJSON, importJSON } from '$lib/export';
 	import { realtimeStore } from '$lib/stores/realtime.svelte';
 	import ShareDialog from '$lib/components/ShareDialog.svelte';
-	import ActivityFeed from '$lib/components/ActivityFeed.svelte';
+
 
 	let nodes = $state<GraphNode[]>([]);
 	let edges = $state<GraphEdge[]>([]);
@@ -26,7 +26,7 @@
 	const projectId = $derived(page.params.projectId ?? '');
 
 	let canvas = $state<ReturnType<typeof CytoscapeCanvas> | undefined>(undefined);
-	let activityFeed = $state<ReturnType<typeof ActivityFeed> | undefined>(undefined);
+	let sidePanel = $state<ReturnType<typeof DetailSidePanel> | undefined>(undefined);
 
 	// Node detail state
 	let selectedNodeDetail = $state<NodeDetail | null>(null);
@@ -112,7 +112,7 @@
 		// Real-time sync
 		realtimeStore.connect(projectId, () => {
 			loadGraph();
-			activityFeed?.refresh();
+			sidePanel?.refreshActivity();
 		});
 		return () => realtimeStore.disconnect();
 	});
@@ -324,10 +324,12 @@
 			{/if}
 		</div>
 
-		<!-- Side Panel -->
-		{#if panelMode !== 'empty'}
+		<!-- Side Panel (always visible) -->
+		{#if !loading && !loadError}
 			<DetailSidePanel
+				bind:this={sidePanel}
 				{panelMode}
+				{projectId}
 				node={selectedNodeDetail}
 				allNodes={nodes}
 				{selectedEdge}
@@ -347,13 +349,6 @@
 				onStartEdgeDrawing={handleStartEdgeDrawing}
 			/>
 		{/if}
-
-		<!-- Activity Feed Panel -->
-		{#if !loading && !loadError}
-			<div class="activity-panel">
-				<ActivityFeed bind:this={activityFeed} {projectId} />
-			</div>
-		{/if}
 	</div>
 </div>
 
@@ -365,14 +360,3 @@
 	/>
 {/if}
 
-<style>
-	.activity-panel {
-		width: 240px;
-		flex-shrink: 0;
-		overflow-y: auto;
-		border-left: 1px solid var(--color-border);
-		background: var(--color-surface);
-		position: relative;
-		z-index: 10;
-	}
-</style>
