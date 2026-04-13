@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"math"
 	"sort"
 
@@ -14,8 +15,8 @@ const (
 	groupPadX   = 30.0
 	groupPadTop = 45.0
 	groupPadBot = 30.0
-	layerGapX   = 80.0 // horizontal gap between layers
-	layerGapY   = 60.0 // vertical gap between nodes in same layer
+	layerGapX   = 200.0 // horizontal gap between layers
+	layerGapY   = 60.0  // vertical gap between nodes in same layer
 	minGroupW   = 160.0
 	minGroupH   = 100.0
 	gridSize    = 40.0 // snap positions to this grid for metro-style alignment
@@ -43,25 +44,7 @@ func snapToGrid(v float64) float64 {
 
 // reorderByBarycenter reorders nodes within layers to minimize edge crossings
 // using the barycenter heuristic with forward/backward sweeps.
-func reorderByBarycenter(layerNodes map[int][]string, maxLayer int, edges []model.Edge, nodeMap map[string]*model.Node) {
-	// Build bidirectional adjacency for top-level nodes
-	adj := make(map[string]map[string]bool)
-	for _, e := range edges {
-		src := resolveTopLevel(e.SourceID, nodeMap)
-		tgt := resolveTopLevel(e.TargetID, nodeMap)
-		if src == tgt || e.EdgeType == model.EdgeTypeRelated {
-			continue
-		}
-		if adj[src] == nil {
-			adj[src] = make(map[string]bool)
-		}
-		if adj[tgt] == nil {
-			adj[tgt] = make(map[string]bool)
-		}
-		adj[src][tgt] = true
-		adj[tgt][src] = true
-	}
-
+func reorderByBarycenter(layerNodes map[int][]string, maxLayer int, adj map[string]map[string]bool) {
 	// Build index: node → layer, node → position within its layer
 	layerOf := make(map[string]int)
 	indexOf := make(map[string]int)
@@ -274,8 +257,8 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 
 	// Detect cycles using Tarjan's SCC and collapse them
 	sccs := findSCCs(topLevel, outEdges)
-	repCycle := make(map[string][]string)   // representative → cycle members
-	cycleNodeSet := make(map[string]bool)   // all cycle member nodes
+	repCycle := make(map[string][]string) // representative → cycle members
+	cycleNodeSet := make(map[string]bool) // all cycle member nodes
 	for _, scc := range sccs {
 		if len(scc) <= 1 {
 			continue
@@ -378,10 +361,7 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		}
 	}
 
-	// Reorder nodes within layers to minimize edge crossings
-	reorderByBarycenter(layerNodes, maxLayer, edges, nodeMap)
-
-	// Dynamic X spacing: compute per-layer max width
+	// Dynamic X spacing: compute per-layer max width (before adding dummies)
 	layerMaxW := make(map[int]float64)
 	for l := 0; l <= maxLayer; l++ {
 		maxW := nodeW
@@ -400,6 +380,71 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		layerX[l] = cumX + snapToGrid(layerMaxW[l]/2)
 		cumX += snapToGrid(layerMaxW[l]) + math.Ceil(layerGapX/gridSize)*gridSize
 	}
+
+	// Insert dummy nodes for edges spanning 2+ layers (Sugiyama)
+	dummySet := make(map[string]bool)
+	dummyAdj := make(map[string][]string)
+	for _, e := range edges {
+		if e.EdgeType == model.EdgeTypeRelated {
+			continue
+		}
+		src := resolveTopLevel(e.SourceID, nodeMap)
+		tgt := resolveTopLevel(e.TargetID, nodeMap)
+		if src == tgt || !topSet[src] || !topSet[tgt] {
+			continue
+		}
+		srcL, tgtL := layers[src], layers[tgt]
+		if srcL > tgtL {
+			srcL, tgtL = tgtL, srcL
+			src, tgt = tgt, src
+		}
+		if tgtL-srcL <= 1 {
+			continue
+		}
+		prev := src
+		for l := srcL + 1; l < tgtL; l++ {
+			did := fmt.Sprintf("__d_%s_%d", e.ID, l)
+			dummySet[did] = true
+			layers[did] = l
+			layerNodes[l] = append(layerNodes[l], did)
+			dummyAdj[prev] = append(dummyAdj[prev], did)
+			dummyAdj[did] = append(dummyAdj[did], prev)
+			prev = did
+		}
+		dummyAdj[prev] = append(dummyAdj[prev], tgt)
+		dummyAdj[tgt] = append(dummyAdj[tgt], prev)
+	}
+
+	// Build full adjacency map (real edges + dummy edges)
+	fullAdj := make(map[string]map[string]bool)
+	for _, e := range edges {
+		src := resolveTopLevel(e.SourceID, nodeMap)
+		tgt := resolveTopLevel(e.TargetID, nodeMap)
+		if src == tgt || e.EdgeType == model.EdgeTypeRelated {
+			continue
+		}
+		if fullAdj[src] == nil {
+			fullAdj[src] = make(map[string]bool)
+		}
+		if fullAdj[tgt] == nil {
+			fullAdj[tgt] = make(map[string]bool)
+		}
+		fullAdj[src][tgt] = true
+		fullAdj[tgt][src] = true
+	}
+	for src, targets := range dummyAdj {
+		if fullAdj[src] == nil {
+			fullAdj[src] = make(map[string]bool)
+		}
+		for _, tgt := range targets {
+			fullAdj[src][tgt] = true
+			if fullAdj[tgt] == nil {
+				fullAdj[tgt] = make(map[string]bool)
+			}
+			fullAdj[tgt][src] = true
+		}
+	}
+	reorderByBarycenter(layerNodes, maxLayer, fullAdj)
 
 	// Dynamic Y positioning per layer — pack using individual node heights
 	positions := make(map[string][2]float64)
@@ -426,6 +471,11 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 			positions[id] = [2]float64{x, cy}
 			y += nodeHts[i] + layerGapY
 		}
+	}
+
+	// Remove dummy nodes from positions (they only influenced ordering)
+	for did := range dummySet {
+		delete(positions, did)
 	}
 
 	// Expand cycle representatives into circular positions
