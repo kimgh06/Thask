@@ -4,35 +4,6 @@ import { getFcoseLayout, getPresetLayout } from './layouts';
 
 
 
-export function waypointsToSegments(
-	src: { x: number; y: number },
-	tgt: { x: number; y: number },
-	waypoints: Array<{ x: number; y: number }>
-): { distances: number[]; weights: number[] } {
-	const dx = tgt.x - src.x;
-	const dy = tgt.y - src.y;
-	const len = Math.sqrt(dx * dx + dy * dy) || 1;
-	const nx = -dy / len; // normal x
-	const ny = dx / len;  // normal y
-
-	const distances: number[] = [];
-	const weights: number[] = [];
-
-	for (const wp of waypoints) {
-		// Project waypoint onto source-target line
-		const wx = wp.x - src.x;
-		const wy = wp.y - src.y;
-		const weight = (wx * dx + wy * dy) / (len * len);
-		const dist = wx * nx + wy * ny;
-		const safeWeight = isFinite(weight) ? weight : 0.5;
-		const safeDist = isFinite(dist) ? dist : 0;
-		weights.push(Math.max(0.01, Math.min(0.99, safeWeight)));
-		distances.push(safeDist);
-	}
-
-	return { distances, weights };
-}
-
 /** Compute nesting depth of a node via parentId chain. */
 export function computeDepth(
 	nodeId: string | null,
@@ -100,7 +71,6 @@ export interface SyncContext {
 	typeFilter: NodeType | null;
 	statusFilter: NodeStatus | null;
 	initialLayoutDone: boolean;
-	taxiRouted?: boolean;
 	onUpdateNodeParent?: (nodeId: string, parentId: string | null) => void;
 }
 
@@ -188,46 +158,14 @@ export function syncElements(ctx: SyncContext): boolean {
 				targetIsGroup: nodeMap.get(edge.targetId)?.type === 'GROUP',
 				sourcePort: edge.sourcePort || 'auto',
 				targetPort: edge.targetPort || 'auto',
-				waypoints: edge.waypoints || [],
 			};
-
-			// Waypoint-based segments
-			const srcNode = nodeMap.get(edge.sourceId);
-			const tgtNode = nodeMap.get(edge.targetId);
-			if (edge.waypoints && edge.waypoints.length > 0 && srcNode && tgtNode) {
-				data.curveStyle = 'segments';
-				const result = waypointsToSegments(
-					{ x: srcNode.positionX, y: srcNode.positionY },
-					{ x: tgtNode.positionX, y: tgtNode.positionY },
-					edge.waypoints
-				);
-				data.segmentDistances = result.distances;
-				data.segmentWeights = result.weights;
-			}
 
 			if (existing.length) {
 				existing.data(data);
-				if (data.curveStyle === 'segments') {
-					// Segment routing takes priority over taxi
-					existing.removeClass('taxi-routed');
-				} else {
-					// Clear stale segment data when waypoints are empty
-					existing.removeData('curveStyle');
-					existing.removeData('segmentDistances');
-					existing.removeData('segmentWeights');
-				}
 			} else {
 				cy.add({ group: 'edges', data });
 			}
 		});
-	});
-
-	// Apply or remove taxi routing based on layout state
-	cy.edges().forEach((e) => {
-		const wps = (e.data('waypoints') as Array<{x: number; y: number}>) || [];
-		if (ctx.taxiRouted && wps.length === 0) {
-			e.addClass('taxi-routed');
-		}
 	});
 
 	// Apply collapse state

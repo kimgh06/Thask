@@ -18,7 +18,7 @@ const (
 	layerGapY   = 60.0 // vertical gap between nodes in same layer
 	minGroupW   = 160.0
 	minGroupH   = 100.0
-	routePad    = 30.0 // padding around obstacles for edge routing
+	gridSize    = 40.0 // snap positions to this grid for metro-style alignment
 )
 
 type LayoutPosition struct {
@@ -32,14 +32,180 @@ type Point struct {
 	X, Y float64
 }
 
-type EdgeRoute struct {
-	ID        string
-	Waypoints []Point // nil = straight line
+type LayoutResult struct {
+	Positions []LayoutPosition
 }
 
-type LayoutResult struct {
-	Positions  []LayoutPosition
-	EdgeRoutes []EdgeRoute
+// snapToGrid rounds a value to the nearest grid point.
+func snapToGrid(v float64) float64 {
+	return math.Round(v/gridSize) * gridSize
+}
+
+// reorderByBarycenter reorders nodes within layers to minimize edge crossings
+// using the barycenter heuristic with forward/backward sweeps.
+func reorderByBarycenter(layerNodes map[int][]string, maxLayer int, edges []model.Edge, nodeMap map[string]*model.Node) {
+	// Build bidirectional adjacency for top-level nodes
+	adj := make(map[string]map[string]bool)
+	for _, e := range edges {
+		src := resolveTopLevel(e.SourceID, nodeMap)
+		tgt := resolveTopLevel(e.TargetID, nodeMap)
+		if src == tgt || e.EdgeType == model.EdgeTypeRelated {
+			continue
+		}
+		if adj[src] == nil {
+			adj[src] = make(map[string]bool)
+		}
+		if adj[tgt] == nil {
+			adj[tgt] = make(map[string]bool)
+		}
+		adj[src][tgt] = true
+		adj[tgt][src] = true
+	}
+
+	// Build index: node → layer, node → position within its layer
+	layerOf := make(map[string]int)
+	indexOf := make(map[string]int)
+	for l, ids := range layerNodes {
+		for i, id := range ids {
+			layerOf[id] = l
+			indexOf[id] = i
+		}
+	}
+
+	// 12 forward+backward sweep pairs for convergence
+	for sweep := 0; sweep < 12; sweep++ {
+		// Forward sweep: layer 1 → maxLayer
+		for l := 1; l <= maxLayer; l++ {
+			ids := layerNodes[l]
+			bary := make(map[string]float64, len(ids))
+			for _, id := range ids {
+				sum := 0.0
+				count := 0
+				for nid := range adj[id] {
+					if layerOf[nid] == l-1 {
+						sum += float64(indexOf[nid])
+						count++
+					}
+				}
+				if count > 0 {
+					bary[id] = sum / float64(count)
+				} else {
+					bary[id] = float64(indexOf[id])
+				}
+			}
+			sort.SliceStable(ids, func(i, j int) bool {
+				return bary[ids[i]] < bary[ids[j]]
+			})
+			for i, id := range ids {
+				indexOf[id] = i
+			}
+		}
+		// Backward sweep: layer maxLayer-1 → 0
+		for l := maxLayer - 1; l >= 0; l-- {
+			ids := layerNodes[l]
+			bary := make(map[string]float64, len(ids))
+			for _, id := range ids {
+				sum := 0.0
+				count := 0
+				for nid := range adj[id] {
+					if layerOf[nid] == l+1 {
+						sum += float64(indexOf[nid])
+						count++
+					}
+				}
+				if count > 0 {
+					bary[id] = sum / float64(count)
+				} else {
+					bary[id] = float64(indexOf[id])
+				}
+			}
+			sort.SliceStable(ids, func(i, j int) bool {
+				return bary[ids[i]] < bary[ids[j]]
+			})
+			for i, id := range ids {
+				indexOf[id] = i
+			}
+		}
+	}
+}
+
+// findSCCs returns strongly connected components using Tarjan's algorithm.
+func findSCCs(nodeIDs []string, outEdges map[string][]string) [][]string {
+	index := 0
+	stack := make([]string, 0)
+	onStack := make(map[string]bool)
+	indices := make(map[string]int)
+	lowlinks := make(map[string]int)
+	defined := make(map[string]bool)
+	var sccs [][]string
+
+	var strongConnect func(v string)
+	strongConnect = func(v string) {
+		indices[v] = index
+		lowlinks[v] = index
+		defined[v] = true
+		index++
+		stack = append(stack, v)
+		onStack[v] = true
+
+		for _, w := range outEdges[v] {
+			if !defined[w] {
+				strongConnect(w)
+				if lowlinks[w] < lowlinks[v] {
+					lowlinks[v] = lowlinks[w]
+				}
+			} else if onStack[w] {
+				if indices[w] < lowlinks[v] {
+					lowlinks[v] = indices[w]
+				}
+			}
+		}
+
+		if lowlinks[v] == indices[v] {
+			var scc []string
+			for {
+				w := stack[len(stack)-1]
+				stack = stack[:len(stack)-1]
+				onStack[w] = false
+				scc = append(scc, w)
+				if w == v {
+					break
+				}
+			}
+			sccs = append(sccs, scc)
+		}
+	}
+
+	for _, v := range nodeIDs {
+		if !defined[v] {
+			strongConnect(v)
+		}
+	}
+	return sccs
+}
+
+// computeCircleRadius returns a radius so that n nodes don't overlap on a circle.
+func computeCircleRadius(n int) float64 {
+	minArc := nodeW + cellPad/2
+	circumference := float64(n) * minArc
+	radius := circumference / (2 * math.Pi)
+	if radius < nodeW {
+		radius = nodeW
+	}
+	return snapToGrid(radius)
+}
+
+// circularLayout positions nodeIDs evenly on a circle, starting from the top.
+func circularLayout(nodeIDs []string, centerX, centerY, radius float64) map[string][2]float64 {
+	positions := make(map[string][2]float64, len(nodeIDs))
+	n := len(nodeIDs)
+	for i, id := range nodeIDs {
+		angle := 2*math.Pi*float64(i)/float64(n) - math.Pi/2
+		x := snapToGrid(centerX + radius*math.Cos(angle))
+		y := snapToGrid(centerY + radius*math.Sin(angle))
+		positions[id] = [2]float64{x, y}
+	}
+	return positions
 }
 
 func CalculateLayout(nodes []model.Node, edges []model.Edge, algorithm string) LayoutResult {
@@ -50,162 +216,6 @@ func CalculateLayout(nodes []model.Node, edges []model.Edge, algorithm string) L
 		positions = dagreLayout(nodes, edges)
 	}
 	return LayoutResult{Positions: positions}
-}
-
-// --- Edge routing: Manhattan-style orthogonal routing ---
-
-type bbox struct {
-	minX, minY, maxX, maxY float64
-}
-
-func routeEdges(positions []LayoutPosition, edges []model.Edge, nodes []model.Node) []EdgeRoute {
-	topLevel := make(map[string]bool)
-	for _, n := range nodes {
-		if n.ParentID == nil {
-			topLevel[n.ID] = true
-		}
-	}
-
-	posMap := make(map[string]Point)
-	boxes := make(map[string]bbox)
-	for _, lp := range positions {
-		posMap[lp.ID] = Point{lp.X, lp.Y}
-		if !topLevel[lp.ID] {
-			continue
-		}
-		w := nodeW
-		h := nodeH
-		if lp.Width != nil {
-			w = *lp.Width
-		}
-		if lp.Height != nil {
-			h = *lp.Height
-		}
-		boxes[lp.ID] = bbox{
-			minX: lp.X - w/2,
-			minY: lp.Y - h/2,
-			maxX: lp.X + w/2,
-			maxY: lp.Y + h/2,
-		}
-	}
-
-	routes := make([]EdgeRoute, 0, len(edges))
-	for _, edge := range edges {
-		srcPos, srcOk := posMap[edge.SourceID]
-		tgtPos, tgtOk := posMap[edge.TargetID]
-		if !srcOk || !tgtOk {
-			routes = append(routes, EdgeRoute{ID: edge.ID})
-			continue
-		}
-
-		var obstacles []bbox
-		for id, box := range boxes {
-			if id == edge.SourceID || id == edge.TargetID {
-				continue
-			}
-			expanded := bbox{
-				minX: box.minX - routePad/2,
-				minY: box.minY - routePad/2,
-				maxX: box.maxX + routePad/2,
-				maxY: box.maxY + routePad/2,
-			}
-			if lineIntersectsBox(srcPos, tgtPos, expanded) {
-				obstacles = append(obstacles, box)
-			}
-		}
-
-		if len(obstacles) == 0 {
-			routes = append(routes, EdgeRoute{ID: edge.ID})
-			continue
-		}
-
-		sort.Slice(obstacles, func(i, j int) bool {
-			di := math.Hypot(((obstacles[i].minX+obstacles[i].maxX)/2)-srcPos.X, ((obstacles[i].minY+obstacles[i].maxY)/2)-srcPos.Y)
-			dj := math.Hypot(((obstacles[j].minX+obstacles[j].maxX)/2)-srcPos.X, ((obstacles[j].minY+obstacles[j].maxY)/2)-srcPos.Y)
-			return di < dj
-		})
-
-		waypoints := manhattanRoute(srcPos, tgtPos, obstacles)
-		routes = append(routes, EdgeRoute{ID: edge.ID, Waypoints: waypoints})
-	}
-	return routes
-}
-
-// manhattanRoute generates orthogonal (L/Z-shaped) waypoints around obstacles.
-func manhattanRoute(src, tgt Point, obstacles []bbox) []Point {
-	if len(obstacles) == 0 {
-		return nil
-	}
-
-	// Merge all obstacle bounding boxes into a single avoidance zone
-	combined := obstacles[0]
-	for _, obs := range obstacles[1:] {
-		combined.minX = math.Min(combined.minX, obs.minX)
-		combined.minY = math.Min(combined.minY, obs.minY)
-		combined.maxX = math.Max(combined.maxX, obs.maxX)
-		combined.maxY = math.Max(combined.maxY, obs.maxY)
-	}
-
-	// Determine whether to route above or below the obstacle zone
-	midY := (combined.minY + combined.maxY) / 2
-	avgY := (src.Y + tgt.Y) / 2
-
-	var routeY float64
-	if avgY < midY {
-		routeY = combined.minY - routePad
-	} else {
-		routeY = combined.maxY + routePad
-	}
-
-	// Manhattan route: src → horizontal out → vertical to routeY → horizontal to tgt.X → down to tgt
-	var waypoints []Point
-
-	// Only add waypoints if they actually change direction
-	if math.Abs(src.Y-routeY) > 1 || math.Abs(tgt.Y-routeY) > 1 {
-		waypoints = append(waypoints,
-			Point{src.X, routeY},  // go vertical from source
-			Point{tgt.X, routeY},  // go horizontal at avoidance level
-		)
-	}
-
-	return waypoints
-}
-
-// lineIntersectsBox checks if line segment p1→p2 intersects axis-aligned bounding box.
-func lineIntersectsBox(p1, p2 Point, box bbox) bool {
-	dx := p2.X - p1.X
-	dy := p2.Y - p1.Y
-
-	var tmin, tmax float64
-	tmin = 0
-	tmax = 1
-
-	const eps = 1e-9
-	if math.Abs(dx) > eps {
-		tx1 := (box.minX - p1.X) / dx
-		tx2 := (box.maxX - p1.X) / dx
-		if tx1 > tx2 {
-			tx1, tx2 = tx2, tx1
-		}
-		tmin = math.Max(tmin, tx1)
-		tmax = math.Min(tmax, tx2)
-	} else if p1.X < box.minX || p1.X > box.maxX {
-		return false
-	}
-
-	if math.Abs(dy) > eps {
-		ty1 := (box.minY - p1.Y) / dy
-		ty2 := (box.maxY - p1.Y) / dy
-		if ty1 > ty2 {
-			ty1, ty2 = ty2, ty1
-		}
-		tmin = math.Max(tmin, ty1)
-		tmax = math.Min(tmax, ty2)
-	} else if p1.Y < box.minY || p1.Y > box.maxY {
-		return false
-	}
-
-	return tmin <= tmax
 }
 
 // --- Hierarchical layout (dagre-style) with dynamic spacing ---
@@ -262,6 +272,73 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		inDegree[tgt]++
 	}
 
+	// Detect cycles using Tarjan's SCC and collapse them
+	sccs := findSCCs(topLevel, outEdges)
+	repCycle := make(map[string][]string)   // representative → cycle members
+	cycleNodeSet := make(map[string]bool)   // all cycle member nodes
+	for _, scc := range sccs {
+		if len(scc) <= 1 {
+			continue
+		}
+		rep := scc[0]
+		repCycle[rep] = scc
+		for _, id := range scc {
+			cycleNodeSet[id] = true
+		}
+		// Reserve space for circular layout
+		radius := computeCircleRadius(len(scc))
+		diameter := 2*radius + nodeW
+		groupSizes[rep] = [2]float64{diameter, diameter}
+	}
+
+	// Remove non-representative cycle nodes from topLevel for BFS
+	if len(cycleNodeSet) > 0 {
+		filtered := make([]string, 0, len(topLevel))
+		for _, id := range topLevel {
+			if cycleNodeSet[id] && repCycle[id] == nil {
+				// non-representative cycle node → skip
+				delete(topSet, id)
+				continue
+			}
+			filtered = append(filtered, id)
+		}
+		topLevel = filtered
+		// Redirect edges that target non-rep cycle nodes to their representative
+		for src, targets := range outEdges {
+			for i, tgt := range targets {
+				if cycleNodeSet[tgt] && repCycle[tgt] == nil {
+					// Find representative for this cycle node
+					for rep, members := range repCycle {
+						for _, m := range members {
+							if m == tgt {
+								outEdges[src][i] = rep
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+		// Recalculate inDegree for filtered topLevel
+		for id := range inDegree {
+			delete(inDegree, id)
+		}
+		for _, id := range topLevel {
+			inDegree[id] = 0
+		}
+		for src, targets := range outEdges {
+			if !topSet[src] {
+				continue
+			}
+			for _, tgt := range targets {
+				if !topSet[tgt] || src == tgt {
+					continue
+				}
+				inDegree[tgt]++
+			}
+		}
+	}
+
 	layers := make(map[string]int)
 	var queue []string
 	for _, id := range topLevel {
@@ -301,6 +378,9 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		}
 	}
 
+	// Reorder nodes within layers to minimize edge crossings
+	reorderByBarycenter(layerNodes, maxLayer, edges, nodeMap)
+
 	// Dynamic X spacing: compute per-layer max width
 	layerMaxW := make(map[int]float64)
 	for l := 0; l <= maxLayer; l++ {
@@ -313,31 +393,51 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		layerMaxW[l] = maxW
 	}
 
-	// Cumulative X positioning
+	// Cumulative X positioning (grid-aligned)
 	layerX := make(map[int]float64)
 	cumX := 0.0
 	for l := 0; l <= maxLayer; l++ {
-		layerX[l] = cumX + layerMaxW[l]/2
-		cumX += layerMaxW[l] + layerGapX
+		layerX[l] = cumX + snapToGrid(layerMaxW[l]/2)
+		cumX += snapToGrid(layerMaxW[l]) + math.Ceil(layerGapX/gridSize)*gridSize
 	}
 
-	// Dynamic Y spacing per layer
+	// Dynamic Y positioning per layer — pack using individual node heights
 	positions := make(map[string][2]float64)
 	for layer, ids := range layerNodes {
-		// Compute max height for nodes in this layer
-		maxH := nodeH
-		for _, id := range ids {
-			if sz, ok := groupSizes[id]; ok && sz[1] > maxH {
-				maxH = sz[1]
+		nodeHts := make([]float64, len(ids))
+		for i, id := range ids {
+			h := nodeH
+			if sz, ok := groupSizes[id]; ok {
+				h = sz[1]
+			}
+			nodeHts[i] = h
+		}
+		totalH := 0.0
+		for i, h := range nodeHts {
+			totalH += h
+			if i < len(ids)-1 {
+				totalH += layerGapY
 			}
 		}
-		spacing := maxH + layerGapY
-		count := len(ids)
+		y := -totalH / 2
+		x := snapToGrid(layerX[layer])
 		for i, id := range ids {
-			x := layerX[layer]
-			y := (float64(i) - float64(count-1)/2.0) * spacing
-			positions[id] = [2]float64{x, y}
+			cy := snapToGrid(y + nodeHts[i]/2)
+			positions[id] = [2]float64{x, cy}
+			y += nodeHts[i] + layerGapY
 		}
+	}
+
+	// Expand cycle representatives into circular positions
+	for rep, members := range repCycle {
+		center := positions[rep]
+		radius := computeCircleRadius(len(members))
+		circPos := circularLayout(members, center[0], center[1], radius)
+		for id, pos := range circPos {
+			positions[id] = pos
+		}
+		// Remove the artificial groupSize so it doesn't emit Width/Height
+		delete(groupSizes, rep)
 	}
 
 	result := make([]LayoutPosition, 0, len(nodes))

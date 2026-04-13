@@ -156,6 +156,25 @@ func (r *EdgeRepo) DeleteScoped(ctx context.Context, id, projectID string) error
 	return nil
 }
 
+// WaypointUpdate holds an edge ID and its JSON-encoded waypoints.
+type WaypointUpdate struct {
+	ID        string
+	Waypoints []byte
+}
+
+// BatchUpdateWaypoints saves computed waypoints for multiple edges.
+func (r *EdgeRepo) BatchUpdateWaypoints(ctx context.Context, updates []WaypointUpdate) error {
+	for _, u := range updates {
+		if _, err := r.pool.Exec(ctx,
+			`UPDATE edges SET waypoints = $1 WHERE id = $2`,
+			u.Waypoints, u.ID,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // FindByProjectIDPaginated returns edges with cursor-based pagination.
 func (r *EdgeRepo) FindByProjectIDPaginated(ctx context.Context, projectID string, limit int, afterTime *time.Time, afterID *string) ([]model.Edge, bool, error) {
 	args := []any{projectID}

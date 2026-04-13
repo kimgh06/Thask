@@ -58,7 +58,6 @@ export interface GraphEdge {
 	label: string | null;
 	sourcePort: string;
 	targetPort: string;
-	waypoints: Array<{ x: number; y: number }>;
 	createdAt: string;
 }
 

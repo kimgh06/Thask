@@ -16,7 +16,7 @@
 	import { attachGroupDragHandlers } from '$lib/cytoscape/handlers/groupDrag';
 	import { initEdgehandles, attachEdgeCreationHandlers, isOnGroupBorder } from '$lib/cytoscape/handlers/edgeCreation';
 	import { attachSelectionHandlers } from '$lib/cytoscape/handlers/selection';
-	import { attachWaypointHandlers } from '$lib/cytoscape/handlers/edgeWaypoints';
+	import { attachDynamicRouting } from '$lib/cytoscape/edgeRouter';
 	import { attachStatusDots } from '$lib/cytoscape/statusDot';
 
 	// Register extensions once at module level
@@ -48,7 +48,6 @@
 	let container: HTMLDivElement;
 	let cy: cytoscape.Core | null = $state(null);
 	let initialLayoutDone = false;
-	let taxiLayoutActive = $state(false);
 	let activeTimeouts: ReturnType<typeof setTimeout>[] = [];
 	let lastMouseModelPos = { x: 0, y: 0 };
 
@@ -71,7 +70,6 @@
 			typeFilter: graphStore.typeFilter,
 			statusFilter: graphStore.statusFilter,
 			initialLayoutDone,
-			taxiRouted: taxiLayoutActive,
 			onUpdateNodeParent,
 		});
 	}
@@ -103,7 +101,7 @@
 		try {
 			const res = await api.post(`${resolvedApiBase}/graph/layout`, { algorithm });
 			if (res.data) {
-				const serverData = res.data as { nodes?: Array<{ id: string; positionX: number; positionY: number; width?: number; height?: number }>; edges?: Array<{ id: string; waypoints?: Array<{ x: number; y: number }> }> };
+				const serverData = res.data as { nodes?: Array<{ id: string; positionX: number; positionY: number; width?: number; height?: number }> };
 				const serverNodes = serverData.nodes || [];
 				serverNodes.forEach((sn) => {
 					const ele = cy!.getElementById(sn.id);
@@ -117,15 +115,6 @@
 						if (sn.height) ele.data('height', sn.height);
 					}
 				});
-				// Apply taxi routing for clean orthogonal edges after layout
-				cy!.edges().forEach((edge: any) => {
-					edge.data('waypoints', []);
-					edge.removeData('segmentDistances');
-					edge.removeData('segmentWeights');
-					edge.addClass('taxi-routed');
-				});
-				taxiLayoutActive = true;
-				localStorage.setItem(`thask-taxi-${projectId}`, '1');
 				setTimeout(() => cy?.fit(undefined, 50), 450);
 			}
 		} catch {
@@ -259,10 +248,6 @@
 			userZoomingEnabled: true,
 		});
 
-		// Restore taxi layout state from localStorage
-		const taxiKey = `thask-taxi-${projectId}`;
-		taxiLayoutActive = localStorage.getItem(taxiKey) === '1';
-
 		const cleanups: Array<{ cleanup: () => void }> = [];
 
 		// Selection handlers (always active — needed for detail panel in readonly too)
@@ -312,11 +297,9 @@
 			});
 			cleanups.push(edgeCreationHandlers);
 
-			// Waypoint editing
-			const waypointHandlers = attachWaypointHandlers(cy, {
-				getApiBase: () => resolvedApiBase,
-			});
-			cleanups.push(waypointHandlers);
+			// Dynamic 8-direction edge routing
+			const cleanupRouting = attachDynamicRouting(cy);
+			cleanups.push({ cleanup: cleanupRouting });
 		}
 
 		// Zoom tracking
