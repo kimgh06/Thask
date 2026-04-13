@@ -12,7 +12,7 @@ export function attachSelectionHandlers(
 
 	function syncMultiSelectClasses() {
 		cy.nodes().removeClass('multi-selected');
-		if (graphStore.selectedNodeIds.size > 1) {
+		if (graphStore.selectedNodeIds.size >= 1) {
 			graphStore.selectedNodeIds.forEach((id) => {
 				cy.getElementById(id).addClass('multi-selected');
 			});

@@ -144,6 +144,7 @@ export function getGraphStyles(theme: 'dark' | 'light' = 'dark'): StylesheetStyl
     {
       selector: 'edge',
       style: {
+        'z-index': 5,
         width: 1.5,
         opacity: 0.75,
         'line-color': C.border,
