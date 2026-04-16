@@ -12,6 +12,7 @@ export interface ShortcutActions {
 	runLayout: () => void;
 	toggleImpact: () => void;
 	toggleAnalysis: () => void;
+	togglePanel?: () => void;
 }
 
 export function createKeydownHandler(actions: ShortcutActions): (e: KeyboardEvent) => void {
@@ -77,6 +78,9 @@ export function createKeydownHandler(actions: ShortcutActions): (e: KeyboardEven
 			case 'KeyA':
 				if (!e.shiftKey) return;
 				actions.toggleAnalysis();
+				break;
+			case 'BracketRight':
+				actions.togglePanel?.();
 				break;
 			default:
 				return;

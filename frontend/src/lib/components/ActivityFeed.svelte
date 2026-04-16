@@ -51,6 +51,22 @@
 			case 'updated':
 				if (entry.fieldName) return `updated ${entry.fieldName}`;
 				return 'updated a node';
+			case 'edge_created':
+				return 'created an edge';
+			case 'edge_deleted':
+				return 'deleted an edge';
+			case 'tag_added':
+				return `added tag: ${entry.newValue}`;
+			case 'tag_removed':
+				return `removed tag: ${entry.oldValue}`;
+			case 'type_changed':
+				return `changed type: ${entry.oldValue} → ${entry.newValue}`;
+			case 'title_updated':
+				return `renamed: ${entry.oldValue} → ${entry.newValue}`;
+			case 'description_updated':
+				return 'updated description';
+			case 'node_moved':
+				return 'moved node';
 			default:
 				return entry.action;
 		}
@@ -68,76 +84,25 @@
 	}
 </script>
 
-<div class="activity-feed">
-	<div class="activity-header">
+<div class="border-t" style="border-color: var(--color-border-subtle); padding: 0.75rem 0;">
+	<div class="flex items-center gap-2 px-4 pb-2" style="font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-text-muted);">
 		<Clock size={14} />
 		<span>Activity</span>
 	</div>
 
 	{#if loading}
-		<p class="activity-empty">Loading...</p>
+		<p class="px-4 py-4 text-center text-xs" style="color: var(--color-text-dim);">Loading...</p>
 	{:else if entries.length === 0}
-		<p class="activity-empty">No activity yet</p>
+		<p class="px-4 py-4 text-center text-xs" style="color: var(--color-text-dim);">No activity yet</p>
 	{:else}
-		<div class="activity-list">
+		<div style="max-height: 300px; overflow-y: auto;">
 			{#each entries as entry (entry.id)}
-				<div class="activity-item">
-					<div class="activity-actor">{entry.userName}</div>
-					<div class="activity-action">{formatAction(entry)}</div>
-					<div class="activity-time">{timeAgo(entry.createdAt)}</div>
+				<div class="px-4 py-2 border-b" style="border-color: var(--color-border-subtle);">
+					<div class="text-xs font-semibold" style="color: var(--color-text);">{entry.userName}</div>
+					<div class="text-[0.6875rem] mt-0.5" style="color: var(--color-text-dim);">{formatAction(entry)}</div>
+					<div class="text-[0.625rem] mt-0.5" style="color: var(--color-text-dim); opacity: 0.7;">{timeAgo(entry.createdAt)}</div>
 				</div>
 			{/each}
 		</div>
 	{/if}
 </div>
-
-<style>
-	.activity-feed {
-		border-top: 1px solid var(--color-border-subtle);
-		padding: 0.75rem 0;
-	}
-	.activity-header {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0 1rem 0.5rem;
-		font-size: 0.6875rem;
-		font-weight: 600;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-		color: var(--color-text-muted);
-	}
-	.activity-empty {
-		padding: 1rem;
-		text-align: center;
-		font-size: 0.75rem;
-		color: var(--color-text-dim);
-	}
-	.activity-list {
-		max-height: 300px;
-		overflow-y: auto;
-	}
-	.activity-item {
-		padding: 0.5rem 1rem;
-		border-bottom: 1px solid var(--color-border-subtle);
-	}
-	.activity-item:last-child {
-		border-bottom: none;
-	}
-	.activity-actor {
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: var(--color-text);
-	}
-	.activity-action {
-		font-size: 0.6875rem;
-		color: var(--color-text-dim);
-		margin-top: 0.125rem;
-	}
-	.activity-time {
-		font-size: 0.625rem;
-		color: var(--color-text-dim);
-		margin-top: 0.125rem;
-		opacity: 0.7;
-	}
-</style>

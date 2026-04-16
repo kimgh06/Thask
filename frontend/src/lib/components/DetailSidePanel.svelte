@@ -12,6 +12,7 @@
 		// Node mode
 		node: NodeDetail | null;
 		allNodes: GraphNode[];
+		allEdges?: GraphEdge[];
 		// Edge mode
 		selectedEdge: GraphEdge | null;
 		// Multi-select mode
@@ -38,6 +39,7 @@
 		projectId,
 		node,
 		allNodes,
+		allEdges,
 		selectedEdge,
 		selectedNodes,
 		onclose,
@@ -89,43 +91,46 @@
 		</button>
 	</div>
 
-	<!-- Content -->
-	<div class="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
-		{#if panelMode === 'node' && node}
-			<NodeDetailView
-				{node}
-				{allNodes}
-				onupdate={onUpdateNode}
-				ondelete={onDeleteNode}
-				onselectnode={onSelectNode}
-				onstartedge={onStartEdgeDrawing}
-				{readonly}
-			/>
-		{:else if panelMode === 'edge' && selectedEdge}
-			<EdgeDetailView
-				edge={selectedEdge}
-				{allNodes}
-				onselect={onEdgeTypeChange}
-				onupdatelabel={onEdgeLabelUpdate}
-				ondelete={onDeleteEdge}
-				onselectnode={onSelectNode}
-				{readonly}
-			/>
-		{:else if panelMode === 'multi-select'}
-			<MultiSelectView
-				{selectedNodes}
-				onbatchdelete={onBatchDelete}
-				onbatchstatus={onBatchStatus}
-				onbatchtype={onBatchType}
-				onbatchaddtag={onBatchAddTag}
-				oncreategroup={onCreateGroupFromSelection}
-			/>
-		{/if}
-	</div>
+	<!-- Content (hidden in empty mode) -->
+	{#if panelMode !== 'empty'}
+		<div class="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+			{#if panelMode === 'node' && node}
+				<NodeDetailView
+					{node}
+					{allNodes}
+					{allEdges}
+					onupdate={onUpdateNode}
+					ondelete={onDeleteNode}
+					onselectnode={onSelectNode}
+					onstartedge={onStartEdgeDrawing}
+					{readonly}
+				/>
+			{:else if panelMode === 'edge' && selectedEdge}
+				<EdgeDetailView
+					edge={selectedEdge}
+					{allNodes}
+					onselect={onEdgeTypeChange}
+					onupdatelabel={onEdgeLabelUpdate}
+					ondelete={onDeleteEdge}
+					onselectnode={onSelectNode}
+					{readonly}
+				/>
+			{:else if panelMode === 'multi-select'}
+				<MultiSelectView
+					{selectedNodes}
+					onbatchdelete={onBatchDelete}
+					onbatchstatus={onBatchStatus}
+					onbatchtype={onBatchType}
+					onbatchaddtag={onBatchAddTag}
+					oncreategroup={onCreateGroupFromSelection}
+				/>
+			{/if}
+		</div>
+	{/if}
 
-	<!-- Activity Feed (always visible at bottom, only when projectId available) -->
+	<!-- Activity Feed (always visible, expands to fill space in empty mode) -->
 	{#if projectId}
-		<div class="flex-shrink-0 max-h-[40%] overflow-y-auto">
+		<div class={panelMode === 'empty' ? 'flex-1 overflow-y-auto' : 'flex-shrink-0 max-h-[40%] overflow-y-auto'}>
 			<ActivityFeed bind:this={activityFeed} {projectId} />
 		</div>
 	{/if}

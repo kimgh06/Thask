@@ -14,6 +14,7 @@
 	import { exportPNG, exportJSON, importJSON } from '$lib/export';
 	import { realtimeStore } from '$lib/stores/realtime.svelte';
 	import ShareDialog from '$lib/components/ShareDialog.svelte';
+	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 
 
 	let nodes = $state<GraphNode[]>([]);
@@ -22,6 +23,7 @@
 	let loadError = $state('');
 	let showShareDialog = $state(false);
 	let projectName = $state('');
+	let panelCollapsed = $state(false);
 
 	const projectId = $derived(page.params.projectId ?? '');
 
@@ -252,6 +254,7 @@
 		runLayout: (algorithm?: string) => canvas?.runLayout(algorithm),
 		toggleImpact: () => { if (graphStore.selectedNodeId || graphStore.impactMode) graphStore.toggleImpactMode(); },
 		toggleAnalysis: () => graphStore.toggleAnalysisMode(),
+		togglePanel: () => { panelCollapsed = !panelCollapsed; },
 	});
 </script>
 
@@ -321,33 +324,53 @@
 					<span style="color: var(--color-border);">&middot;</span>
 					<span>{Math.round(zoomLevel * 100)}%</span>
 				</div>
+
+				<!-- Panel toggle button -->
+				<button
+					onclick={() => panelCollapsed = !panelCollapsed}
+					class="absolute right-0 top-1/2 -translate-y-1/2 z-50 w-4 h-12 flex items-center justify-center rounded-l transition-colors"
+					style="background: var(--color-surface); border: 1px solid var(--color-border); border-right: none; color: var(--color-text-muted);"
+					title="{panelCollapsed ? 'Expand panel' : 'Collapse panel'}"
+				>
+					{#if panelCollapsed}
+						<ChevronLeft size={12} />
+					{:else}
+						<ChevronRight size={12} />
+					{/if}
+				</button>
 			{/if}
 		</div>
 
 		<!-- Side Panel (always visible) -->
 		{#if !loading && !loadError}
-			<DetailSidePanel
-				bind:this={sidePanel}
-				{panelMode}
-				{projectId}
-				node={selectedNodeDetail}
-				allNodes={nodes}
-				{selectedEdge}
-				{selectedNodes}
-				onclose={() => graphStore.clearSelection()}
-				onUpdateNode={nodeCrud.handleUpdateNode}
-				onDeleteNode={nodeCrud.handleDeleteNode}
-				onSelectNode={handleSelectNodeFromPanel}
-				onEdgeTypeChange={edgeCrud.handleEdgeTypeChange}
-				onEdgeLabelUpdate={edgeCrud.handleEdgeLabelUpdate}
-				onDeleteEdge={edgeCrud.handleDeleteEdge}
-				onBatchDelete={nodeCrud.handleBatchDelete}
-				onBatchStatus={nodeCrud.handleBatchStatus}
-				onBatchType={nodeCrud.handleBatchType}
-				onBatchAddTag={nodeCrud.handleBatchAddTag}
-				onCreateGroupFromSelection={nodeCrud.handleCreateGroupFromSelection}
-				onStartEdgeDrawing={handleStartEdgeDrawing}
-			/>
+			<div
+				class="transition-all duration-200 overflow-hidden flex-shrink-0"
+				style="width: {panelCollapsed ? '0' : '350px'};"
+			>
+				<DetailSidePanel
+					bind:this={sidePanel}
+					{panelMode}
+					{projectId}
+					node={selectedNodeDetail}
+					allNodes={nodes}
+					allEdges={edges}
+					{selectedEdge}
+					{selectedNodes}
+					onclose={() => graphStore.clearSelection()}
+					onUpdateNode={nodeCrud.handleUpdateNode}
+					onDeleteNode={nodeCrud.handleDeleteNode}
+					onSelectNode={handleSelectNodeFromPanel}
+					onEdgeTypeChange={edgeCrud.handleEdgeTypeChange}
+					onEdgeLabelUpdate={edgeCrud.handleEdgeLabelUpdate}
+					onDeleteEdge={edgeCrud.handleDeleteEdge}
+					onBatchDelete={nodeCrud.handleBatchDelete}
+					onBatchStatus={nodeCrud.handleBatchStatus}
+					onBatchType={nodeCrud.handleBatchType}
+					onBatchAddTag={nodeCrud.handleBatchAddTag}
+					onCreateGroupFromSelection={nodeCrud.handleCreateGroupFromSelection}
+					onStartEdgeDrawing={handleStartEdgeDrawing}
+				/>
+			</div>
 		{/if}
 	</div>
 </div>

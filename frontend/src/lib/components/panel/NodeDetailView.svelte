@@ -1,12 +1,13 @@
 <script lang="ts">
-	import type { GraphNode, NodeType, NodeStatus, NodeHistoryEntry, NodeDetail } from '$lib/types';
+	import type { GraphNode, GraphEdge, NodeType, NodeStatus, NodeHistoryEntry, NodeDetail } from '$lib/types';
 	import { NODE_TYPES, STATUS_OPTIONS, TYPE_COLORS, STATUS_COLORS, STATUS_LABELS } from '$lib/constants';
-	import { Trash2, Clock, Tag, Link2, History, FileText, MoreHorizontal, Cable } from 'lucide-svelte';
+	import { Trash2, Clock, Tag, Link2, History, FileText, MoreHorizontal, Cable, ArrowUpToLine, ArrowDownToLine } from 'lucide-svelte';
 	import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';
 
 	interface Props {
 		node: NodeDetail;
 		allNodes: GraphNode[];
+		allEdges?: GraphEdge[];
 		onupdate: (nodeId: string, data: Record<string, unknown>) => void;
 		ondelete: (nodeId: string) => void;
 		onselectnode: (nodeId: string) => void;
@@ -14,10 +15,11 @@
 		readonly?: boolean;
 	}
 
-	let { node, allNodes, onupdate, ondelete, onselectnode, onstartedge, readonly = false }: Props = $props();
+	let { node, allNodes, allEdges, onupdate, ondelete, onselectnode, onstartedge, readonly = false }: Props = $props();
 
 	type Tab = 'details' | 'relations' | 'history';
 	let activeTab = $state<Tab>('details');
+	let lastNodeId = $state('');
 
 	let localTitle = $state('');
 	let localDescription = $state('');
@@ -35,7 +37,8 @@
 	});
 
 	$effect(() => {
-		if (node) {
+		if (node && node.id !== lastNodeId) {
+			lastNodeId = node.id;
 			activeTab = 'details';
 			showTypeDropdown = false;
 			showStatusDropdown = false;
@@ -101,6 +104,28 @@
 		allNodes.filter((n) => node.connectedNodeIds.includes(n.id) && n.id !== node.id),
 	);
 	let childNodes = $derived(allNodes.filter((n) => n.parentId === node.id));
+
+	// Use connectedEdges from node detail (always available) or fall back to allEdges prop
+	let edgeSource = $derived(node.connectedEdges?.length > 0 ? node.connectedEdges : (allEdges ?? []));
+	let hasEdgeDirection = $derived(edgeSource.length > 0);
+
+	// Upstream: edges where this node is the target (this node depends on the source)
+	let upstreamNodes = $derived(
+		hasEdgeDirection
+			? allNodes.filter((n) =>
+					edgeSource.some((e) => e.sourceId === n.id && e.targetId === node.id) && n.id !== node.id
+				)
+			: [],
+	);
+
+	// Downstream: edges where this node is the source (downstream nodes depend on this node)
+	let downstreamNodes = $derived(
+		hasEdgeDirection
+			? allNodes.filter((n) =>
+					edgeSource.some((e) => e.sourceId === node.id && e.targetId === n.id) && n.id !== node.id
+				)
+			: [],
+	);
 </script>
 
 <!-- Header: Type + Status badges + actions -->
@@ -280,28 +305,78 @@
 		{/if}
 
 	{:else if activeTab === 'relations'}
-		<div class="flex flex-col gap-2">
-			<span class="text-xs font-medium flex items-center gap-1.5" style="color: var(--color-text-muted);">
-				<Link2 size={12} /> Connected Nodes ({connectedNodes.length})
-			</span>
-			{#if connectedNodes.length === 0}
-				<p class="text-xs" style="color: var(--color-text-muted);">No connected nodes.</p>
-			{:else}
-				{#each connectedNodes as n}
-					<button
-						onclick={() => onselectnode(n.id)}
-						class="flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors"
-						style="background: var(--color-bg); border: 1px solid var(--color-border);"
-						onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-primary)'; }}
-						onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border)'; }}
-					>
-						<span class="w-2 h-2 rounded-full flex-shrink-0" style="background: {TYPE_COLORS[n.type]};"></span>
-						<span class="text-xs truncate flex-1" style="color: var(--color-text);">{n.title}</span>
-						<span class="text-xs flex-shrink-0" style="color: var(--color-text-muted);">{n.type}</span>
-					</button>
-				{/each}
-			{/if}
-		</div>
+		{#if hasEdgeDirection}
+			<!-- Upstream group -->
+			<div class="flex flex-col gap-2">
+				<span class="text-xs font-medium flex items-center gap-1.5" style="color: var(--color-text-muted);">
+					<ArrowUpToLine size={12} /> Upstream ({upstreamNodes.length})
+				</span>
+				{#if upstreamNodes.length === 0}
+					<p class="text-xs" style="color: var(--color-text-muted);">No upstream nodes.</p>
+				{:else}
+					{#each upstreamNodes as n}
+						<button
+							onclick={() => onselectnode(n.id)}
+							class="flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors"
+							style="background: var(--color-bg); border: 1px solid var(--color-border);"
+							onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-primary)'; }}
+							onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border)'; }}
+						>
+							<span class="w-2 h-2 rounded-full flex-shrink-0" style="background: {TYPE_COLORS[n.type]};"></span>
+							<span class="text-xs truncate flex-1" style="color: var(--color-text);">{n.title}</span>
+							<span class="text-xs flex-shrink-0" style="color: var(--color-text-muted);">{n.type}</span>
+						</button>
+					{/each}
+				{/if}
+			</div>
+			<!-- Downstream group -->
+			<div class="flex flex-col gap-2">
+				<span class="text-xs font-medium flex items-center gap-1.5" style="color: var(--color-text-muted);">
+					<ArrowDownToLine size={12} /> Downstream ({downstreamNodes.length})
+				</span>
+				{#if downstreamNodes.length === 0}
+					<p class="text-xs" style="color: var(--color-text-muted);">No downstream nodes.</p>
+				{:else}
+					{#each downstreamNodes as n}
+						<button
+							onclick={() => onselectnode(n.id)}
+							class="flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors"
+							style="background: var(--color-bg); border: 1px solid var(--color-border);"
+							onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-primary)'; }}
+							onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border)'; }}
+						>
+							<span class="w-2 h-2 rounded-full flex-shrink-0" style="background: {TYPE_COLORS[n.type]};"></span>
+							<span class="text-xs truncate flex-1" style="color: var(--color-text);">{n.title}</span>
+							<span class="text-xs flex-shrink-0" style="color: var(--color-text-muted);">{n.type}</span>
+						</button>
+					{/each}
+				{/if}
+			</div>
+		{:else}
+			<!-- Fallback: flat connected list when no edge direction info -->
+			<div class="flex flex-col gap-2">
+				<span class="text-xs font-medium flex items-center gap-1.5" style="color: var(--color-text-muted);">
+					<Link2 size={12} /> Connected Nodes ({connectedNodes.length})
+				</span>
+				{#if connectedNodes.length === 0}
+					<p class="text-xs" style="color: var(--color-text-muted);">No connected nodes.</p>
+				{:else}
+					{#each connectedNodes as n}
+						<button
+							onclick={() => onselectnode(n.id)}
+							class="flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors"
+							style="background: var(--color-bg); border: 1px solid var(--color-border);"
+							onmouseenter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-primary)'; }}
+							onmouseleave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border)'; }}
+						>
+							<span class="w-2 h-2 rounded-full flex-shrink-0" style="background: {TYPE_COLORS[n.type]};"></span>
+							<span class="text-xs truncate flex-1" style="color: var(--color-text);">{n.title}</span>
+							<span class="text-xs flex-shrink-0" style="color: var(--color-text-muted);">{n.type}</span>
+						</button>
+					{/each}
+				{/if}
+			</div>
+		{/if}
 
 		{#if node.type === 'GROUP' && childNodes.length > 0}
 			<div class="flex flex-col gap-2">
@@ -342,7 +417,9 @@
 							</span>
 							<span class="text-xs flex-shrink-0" style="color: var(--color-text-muted);">{entry.userName}</span>
 						</div>
-						{#if entry.oldValue !== null || entry.newValue !== null}
+						{#if entry.fieldName === 'description'}
+							<div class="text-xs" style="color: var(--color-text-muted);">updated description</div>
+						{:else if entry.oldValue !== null || entry.newValue !== null}
 							<div class="flex items-center gap-1 text-xs" style="color: var(--color-text-muted);">
 								{#if entry.oldValue !== null}<span class="line-through">{entry.oldValue}</span><span>→</span>{/if}
 								{#if entry.newValue !== null}<span style="color: var(--color-text);">{entry.newValue}</span>{/if}
