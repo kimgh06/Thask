@@ -15,8 +15,9 @@ const (
 	groupPadX   = 30.0
 	groupPadTop = 45.0
 	groupPadBot = 30.0
-	layerGapX   = 200.0 // horizontal gap between layers
-	layerGapY   = 60.0  // vertical gap between nodes in same layer
+	layerGapX   = 80.0  // horizontal gap between layers
+	layerGapY   = 120.0 // vertical gap between nodes in same layer
+	groupGapY   = 200.0 // vertical gap around group nodes
 	minGroupW   = 160.0
 	minGroupH   = 100.0
 	gridSize    = 40.0 // snap positions to this grid for metro-style alignment
@@ -62,16 +63,16 @@ func reorderByBarycenter(layerNodes map[int][]string, maxLayer int, adj map[stri
 			ids := layerNodes[l]
 			bary := make(map[string]float64, len(ids))
 			for _, id := range ids {
-				sum := 0.0
-				count := 0
+				var neighborPositions []float64
 				for nid := range adj[id] {
 					if layerOf[nid] == l-1 {
-						sum += float64(indexOf[nid])
-						count++
+						neighborPositions = append(neighborPositions, float64(indexOf[nid]))
 					}
 				}
+				count := len(neighborPositions)
 				if count > 0 {
-					bary[id] = sum / float64(count)
+					sort.Float64s(neighborPositions)
+					bary[id] = neighborPositions[len(neighborPositions)/2]
 				} else {
 					bary[id] = float64(indexOf[id])
 				}
@@ -88,16 +89,16 @@ func reorderByBarycenter(layerNodes map[int][]string, maxLayer int, adj map[stri
 			ids := layerNodes[l]
 			bary := make(map[string]float64, len(ids))
 			for _, id := range ids {
-				sum := 0.0
-				count := 0
+				var neighborPositions []float64
 				for nid := range adj[id] {
 					if layerOf[nid] == l+1 {
-						sum += float64(indexOf[nid])
-						count++
+						neighborPositions = append(neighborPositions, float64(indexOf[nid]))
 					}
 				}
+				count := len(neighborPositions)
 				if count > 0 {
-					bary[id] = sum / float64(count)
+					sort.Float64s(neighborPositions)
+					bary[id] = neighborPositions[len(neighborPositions)/2]
 				} else {
 					bary[id] = float64(indexOf[id])
 				}
@@ -110,6 +111,65 @@ func reorderByBarycenter(layerNodes map[int][]string, maxLayer int, adj map[stri
 			}
 		}
 	}
+}
+
+// adjacentExchange swaps adjacent pairs in each layer if it reduces edge crossings.
+func adjacentExchange(layerNodes map[int][]string, maxLayer int, adj map[string]map[string]bool) {
+	layerOf := make(map[string]int)
+	indexOf := make(map[string]int)
+	for l, ids := range layerNodes {
+		for i, id := range ids {
+			layerOf[id] = l
+			indexOf[id] = i
+		}
+	}
+
+	for improved := true; improved; {
+		improved = false
+		for l := 0; l <= maxLayer; l++ {
+			ids := layerNodes[l]
+			for i := 0; i < len(ids)-1; i++ {
+				u, v := ids[i], ids[i+1]
+				crossBefore := countPairCrossings(u, v, l, adj, indexOf, layerOf)
+				crossAfter := countPairCrossings(v, u, l, adj, indexOf, layerOf)
+				if crossAfter < crossBefore {
+					ids[i], ids[i+1] = ids[i+1], ids[i]
+					indexOf[ids[i]] = i
+					indexOf[ids[i+1]] = i + 1
+					improved = true
+				}
+			}
+		}
+	}
+}
+
+// countPairCrossings counts edge crossings involving two adjacent nodes u (at position uPos) and v (at position vPos).
+func countPairCrossings(u, v string, layer int, adj map[string]map[string]bool, indexOf map[string]int, layerOf map[string]int) int {
+	crossings := 0
+	uIdx := indexOf[u]
+	vIdx := indexOf[v]
+
+	for _, adjLayer := range []int{layer - 1, layer + 1} {
+		var uNeighbors, vNeighbors []int
+		for nid := range adj[u] {
+			if layerOf[nid] == adjLayer {
+				uNeighbors = append(uNeighbors, indexOf[nid])
+			}
+		}
+		for nid := range adj[v] {
+			if layerOf[nid] == adjLayer {
+				vNeighbors = append(vNeighbors, indexOf[nid])
+			}
+		}
+		for _, a := range uNeighbors {
+			for _, b := range vNeighbors {
+				if (uIdx < vIdx && a > b) || (uIdx > vIdx && a < b) {
+					crossings++
+				}
+			}
+		}
+	}
+	return crossings
 }
 
 // findSCCs returns strongly connected components using Tarjan's algorithm.
@@ -241,6 +301,7 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		inDegree[id] = 0
 	}
 
+	seenEdge := make(map[string]bool)
 	for _, e := range edges {
 		src, tgt := e.SourceID, e.TargetID
 		src = resolveTopLevel(src, nodeMap)
@@ -251,6 +312,17 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		if e.EdgeType == model.EdgeTypeRelated {
 			continue
 		}
+		// Deduplicate resolved edges and prevent false cycles
+		// (e.g., childA→nodeB + nodeB→childB resolves to GroupX→nodeB + nodeB→GroupX)
+		edgeKey := src + "|" + tgt
+		if seenEdge[edgeKey] {
+			continue
+		}
+		reverseKey := tgt + "|" + src
+		if seenEdge[reverseKey] {
+			continue // would create false cycle between group and outside node
+		}
+		seenEdge[edgeKey] = true
 		outEdges[src] = append(outEdges[src], tgt)
 		inDegree[tgt]++
 	}
@@ -268,10 +340,12 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		for _, id := range scc {
 			cycleNodeSet[id] = true
 		}
-		// Reserve space for circular layout
-		radius := computeCircleRadius(len(scc))
-		diameter := 2*radius + nodeW
-		groupSizes[rep] = [2]float64{diameter, diameter}
+		// Reserve space for circular layout (only if rep is not a real GROUP node)
+		if _, isRealGroup := groupSizes[rep]; !isRealGroup {
+			radius := computeCircleRadius(len(scc))
+			diameter := 2*radius + nodeW
+			groupSizes[rep] = [2]float64{diameter, diameter}
+		}
 	}
 
 	// Remove non-representative cycle nodes from topLevel for BFS
@@ -445,15 +519,19 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		}
 	}
 	reorderByBarycenter(layerNodes, maxLayer, fullAdj)
+	adjacentExchange(layerNodes, maxLayer, fullAdj)
 
 	// Dynamic Y positioning per layer — pack using individual node heights
+	// Use wider gaps around group nodes
 	positions := make(map[string][2]float64)
 	for layer, ids := range layerNodes {
 		nodeHts := make([]float64, len(ids))
+		isGroup := make([]bool, len(ids))
 		for i, id := range ids {
 			h := nodeH
 			if sz, ok := groupSizes[id]; ok {
 				h = sz[1]
+				isGroup[i] = true
 			}
 			nodeHts[i] = h
 		}
@@ -461,7 +539,11 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		for i, h := range nodeHts {
 			totalH += h
 			if i < len(ids)-1 {
-				totalH += layerGapY
+				if isGroup[i] || isGroup[i+1] {
+					totalH += groupGapY
+				} else {
+					totalH += layerGapY
+				}
 			}
 		}
 		y := -totalH / 2
@@ -469,7 +551,90 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		for i, id := range ids {
 			cy := snapToGrid(y + nodeHts[i]/2)
 			positions[id] = [2]float64{x, cy}
-			y += nodeHts[i] + layerGapY
+			gap := layerGapY
+			if i < len(ids)-1 && (isGroup[i] || isGroup[i+1]) {
+				gap = groupGapY
+			}
+			y += nodeHts[i] + gap
+		}
+	}
+
+	// Y-coordinate optimization: pull nodes toward median neighbor Y to straighten edges
+	for iter := 0; iter < 8; iter++ {
+		for l := 0; l <= maxLayer; l++ {
+			ids := layerNodes[l]
+			for i, id := range ids {
+				var neighborYs []float64
+				for nid := range fullAdj[id] {
+					if pos, ok := positions[nid]; ok {
+						neighborYs = append(neighborYs, pos[1])
+					}
+				}
+				if len(neighborYs) == 0 {
+					continue
+				}
+				sort.Float64s(neighborYs)
+				idealY := neighborYs[len(neighborYs)/2]
+
+				h := nodeH
+				if sz, ok := groupSizes[id]; ok {
+					h = sz[1]
+				}
+
+				// Clamp to maintain ordering with neighbors in same layer
+				_, idIsGroup := groupSizes[id]
+				if i > 0 {
+					prevH := nodeH
+					_, prevIsGroup := groupSizes[ids[i-1]]
+					if sz, ok := groupSizes[ids[i-1]]; ok {
+						prevH = sz[1]
+					}
+					gap := layerGapY / 2
+					if idIsGroup || prevIsGroup {
+						gap = groupGapY / 2
+					}
+					minY := positions[ids[i-1]][1] + prevH/2 + gap + h/2
+					if idealY < minY {
+						idealY = minY
+					}
+				}
+				if i < len(ids)-1 {
+					nextH := nodeH
+					_, nextIsGroup := groupSizes[ids[i+1]]
+					if sz, ok := groupSizes[ids[i+1]]; ok {
+						nextH = sz[1]
+					}
+					gap := layerGapY / 2
+					if idIsGroup || nextIsGroup {
+						gap = groupGapY / 2
+					}
+					maxY := positions[ids[i+1]][1] - nextH/2 - gap - h/2
+					if idealY > maxY {
+						idealY = maxY
+					}
+				}
+
+				// Cross-layer group avoidance: don't overlap with groups in adjacent layers
+				for nid := range fullAdj[id] {
+					if npos, ok := positions[nid]; ok {
+						if sz, gok := groupSizes[nid]; gok {
+							nLayer := layers[nid]
+							if nLayer != l {
+								halfH := sz[1]/2 + groupGapY/2
+								if idealY > npos[1]-halfH && idealY < npos[1]+halfH {
+									if idealY < npos[1] {
+										idealY = npos[1] - halfH
+									} else {
+										idealY = npos[1] + halfH
+									}
+								}
+							}
+						}
+					}
+				}
+
+				positions[id] = [2]float64{positions[id][0], snapToGrid(idealY)}
+			}
 		}
 	}
 
