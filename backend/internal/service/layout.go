@@ -15,9 +15,9 @@ const (
 	groupPadX   = 30.0
 	groupPadTop = 45.0
 	groupPadBot = 30.0
-	layerGapX   = 80.0  // horizontal gap between layers
-	layerGapY   = 120.0 // vertical gap between nodes in same layer
-	groupGapY   = 200.0 // vertical gap around group nodes
+	layerGapX   = 60.0  // horizontal gap between layers
+	layerGapY   = 40.0  // vertical gap between nodes in same layer
+	groupGapY   = 80.0  // vertical gap around group nodes
 	minGroupW   = 160.0
 	minGroupH   = 100.0
 	gridSize    = 40.0 // snap positions to this grid for metro-style alignment
@@ -425,8 +425,56 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		}
 	}
 
-	layerNodes := make(map[int][]string)
+	// Compute maxLayer for sink push
 	maxLayer := 0
+	for _, id := range topLevel {
+		if l := layers[id]; l > maxLayer {
+			maxLayer = l
+		}
+	}
+
+	// Sink push: move each node to the latest possible layer (minimize edge span)
+	// Process in reverse topological order
+	for i := len(topLevel) - 1; i >= 0; i-- {
+		id := topLevel[i]
+		targets := outEdges[id]
+		if len(targets) == 0 {
+			continue
+		}
+		minSuccLayer := maxLayer + 1
+		for _, tgt := range targets {
+			if l, ok := layers[tgt]; ok && l < minSuccLayer {
+				minSuccLayer = l
+			}
+		}
+		if minSuccLayer > 0 && minSuccLayer-1 > layers[id] {
+			layers[id] = minSuccLayer - 1
+		}
+	}
+
+	// Separate isolated nodes (no dependency edges) for compact placement
+	hasDepEdge := make(map[string]bool)
+	for src, targets := range outEdges {
+		if topSet[src] {
+			hasDepEdge[src] = true
+			for _, tgt := range targets {
+				hasDepEdge[tgt] = true
+			}
+		}
+	}
+	var isolatedTopLevel []string
+	filteredTop := make([]string, 0, len(topLevel))
+	for _, id := range topLevel {
+		if hasDepEdge[id] {
+			filteredTop = append(filteredTop, id)
+		} else {
+			isolatedTopLevel = append(isolatedTopLevel, id)
+		}
+	}
+	topLevel = filteredTop
+
+	layerNodes := make(map[int][]string)
+	maxLayer = 0
 	for _, id := range topLevel {
 		l := layers[id]
 		layerNodes[l] = append(layerNodes[l], id)
@@ -560,7 +608,8 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 	}
 
 	// Y-coordinate optimization: pull nodes toward median neighbor Y to straighten edges
-	for iter := 0; iter < 8; iter++ {
+	// 20 iterations with 50% blending for gradual convergence
+	for iter := 0; iter < 20; iter++ {
 		for l := 0; l <= maxLayer; l++ {
 			ids := layerNodes[l]
 			for i, id := range ids {
@@ -574,7 +623,9 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 					continue
 				}
 				sort.Float64s(neighborYs)
-				idealY := neighborYs[len(neighborYs)/2]
+				medianY := neighborYs[len(neighborYs)/2]
+				// Blend: move 50% toward median per iteration (smooth convergence)
+				idealY := positions[id][1] + (medianY-positions[id][1])*0.5
 
 				h := nodeH
 				if sz, ok := groupSizes[id]; ok {
@@ -653,6 +704,122 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		}
 		// Remove the artificial groupSize so it doesn't emit Width/Height
 		delete(groupSizes, rep)
+	}
+
+	// Phase 3: Orient group children toward external connections
+	// Mirror internal layout if connected children are on the wrong side
+	for _, n := range nodes {
+		if n.Type != model.NodeTypeGroup {
+			continue
+		}
+		groupPos, gpOk := positions[n.ID]
+		if !gpOk {
+			continue
+		}
+		kids := children[n.ID]
+		if len(kids) == 0 {
+			continue
+		}
+
+		childSet := make(map[string]bool, len(kids))
+		for _, kid := range kids {
+			childSet[kid] = true
+		}
+
+		// Average direction from group center to external connected nodes
+		var sumExtDx, sumExtDy float64
+		var extCount int
+		connectedKids := make(map[string]bool)
+		for _, e := range edges {
+			var kid, external string
+			if childSet[e.SourceID] && !childSet[e.TargetID] {
+				kid = e.SourceID
+				external = resolveTopLevel(e.TargetID, nodeMap)
+			} else if childSet[e.TargetID] && !childSet[e.SourceID] {
+				kid = e.TargetID
+				external = resolveTopLevel(e.SourceID, nodeMap)
+			} else {
+				continue
+			}
+			if extPos, ok := positions[external]; ok {
+				sumExtDx += extPos[0] - groupPos[0]
+				sumExtDy += extPos[1] - groupPos[1]
+				extCount++
+				connectedKids[kid] = true
+			}
+		}
+		if extCount == 0 {
+			continue
+		}
+
+		// Average position of connected children (relative)
+		var sumChildDx, sumChildDy float64
+		var childCount int
+		for kid := range connectedKids {
+			rel := childRelPos[kid]
+			sumChildDx += rel[0]
+			sumChildDy += rel[1]
+			childCount++
+		}
+		if childCount == 0 {
+			continue
+		}
+
+		avgExtDx := sumExtDx / float64(extCount)
+		avgChildDx := sumChildDx / float64(childCount)
+		avgExtDy := sumExtDy / float64(extCount)
+		avgChildDy := sumChildDy / float64(childCount)
+
+		mirrorX := (avgExtDx > 0 && avgChildDx < -10) || (avgExtDx < 0 && avgChildDx > 10)
+		mirrorY := (avgExtDy > 0 && avgChildDy < -10) || (avgExtDy < 0 && avgChildDy > 10)
+
+		if mirrorX || mirrorY {
+			for _, kid := range kids {
+				rel := childRelPos[kid]
+				if mirrorX {
+					rel[0] = -rel[0]
+				}
+				if mirrorY {
+					rel[1] = -rel[1]
+				}
+				childRelPos[kid] = rel
+			}
+		}
+	}
+
+	// Place isolated nodes (no dependency edges) in a compact grid below the main layout
+	if len(isolatedTopLevel) > 0 {
+		maxY := 0.0
+		for _, pos := range positions {
+			if pos[1] > maxY {
+				maxY = pos[1]
+			}
+		}
+		startY := snapToGrid(maxY + groupGapY)
+		cols := int(math.Ceil(math.Sqrt(float64(len(isolatedTopLevel)))))
+		if cols < 1 {
+			cols = 1
+		}
+		cellW := snapToGrid(nodeW + layerGapX)
+		cellH := snapToGrid(nodeH + layerGapY)
+		for _, id := range isolatedTopLevel {
+			if sz, ok := groupSizes[id]; ok {
+				if sz[0]+layerGapX > cellW {
+					cellW = snapToGrid(sz[0] + layerGapX)
+				}
+				if sz[1]+layerGapY > cellH {
+					cellH = snapToGrid(sz[1] + layerGapY)
+				}
+			}
+		}
+		for i, id := range isolatedTopLevel {
+			col := i % cols
+			row := i / cols
+			positions[id] = [2]float64{
+				snapToGrid(float64(col) * cellW),
+				snapToGrid(startY + float64(row)*cellH),
+			}
+		}
 	}
 
 	result := make([]LayoutPosition, 0, len(nodes))
