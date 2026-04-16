@@ -76,23 +76,45 @@ function waypointsToSegments(
  * Recompute 8-direction edge routing for all edges based on current node positions.
  */
 export function applyDynamicRouting(cy: cytoscape.Core): void {
+	// Count parallel edges per node pair for offset calculation
+	const pairCount = new Map<string, number>();
+	const pairIndex = new Map<string, number>();
 	cy.edges().forEach((edge) => {
+		const srcId = edge.source().id();
+		const tgtId = edge.target().id();
+		const key = srcId < tgtId ? `${srcId}|${tgtId}` : `${tgtId}|${srcId}`;
+		pairCount.set(key, (pairCount.get(key) || 0) + 1);
+	});
+
+	cy.edges().forEach((edge) => {
+		const srcId = edge.source().id();
+		const tgtId = edge.target().id();
+		const key = srcId < tgtId ? `${srcId}|${tgtId}` : `${tgtId}|${srcId}`;
+		const total = pairCount.get(key) || 1;
+		const idx = pairIndex.get(key) || 0;
+		pairIndex.set(key, idx + 1);
+
 		const src = edge.source().position();
 		const tgt = edge.target().position();
 		const wps = compute8DirWaypoints(src, tgt);
 
+		// Parallel edge offset: spread overlapping edges apart
+		const offset = total > 1 ? (idx - (total - 1) / 2) * 12 : 0;
+
 		if (wps.length > 0) {
 			const { distances, weights } = waypointsToSegments(src, tgt, wps);
+			// Apply perpendicular offset to each distance
+			const offsetDistances = distances.map(d => d + offset);
 			edge.data({
 				curveStyle: 'segments',
-				segmentDistances: distances,
+				segmentDistances: offsetDistances,
 				segmentWeights: weights,
 			});
 		} else {
-			// Straight diagonal: keep segments style with near-zero offset
+			// Straight line with parallel offset
 			edge.data({
 				curveStyle: 'segments',
-				segmentDistances: [0.1],
+				segmentDistances: [offset || 0.1],
 				segmentWeights: [0.5],
 			});
 		}
