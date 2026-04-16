@@ -14,9 +14,10 @@
 
 	interface Props {
 		projectId: string;
+		expanded?: boolean;
 	}
 
-	let { projectId }: Props = $props();
+	let { projectId, expanded = false }: Props = $props();
 	let entries = $state<ActivityEntry[]>([]);
 	let loading = $state(true);
 
@@ -95,7 +96,7 @@
 	{:else if entries.length === 0}
 		<p class="px-4 py-4 text-center text-xs" style="color: var(--color-text-dim);">No activity yet</p>
 	{:else}
-		<div style="max-height: 300px; overflow-y: auto;">
+		<div style="{expanded ? 'overflow-y: auto;' : 'max-height: 300px; overflow-y: auto;'}">
 			{#each entries as entry (entry.id)}
 				<div class="px-4 py-2 border-b" style="border-color: var(--color-border-subtle);">
 					<div class="text-xs font-semibold" style="color: var(--color-text);">{entry.userName}</div>

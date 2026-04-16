@@ -131,7 +131,7 @@
 	<!-- Activity Feed (always visible, expands to fill space in empty mode) -->
 	{#if projectId}
 		<div class={panelMode === 'empty' ? 'flex-1 overflow-y-auto' : 'flex-shrink-0 max-h-[40%] overflow-y-auto'}>
-			<ActivityFeed bind:this={activityFeed} {projectId} />
+			<ActivityFeed bind:this={activityFeed} {projectId} expanded={panelMode === 'empty'} />
 		</div>
 	{/if}
 </aside>

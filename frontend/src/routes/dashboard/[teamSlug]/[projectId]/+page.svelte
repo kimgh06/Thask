@@ -344,7 +344,7 @@
 		<!-- Side Panel (always visible) -->
 		{#if !loading && !loadError}
 			<div
-				class="transition-all duration-200 overflow-hidden flex-shrink-0"
+				class="transition-all duration-200 flex-shrink-0 {panelCollapsed ? 'overflow-hidden' : ''}"
 				style="width: {panelCollapsed ? '0' : '350px'};"
 			>
 				<DetailSidePanel
