@@ -9,7 +9,7 @@ dev-db:
 	docker compose -f docker-compose.dev.yml up -d
 
 dev-backend:
-	cd backend && go run ./cmd/server
+	cd backend && $$(go env GOPATH)/bin/air
 
 dev-frontend:
 	cd frontend && npm run dev -- --port 7243
