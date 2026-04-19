@@ -62,6 +62,12 @@ class MembersStore {
 		await this.load(teamSlug);
 		return null;
 	}
+
+	async deleteTeam(teamSlug: string) {
+		const res = await api.delete(`/api/teams/${teamSlug}`);
+		if (res.error) return res.error;
+		return null;
+	}
 }
 
 export const membersStore = new MembersStore();

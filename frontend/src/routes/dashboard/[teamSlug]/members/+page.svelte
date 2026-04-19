@@ -66,6 +66,20 @@
 		}
 	}
 
+	async function handleDeleteTeam() {
+		const team = teamsStore.teams.find((t) => t.slug === teamSlug);
+		const name = team?.name ?? teamSlug;
+		if (!confirm(`Delete team "${name}"? This will permanently delete all projects and data. This cannot be undone.`)) return;
+		actionError = '';
+		const err = await membersStore.deleteTeam(teamSlug);
+		if (err) {
+			actionError = err;
+		} else {
+			await teamsStore.load();
+			goto('/dashboard');
+		}
+	}
+
 	async function handleTransfer(userId: string, displayName: string) {
 		if (!confirm(`Transfer ownership to ${displayName}? You will become an admin.`)) return;
 		actionError = '';
@@ -246,15 +260,26 @@
 			{/each}
 		</div>
 
-		<!-- Leave Team -->
-		<div class="mt-8 pt-6" style="border-top: 1px solid var(--color-border);">
-			<button
-				onclick={handleLeave}
-				class="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-90"
-				style="background: rgba(196,64,64,0.15); color: var(--color-danger);"
-			>
-				Leave Team
-			</button>
+		<!-- Danger Zone -->
+		<div class="mt-8 pt-6 flex items-center gap-3" style="border-top: 1px solid var(--color-border);">
+			{#if !isOwner}
+				<button
+					onclick={handleLeave}
+					class="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-90"
+					style="background: rgba(196,64,64,0.15); color: var(--color-danger);"
+				>
+					Leave Team
+				</button>
+			{/if}
+			{#if isOwner}
+				<button
+					onclick={handleDeleteTeam}
+					class="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-90"
+					style="background: rgba(196,64,64,0.15); color: var(--color-danger);"
+				>
+					Delete Team
+				</button>
+			{/if}
 		</div>
 	</div>
 </div>
