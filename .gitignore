@@ -6,6 +6,10 @@ backend/bin/
 backend/server
 backend/tmp/
 
+# CLI npm package (downloaded binaries)
+cli/native/
+cli/node_modules/
+
 # SvelteKit
 frontend/build/
 frontend/.svelte-kit/
@@ -28,6 +32,7 @@ Thumbs.db
 # Build artifacts
 bin/
 dist/
+!cli/bin/
 
 # Docker postgres data
 pgdata/
@@ -41,3 +46,4 @@ OPERATIONS.md
 
 # debug images
 *.png
+2fa.txt

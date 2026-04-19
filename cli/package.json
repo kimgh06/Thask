@@ -1,0 +1,24 @@
+{
+  "name": "@thask-org/cli",
+  "version": "0.5.2",
+  "description": "Graph-based dependency visualization CLI for AI-assisted development",
+  "license": "MIT",
+  "homepage": "https://github.com/kimgh06/Thask",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kimgh06/Thask.git"
+  },
+  "bin": {
+    "thask": "bin/thask.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "bin/thask.js",
+    "install.js"
+  ],
+  "engines": {
+    "node": ">=16"
+  }
+}
