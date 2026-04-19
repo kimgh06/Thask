@@ -4,7 +4,7 @@
 	import fcose from 'cytoscape-fcose';
 	import edgehandles from 'cytoscape-edgehandles';
 	import { getGraphStyles } from '$lib/cytoscape/styles';
-	import { getFcoseLayout, runGroupAwareLayout } from '$lib/cytoscape/layouts';
+	import { getFcoseLayout } from '$lib/cytoscape/layouts';
 	import { graphStore } from '$lib/stores/graph.svelte';
 	import { themeStore } from '$lib/stores/theme.svelte';
 	import { api } from '$lib/api';
@@ -124,13 +124,8 @@
 
 	function runClientLayout() {
 		if (!cy) return;
-		const hasChildren = cy.nodes('[parentId]').length > 0;
-		if (hasChildren) {
-			runGroupAwareLayout(cy, () => savePositions());
-		} else {
-			cy.layout(getFcoseLayout()).run();
-			savePositions();
-		}
+		cy.layout(getFcoseLayout()).run();
+		savePositions();
 	}
 
 	export function fitView() { cy?.fit(undefined, 50); }
@@ -247,6 +242,7 @@
 			userPanningEnabled: true,
 			userZoomingEnabled: true,
 		});
+		if (import.meta.env.DEV && typeof window !== 'undefined') (window as unknown as { __cy: unknown }).__cy = cy;
 
 		const cleanups: Array<{ cleanup: () => void }> = [];
 
