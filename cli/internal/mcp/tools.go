@@ -13,7 +13,7 @@ func AllTools() []ToolDef {
 		},
 		{
 			Name:        "thask.node.create",
-			Description: "Create a new node in the project graph. Types: FLOW, BRANCH, TASK, BUG, API, UI, GROUP. Status defaults to IN_PROGRESS.",
+			Description: "Create a new node in the project graph. Types: FLOW, BRANCH, TASK, BUG, API, UI, GROUP. Status defaults to IN_PROGRESS. Prefer thask.graph.import(merge) when creating 3+ nodes. Always call thask.graph.layout after creation.",
 			InputSchema: objectSchema(map[string]any{
 				"projectId":   prop("string", "Project UUID"),
 				"type":        propEnum("string", "Node type", []string{"FLOW", "BRANCH", "TASK", "BUG", "API", "UI", "GROUP"}),
@@ -72,7 +72,7 @@ func AllTools() []ToolDef {
 		},
 		{
 			Name:        "thask.edge.create",
-			Description: "Create a relationship between two nodes. Types: depends_on, blocks, related, parent_child, triggers.",
+			Description: "Create a relationship between two nodes. Types: depends_on (source NEEDS target), blocks (source PREVENTS target), triggers (source STARTS target), related, parent_child. Direction matters — check thask.guide if unsure.",
 			InputSchema: objectSchema(map[string]any{
 				"projectId": prop("string", "Project UUID"),
 				"sourceId":  prop("string", "Source node UUID"),
@@ -98,7 +98,7 @@ func AllTools() []ToolDef {
 		},
 		{
 			Name:        "thask.graph.import",
-			Description: "Import a graph from JSON data. Mode 'replace' overwrites, 'merge' adds alongside existing.",
+			Description: "Import a graph from JSON data. Mode 'replace' overwrites ALL existing data — use 'merge' by default. Always call thask.graph.get first to check existing state. Call thask.graph.layout(dagre) after import.",
 			InputSchema: objectSchema(map[string]any{
 				"projectId": prop("string", "Project UUID"),
 				"mode":      propEnum("string", "Import mode", []string{"replace", "merge"}),
@@ -137,6 +137,11 @@ func AllTools() []ToolDef {
 			InputSchema: objectSchema(map[string]any{
 				"projectId": prop("string", "Project ID to analyze"),
 			}, []string{"projectId"}),
+		},
+		{
+			Name:        "thask.guide",
+			Description: "Get the full AI agent guide for Thask. Call this before your first interaction with a Thask project to learn conventions, rules, and workflows.",
+			InputSchema: objectSchema(map[string]any{}, []string{}),
 		},
 	}
 }

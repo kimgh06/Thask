@@ -42,6 +42,7 @@ func handleRequest(c *client.Client, req Request) Response {
 			ProtocolVersion: "2024-11-05",
 			Capabilities:    Capabilities{Tools: &ToolsCapability{}},
 			ServerInfo:      ServerInfo{Name: "thask", Version: Version},
+			Instructions:    InstructionsText,
 		})
 
 	case "notifications/initialized":

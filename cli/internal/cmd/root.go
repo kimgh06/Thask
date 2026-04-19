@@ -46,6 +46,7 @@ var rootCmd = &cobra.Command{
 		skipAuth := map[string]bool{
 			"config": true, "set": true, "show": true, "version": true,
 			"serve": true, "aliases": true, "install": true, "uninstall": true,
+			"guide": true,
 		}
 		if skipAuth[cmd.Name()] {
 			return nil
@@ -82,6 +83,7 @@ func init() {
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(aliasesCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(guideCmd)
 }
 
 func Execute() {

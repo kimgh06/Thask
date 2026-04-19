@@ -29,6 +29,7 @@ var handlers = map[string]ToolHandler{
 	"thask.graph.layout":      handleGraphLayout,
 	"thask.scan.run":          handleScanRun,
 	"thask.graph.analyze":     handleGraphAnalyze,
+	"thask.guide":             handleGuide,
 }
 
 func HandleToolCall(c *client.Client, name string, args json.RawMessage) (any, error) {
@@ -206,4 +207,8 @@ func handleScanRun(c *client.Client, args map[string]any) (any, error) {
 
 func handleGraphAnalyze(c *client.Client, args map[string]any) (any, error) {
 	return c.Get("/api/projects/" + str(args, "projectId") + "/graph/analyze")
+}
+
+func handleGuide(_ *client.Client, _ map[string]any) (any, error) {
+	return map[string]string{"guide": GuideText}, nil
 }
