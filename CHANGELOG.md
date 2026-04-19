@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-04-19
+
+### Added
+- `thask guide` CLI command and `thask.guide` MCP tool — full AI agent interaction guide (single source of truth in `guide.go`)
+- `Thask.md` canonical guide document for reference
+- Team delete: owner can delete team from Members page UI
+- npm distribution: `npm install -g @thask-org/cli` — auto-downloads platform binary from GitHub Releases
+- Air hot-reload for backend development (`make dev-backend` auto-rebuilds on `.go` changes)
+
+### Improved
+- Layout algorithm: role-aware rectangular child layout with bitmask slot assignment
+- Layout algorithm: corridor-aware group repack to avoid long-edge corridors
+- Layout algorithm: route-box intersection cleanup — pushes blocking nodes off edge paths
+- Layout algorithm: actual group widths used for layer X spacing (`computeLayerXPositions`)
+- Layout algorithm: Sugiyama dummy node insertion, sink push, median barycenter, adjacent exchange, Y-blend
+- Edge routing: Z-path waypoints for nearly-vertical and nearly-horizontal edges
+- Edge routing: parallel edge offset — spread overlapping edges apart
+- Panel UX: collapse/expand toggle (`]` shortcut), relations direction (upstream/downstream), activity feed improvements
+- Sidebar: collapsible to icon-only mini mode
+- Node/edge selection: visual feedback fix, tap priority (node > edge > group)
+
+### Fixed
+- `window.__cy` debug exposure now only active in dev builds (`import.meta.env.DEV`)
+
+## [0.5.0] - 2026-03-28
+
 ### Added
 - CLI tool (Go/Cobra) with full graph operations: node, edge, team, project, graph, impact commands
 - MCP server mode for AI agent integration (Claude Code, Cursor) with 12 tools
