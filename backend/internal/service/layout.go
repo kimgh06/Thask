@@ -9,19 +9,19 @@ import (
 )
 
 const (
-	nodeW       = 72.0
-	nodeH       = 72.0
-	cellPad     = 60.0
-	groupPadX   = 30.0
-	groupPadTop = 45.0
-	groupPadBot = 30.0
-	layerGapX   = 60.0 // horizontal gap between layers
-	layerGapY   = 40.0 // vertical gap between nodes in same layer
-	groupGapY   = 80.0 // vertical gap around group nodes
+	nodeW         = 72.0
+	nodeH         = 72.0
+	cellPad       = 60.0
+	groupPadX     = 30.0
+	groupPadTop   = 45.0
+	groupPadBot   = 30.0
+	layerGapX     = 60.0 // horizontal gap between layers
+	layerGapY     = 40.0 // vertical gap between nodes in same layer
+	groupGapY     = 80.0 // vertical gap around group nodes
 	groupLaneGapY = 48.0 // compact same-layer gap when a group is involved
-	minGroupW   = 160.0
-	minGroupH   = 100.0
-	gridSize    = 40.0 // snap positions to this grid for metro-style alignment
+	minGroupW     = 160.0
+	minGroupH     = 100.0
+	gridSize      = 40.0 // snap positions to this grid for metro-style alignment
 
 	// Compact rectangular child templates keep common 4-8 node groups readable
 	// without making the rendered group box excessively wide.
@@ -29,6 +29,23 @@ const (
 	rectCompactCornerY = 56.0
 	rectCompactSideX   = 88.0
 	rectCompactSideY   = 84.0
+
+	// Group-internal layout needs a larger effective footprint than the bare
+	// 72x72 Cytoscape body because long wrapped labels and thick outlines make
+	// nodes look overlapped much earlier than the raw geometry suggests.
+	childLayoutNodeW   = 112.0
+	childLayoutNodeH   = 96.0
+	childLayoutCellPad = 72.0
+	childRoutePad      = 12.0
+	childGrowFactor    = 1.16
+	childGrowPasses    = 6
+	childCompactFactor = 0.92
+	childCompactPasses = 4
+	passThroughLaneGap = 42.0
+	passThroughStep    = 108.0
+	lineMainOffset     = 44.0
+	lineSidecarOffset  = 176.0
+	lineAxisStep       = 132.0
 )
 
 type LayoutPosition struct {
@@ -286,17 +303,24 @@ func brandesKopfAssign(layerNodes map[int][]string, maxLayer int, adj map[string
 					yPos[root[id]] = y + h/2
 					placed[root[id]] = true
 				}
-				// Propagate root's Y to this node
-				yPos[id] = yPos[root[id]]
-				y += h
-				// Gap
-				_, isGroup := groupSizes[id]
-				nextIsGroup := false
-				if i := indexOf[id]; i < len(ids)-1 {
-					_, nextIsGroup = groupSizes[ids[i+1]]
+				// Propagate root's Y to this node, but clamp so
+				// the node never overlaps with previously placed
+				// nodes in this layer.
+				minCenter := y + h/2
+				aligned := yPos[root[id]]
+				if aligned < minCenter {
+					aligned = minCenter
 				}
-				if isGroup || nextIsGroup {
-					y += groupGapY
+				yPos[id] = aligned
+				y = yPos[id] + h/2
+				// Gap — use the same dimension-aware spacing that
+				// enforceLayerSpacing applies later.
+				nextID := ""
+				if i := indexOf[id]; i < len(ids)-1 {
+					nextID = ids[i+1]
+				}
+				if nextID != "" {
+					y += spacingBetween(id, nextID, groupSizes)
 				} else {
 					y += layerGapY
 				}
@@ -636,6 +660,90 @@ func enforceLayerSpacing(ids []string, yCoords map[string]float64, groupSizes ma
 	}
 }
 
+// reserveEdgeCorridors ensures intermediate layers have gaps at the Y
+// coordinates where long-span edges will route. Instead of reactively
+// pushing nodes away from corridors (repackLayersAgainstEdgeCorridors),
+// this proactively inserts gaps before the fine-tuning passes.
+func reserveEdgeCorridors(
+	layerNodes map[int][]string,
+	maxLayer int,
+	yCoords map[string]float64,
+	groupSizes map[string][2]float64,
+	spans []longEdgeSpan,
+	layers map[string]int,
+) {
+	if len(spans) == 0 {
+		return
+	}
+	minCorridorW := nodeH + 16 // minimum gap width for edge passage
+
+	// Collect all corridor Y values per intermediate layer.
+	type corridor struct{ y float64 }
+	layerCorridors := make(map[int][]corridor)
+	for _, span := range spans {
+		srcL, tgtL := layers[span.Src], layers[span.Tgt]
+		if srcL > tgtL {
+			srcL, tgtL = tgtL, srcL
+		}
+		if tgtL-srcL < 2 {
+			continue // only for edges that skip at least one layer
+		}
+		srcY := yCoords[span.Src] + span.SrcDY
+		tgtY := yCoords[span.Tgt] + span.TgtDY
+
+		for l := srcL + 1; l < tgtL; l++ {
+			t := float64(l-srcL) / float64(tgtL-srcL)
+			routeY := srcY + t*(tgtY-srcY)
+			layerCorridors[l] = append(layerCorridors[l], corridor{y: routeY})
+		}
+	}
+
+	for l, corridors := range layerCorridors {
+		ids := layerNodes[l]
+		if len(ids) == 0 {
+			continue
+		}
+
+		// Deduplicate nearby corridors.
+		sort.Slice(corridors, func(i, j int) bool { return corridors[i].y < corridors[j].y })
+		merged := []float64{corridors[0].y}
+		for _, c := range corridors[1:] {
+			if c.y-merged[len(merged)-1] > float64(minCorridorW) {
+				merged = append(merged, c.y)
+			}
+		}
+
+		for _, cy := range merged {
+			halfCW := float64(minCorridorW) / 2
+			for _, id := range ids {
+				h := nodeHeightForLayout(id, groupSizes)
+				top := yCoords[id] - h/2
+				bot := yCoords[id] + h/2
+
+				// Check if the node's box blocks this corridor.
+				if cy <= top-halfCW || cy >= bot+halfCW {
+					continue
+				}
+
+				// Push node toward the side that requires less movement.
+				distUp := cy - top + halfCW   // how far to push node up
+				distDown := bot - cy + halfCW // how far to push node down
+				if distUp <= distDown {
+					yCoords[id] = cy - halfCW - h/2
+				} else {
+					yCoords[id] = cy + halfCW + h/2
+				}
+			}
+		}
+
+		// Re-sort the layer and re-enforce spacing.
+		sort.SliceStable(ids, func(i, j int) bool {
+			return yCoords[ids[i]] < yCoords[ids[j]]
+		})
+		enforceLayerSpacing(ids, yCoords, groupSizes)
+	}
+}
+
 func mergeVerticalBands(bands []verticalBand) []verticalBand {
 	if len(bands) == 0 {
 		return nil
@@ -717,12 +825,21 @@ func buildTopLevelPositions(layerNodes map[int][]string, maxLayer int, layerX ma
 }
 
 func spacingBetween(prevID, nextID string, groupSizes map[string][2]float64) float64 {
-	_, prevIsGroup := groupSizes[prevID]
-	_, nextIsGroup := groupSizes[nextID]
-	if prevIsGroup || nextIsGroup {
-		return groupLaneGapY
+	prevSz, prevIsGroup := groupSizes[prevID]
+	nextSz, nextIsGroup := groupSizes[nextID]
+	if !prevIsGroup && !nextIsGroup {
+		return layerGapY
 	}
-	return layerGapY
+	// Scale the gap with the larger neighbour so that edge corridors
+	// between big groups get enough room.
+	maxH := nodeH
+	if prevIsGroup && prevSz[1] > maxH {
+		maxH = prevSz[1]
+	}
+	if nextIsGroup && nextSz[1] > maxH {
+		maxH = nextSz[1]
+	}
+	return groupLaneGapY + (groupGapY-groupLaneGapY)*math.Min(1, maxH/300.0)
 }
 
 func centerBlockedByBands(center, height float64, bands []verticalBand) bool {
@@ -833,8 +950,8 @@ func routedBandsAcrossRect(src, tgt Point, left, right float64) []verticalBand {
 			continue
 		}
 		bands = append(bands, verticalBand{
-			Top:    yTop - layerGapY/2,
-			Bottom: yBottom + layerGapY/2,
+			Top:    yTop - nodeH/2,
+			Bottom: yBottom + nodeH/2,
 		})
 	}
 	return mergeVerticalBands(bands)
@@ -893,9 +1010,10 @@ func sortedPositionIDs(positions map[string][2]float64) []string {
 	return ids
 }
 
-func countTopLevelBoxOverlaps(positions map[string][2]float64, groupSizes map[string][2]float64) int {
+func countTopLevelBoxOverlaps(positions map[string][2]float64, groupSizes map[string][2]float64) (int, map[string]int) {
 	ids := sortedPositionIDs(positions)
 	overlaps := 0
+	byNode := make(map[string]int)
 	for i := 0; i < len(ids); i++ {
 		a := topLevelRect(ids[i], positions, groupSizes, 8)
 		for j := i + 1; j < len(ids); j++ {
@@ -903,10 +1021,12 @@ func countTopLevelBoxOverlaps(positions map[string][2]float64, groupSizes map[st
 			if math.Min(a.Right, b.Right) > math.Max(a.Left, b.Left) &&
 				math.Min(a.Bottom, b.Bottom) > math.Max(a.Top, b.Top) {
 				overlaps++
+				byNode[ids[i]]++
+				byNode[ids[j]]++
 			}
 		}
 	}
-	return overlaps
+	return overlaps, byNode
 }
 
 func countPredictedRouteBoxIntersections(
@@ -920,6 +1040,7 @@ func countPredictedRouteBoxIntersections(
 	byNode := make(map[string]int)
 	boxIDs := sortedPositionIDs(positions)
 	for _, route := range buildPredictedRoutes(edges, positions, nodeMap, childRelPos) {
+		routeBlocked := false
 		for _, id := range boxIDs {
 			if id == route.SrcTop || id == route.TgtTop {
 				continue
@@ -928,6 +1049,17 @@ func countPredictedRouteBoxIntersections(
 			if polylineIntersectsRect(route.Points, box) {
 				total++
 				byNode[id]++
+				routeBlocked = true
+			}
+		}
+		// Also mark source/target parents as movable so the cleanup can
+		// shift them to reroute around the blocking node.
+		if routeBlocked {
+			if route.SrcTop != "" {
+				byNode[route.SrcTop]++
+			}
+			if route.TgtTop != "" {
+				byNode[route.TgtTop]++
 			}
 		}
 	}
@@ -978,7 +1110,6 @@ func countPredictedRouteCrossings(
 
 	return total, byNode
 }
-
 func layoutViolationCost(
 	positions map[string][2]float64,
 	basePositions map[string][2]float64,
@@ -987,9 +1118,12 @@ func layoutViolationCost(
 	childRelPos map[string][2]float64,
 	groupSizes map[string][2]float64,
 ) (float64, map[string]int) {
-	boxOverlaps := countTopLevelBoxOverlaps(positions, groupSizes)
+	boxOverlaps, overlapNodes := countTopLevelBoxOverlaps(positions, groupSizes)
 	intersections, byNode := countPredictedRouteBoxIntersections(edges, positions, nodeMap, childRelPos, groupSizes)
 	crossings, crossingNodes := countPredictedRouteCrossings(edges, positions, nodeMap, childRelPos)
+	for id, count := range overlapNodes {
+		byNode[id] += count
+	}
 	for id, count := range crossingNodes {
 		byNode[id] += count
 	}
@@ -1037,17 +1171,27 @@ func cleanupCandidatePositions(id string, current, base [2]float64, positions ma
 	w, h := topLevelSize(id, groupSizes)
 	dx := snapToGrid(math.Max(nodeW, w/2) + layerGapX)
 	dy := snapToGrid(math.Max(nodeH, h/2) + layerGapY)
-	raw := [][2]float64{
-		current,
-		{current[0], current[1] - dy},
-		{current[0], current[1] + dy},
-		{current[0] - dx, current[1]},
-		{current[0] + dx, current[1]},
-		{current[0] - dx, current[1] - dy},
-		{current[0] - dx, current[1] + dy},
-		{current[0] + dx, current[1] - dy},
-		{current[0] + dx, current[1] + dy},
+	// Scan range: wide enough for the node to clear its own height
+	// plus comfortable corridor margin.
+	scanRange := snapToGrid(math.Max(dy*2, h+groupGapY*2))
+	raw := [][2]float64{current}
+
+	// Systematic Y scan: try every gridSize step within the full range.
+	// This ensures the search finds the optimal gap position even when
+	// the gap is at an unusual offset.
+	for yOff := -scanRange; yOff <= scanRange; yOff += gridSize {
+		raw = append(raw, [2]float64{current[0], current[1] + yOff})
 	}
+
+	// Horizontal shifts + diagonal combinations at key Y offsets.
+	raw = append(raw,
+		[2]float64{current[0] - dx, current[1]},
+		[2]float64{current[0] + dx, current[1]},
+		[2]float64{current[0] - dx, current[1] - dy},
+		[2]float64{current[0] - dx, current[1] + dy},
+		[2]float64{current[0] + dx, current[1] - dy},
+		[2]float64{current[0] + dx, current[1] + dy},
+	)
 	columns := uniqueSortedColumns(positions)
 	adjacentXs := adjacentColumnCandidates(current[0], columns)
 	maxXShift := dx
@@ -1067,7 +1211,7 @@ func cleanupCandidatePositions(id string, current, base [2]float64, positions ma
 	for _, candidate := range raw {
 		candidate[0] = snapToGrid(candidate[0])
 		candidate[1] = snapToGrid(candidate[1])
-		if math.Abs(candidate[0]-base[0]) > maxXShift+1 || math.Abs(candidate[1]-base[1]) > dy+1 {
+		if math.Abs(candidate[0]-base[0]) > maxXShift+1 || math.Abs(candidate[1]-base[1]) > scanRange+1 {
 			continue
 		}
 		if seen[candidate] {
@@ -1077,6 +1221,139 @@ func cleanupCandidatePositions(id string, current, base [2]float64, positions ma
 		candidates = append(candidates, candidate)
 	}
 	return candidates
+}
+
+// adjustChildrenToAvoidRouteCrossings shifts endpoint GROUPS (not
+// individual children) so that cross-group edge routes pass through
+// gaps between intermediate groups. This preserves the internal child
+// layout within each group, preventing child-child overlaps.
+func adjustChildrenToAvoidRouteCrossings(
+	positions map[string][2]float64,
+	edges []model.Edge,
+	nodeMap map[string]*model.Node,
+	childRelPos map[string][2]float64,
+	groupSizes map[string][2]float64,
+) {
+	for iter := 0; iter < 4; iter++ {
+		routes := buildPredictedRoutes(edges, positions, nodeMap, childRelPos)
+		boxIDs := sortedPositionIDs(positions)
+		adjusted := false
+		// Track which groups have already been shifted this iteration
+		// to avoid contradictory moves.
+		shifted := make(map[string]bool)
+
+		for _, route := range routes {
+			var blockerRect rectBox
+			found := false
+			for _, id := range boxIDs {
+				if id == route.SrcTop || id == route.TgtTop {
+					continue
+				}
+				r := topLevelRect(id, positions, groupSizes, 4)
+				if polylineIntersectsRect(route.Points, r) {
+					blockerRect = r
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+
+			srcPt := route.Points[0]
+			tgtPt := route.Points[len(route.Points)-1]
+			avgY := (srcPt.Y + tgtPt.Y) / 2
+			gapAbove := blockerRect.Top - nodeH/2
+			gapBelow := blockerRect.Bottom + nodeH/2
+			targetGapY := gapAbove
+			if math.Abs(avgY-gapBelow) < math.Abs(avgY-gapAbove) {
+				targetGapY = gapBelow
+			}
+
+			// Shift both endpoint groups toward the gap Y.
+			// Only shift the GROUP position — never touch childRelPos.
+			for _, topID := range []string{route.SrcTop, route.TgtTop} {
+				if shifted[topID] {
+					continue
+				}
+				pos, ok := positions[topID]
+				if !ok {
+					continue
+				}
+				// Compute the average child-relative Y of children
+				// involved in this route's edges to estimate where
+				// the group center should be.
+				shift := targetGapY - avgY
+				// Apply a fraction: move halfway toward the ideal to
+				// avoid overshooting when multiple routes conflict.
+				newY := snapToGrid(pos[1] + shift/2)
+				if math.Abs(newY-pos[1]) < gridSize {
+					continue
+				}
+				positions[topID] = [2]float64{pos[0], newY}
+				shifted[topID] = true
+				adjusted = true
+			}
+		}
+
+		if !adjusted {
+			return
+		}
+
+		// After shifting groups, resolve any new overlaps.
+		resolveTopLevelOverlaps(positions, groupSizes)
+	}
+}
+
+// resolveTopLevelOverlaps pushes overlapping top-level boxes apart along
+// their smallest overlap axis. This runs before the general route cleanup
+// so that groups never visually overlap.
+func resolveTopLevelOverlaps(positions map[string][2]float64, groupSizes map[string][2]float64) {
+	for iter := 0; iter < 6; iter++ {
+		overlaps, _ := countTopLevelBoxOverlaps(positions, groupSizes)
+		if overlaps == 0 {
+			return
+		}
+		ids := sortedPositionIDs(positions)
+		moved := false
+		for i := 0; i < len(ids); i++ {
+			a := topLevelRect(ids[i], positions, groupSizes, 8)
+			for j := i + 1; j < len(ids); j++ {
+				b := topLevelRect(ids[j], positions, groupSizes, 8)
+				overlapX := math.Min(a.Right, b.Right) - math.Max(a.Left, b.Left)
+				overlapY := math.Min(a.Bottom, b.Bottom) - math.Max(a.Top, b.Top)
+				if overlapX <= 0 || overlapY <= 0 {
+					continue
+				}
+				posA := positions[ids[i]]
+				posB := positions[ids[j]]
+				// Push apart along the smaller overlap axis.
+				if overlapY <= overlapX {
+					shift := snapToGrid(overlapY/2 + groupLaneGapY/2)
+					if posA[1] <= posB[1] {
+						positions[ids[i]] = [2]float64{posA[0], snapToGrid(posA[1] - shift)}
+						positions[ids[j]] = [2]float64{posB[0], snapToGrid(posB[1] + shift)}
+					} else {
+						positions[ids[i]] = [2]float64{posA[0], snapToGrid(posA[1] + shift)}
+						positions[ids[j]] = [2]float64{posB[0], snapToGrid(posB[1] - shift)}
+					}
+				} else {
+					shift := snapToGrid(overlapX/2 + layerGapX/2)
+					if posA[0] <= posB[0] {
+						positions[ids[i]] = [2]float64{snapToGrid(posA[0] - shift), posA[1]}
+						positions[ids[j]] = [2]float64{snapToGrid(posB[0] + shift), posB[1]}
+					} else {
+						positions[ids[i]] = [2]float64{snapToGrid(posA[0] + shift), posA[1]}
+						positions[ids[j]] = [2]float64{snapToGrid(posB[0] - shift), posB[1]}
+					}
+				}
+				moved = true
+			}
+		}
+		if !moved {
+			return
+		}
+	}
 }
 
 func cleanupRouteBoxIntersections(
@@ -1096,7 +1373,7 @@ func cleanupRouteBoxIntersections(
 		return
 	}
 
-	for iter := 0; iter < 4; iter++ {
+	for iter := 0; iter < 8; iter++ {
 		order := sortedPositionIDs(positions)
 		sort.SliceStable(order, func(i, j int) bool {
 			left := offenders[order[i]]
@@ -1107,6 +1384,7 @@ func cleanupRouteBoxIntersections(
 			return order[i] < order[j]
 		})
 
+		routes := buildPredictedRoutes(edges, positions, nodeMap, childRelPos)
 		moved := false
 		for _, id := range order {
 			if offenders[id] == 0 {
@@ -1116,7 +1394,43 @@ func cleanupRouteBoxIntersections(
 			original := positions[id]
 			best := original
 			bestCost := currentCost
-			for _, candidate := range cleanupCandidatePositions(id, original, basePositions[id], positions, groupSizes) {
+			candidates := cleanupCandidatePositions(id, original, basePositions[id], positions, groupSizes)
+			rect := topLevelRect(id, positions, groupSizes, 8)
+			h := nodeHeightForLayout(id, groupSizes)
+			for _, route := range routes {
+				srcPt := route.Points[0]
+				tgtPt := route.Points[len(route.Points)-1]
+
+				if id == route.SrcTop || id == route.TgtTop {
+					// Y-alignment: move this group so its child aligns
+					// vertically with the other endpoint, making the
+					// route more horizontal and less likely to cross
+					// intermediate groups.
+					var shift float64
+					if id == route.SrcTop {
+						shift = tgtPt.Y - srcPt.Y
+					} else {
+						shift = srcPt.Y - tgtPt.Y
+					}
+					candidates = append(candidates,
+						[2]float64{original[0], snapToGrid(original[1] + shift)},
+						[2]float64{original[0], snapToGrid(original[1] + shift/2)},
+					)
+					continue
+				}
+
+				if !polylineIntersectsRect(route.Points, rect) {
+					continue
+				}
+				// Corridor-aware: place node just above or below the
+				// route that currently crosses it.
+				routeY := (srcPt.Y + tgtPt.Y) / 2
+				candidates = append(candidates,
+					[2]float64{original[0], snapToGrid(routeY - h/2 - groupLaneGapY)},
+					[2]float64{original[0], snapToGrid(routeY + h/2 + groupLaneGapY)},
+				)
+			}
+			for _, candidate := range candidates {
 				if candidate == original {
 					continue
 				}
@@ -1177,11 +1491,12 @@ func repackLayerAgainstCorridors(
 		before[id] = yCoords[id]
 		base := yCoords[id]
 		anchor[id] = yCoords[id]
-		shiftLimit[id] = 240
+		h := nodeHeightForLayout(id, groupSizes)
+		shiftLimit[id] = math.Max(240, h)
 		if target, ok := bandTargets[id]; ok {
 			base = target
 			anchor[id] = target
-			shiftLimit[id] = 160
+			shiftLimit[id] = math.Max(160, h*0.75)
 		}
 		ideal[id] = barycenterIdealY(id, base, adj, layers, yCoords)
 	}
@@ -1659,6 +1974,28 @@ func finalizeGroupLayoutsWithExternalPulls(
 		}
 
 		pullMap := childExternalPulls(n.ID, groupPos, kids, edges, nodeMap, groupPositions)
+		boundaryDemands := buildChildBoundaryDemands(n.ID, groupPos, kids, edges, nodeMap, groupPositions)
+		childEdges := childInternalEdges(kids, edges)
+
+		if w, h, ok := layoutChildrenPassThroughCorridor(kids, edges, childRelPos, pullMap, boundaryDemands, childEdges); ok {
+			groupSizes[n.ID] = [2]float64{w, h}
+			continue
+		}
+
+		if w, h, ok := layoutChildrenVerticalLine(kids, edges, childRelPos, pullMap, boundaryDemands, childEdges); ok {
+			groupSizes[n.ID] = [2]float64{w, h}
+			continue
+		}
+
+		if w, h, ok := layoutChildrenHorizontalLine(kids, edges, childRelPos, pullMap, boundaryDemands, childEdges); ok {
+			groupSizes[n.ID] = [2]float64{w, h}
+			continue
+		}
+
+		if w, h, ok := layoutChildrenExternalPullBoundary(kids, edges, childRelPos, pullMap, childEdges); ok {
+			groupSizes[n.ID] = [2]float64{w, h}
+			continue
+		}
 
 		if w, h, ok := layoutChildrenRectangular(kids, edges, childRelPos, pullMap); ok {
 			groupSizes[n.ID] = [2]float64{w, h}
@@ -1704,14 +2041,8 @@ func finalizeGroupLayoutsWithExternalPulls(
 					ki, kj := b.kids[i], b.kids[j]
 					relI, relJ := childRelPos[ki], childRelPos[kj]
 					pullI, pullJ := pullMap[ki], pullMap[kj]
-					desiredYI := relI[1]
-					if pullI.count > 0 {
-						desiredYI = (relI[1] + pullI.avgY) / 2
-					}
-					desiredYJ := relJ[1]
-					if pullJ.count > 0 {
-						desiredYJ = (relJ[1] + pullJ.avgY) / 2
-					}
+					desiredYI := (relI[1] + boundaryDesiredY(ki, boundaryDemands, pullI, relI[1])) / 2
+					desiredYJ := (relJ[1] + boundaryDesiredY(kj, boundaryDemands, pullJ, relJ[1])) / 2
 					if desiredYI != desiredYJ {
 						return desiredYI < desiredYJ
 					}
@@ -1741,17 +2072,13 @@ func finalizeGroupLayoutsWithExternalPulls(
 
 				desiredXI := relI[0]
 				desiredYI := relI[1]
-				if pullI.count > 0 {
-					desiredXI = (relI[0] + pullI.avgX*2) / 3
-					desiredYI = (relI[1] + pullI.avgY) / 2
-				}
+				desiredXI = (relI[0] + boundaryDesiredX(sortedKids[i], boundaryDemands, pullI, relI[0])*2) / 3
+				desiredYI = (relI[1] + boundaryDesiredY(sortedKids[i], boundaryDemands, pullI, relI[1])) / 2
 
 				desiredXJ := relJ[0]
 				desiredYJ := relJ[1]
-				if pullJ.count > 0 {
-					desiredXJ = (relJ[0] + pullJ.avgX*2) / 3
-					desiredYJ = (relJ[1] + pullJ.avgY) / 2
-				}
+				desiredXJ = (relJ[0] + boundaryDesiredX(sortedKids[j], boundaryDemands, pullJ, relJ[0])*2) / 3
+				desiredYJ = (relJ[1] + boundaryDesiredY(sortedKids[j], boundaryDemands, pullJ, relJ[1])) / 2
 
 				if desiredXI != desiredXJ {
 					return desiredXI < desiredXJ
@@ -1771,6 +2098,9 @@ func finalizeGroupLayoutsWithExternalPulls(
 				}
 			}
 		}
+
+		groupW, groupH := expandChildLayoutUntilClear(kids, childEdges, childRelPos)
+		groupSizes[n.ID] = [2]float64{groupW, groupH}
 	}
 }
 
@@ -1871,8 +2201,8 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 	// and place it BELOW that group, biasing its X toward the weighted mean of
 	// its source groups so far-left sources get a shorter connection.
 	satelliteDominant := make(map[string]string)
-	satelliteSide := make(map[string]int)                // -1 = left, +1 = right, 0 = below
-	satelliteSources := make(map[string]map[string]int)  // cross-group only: groupID → edge count
+	satelliteSide := make(map[string]int)               // -1 = left, +1 = right, 0 = below
+	satelliteSources := make(map[string]map[string]int) // cross-group only: groupID → edge count
 	{
 		groupEdgeCount := make(map[string]map[string]int)
 		outToGroup := make(map[string]map[string]int)
@@ -2310,6 +2640,10 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		}
 	}
 
+	// Pre-reserve corridors for long-span edges: ensure intermediate layers
+	// have gaps at the Y coordinates where cross-layer edges will route.
+	reserveEdgeCorridors(layerNodes, maxLayer, yCoords, groupSizes, longSpans, layers)
+
 	// Reserve coarse top/mid/bottom channels for the top-level graph before the
 	// finer corridor pass. This gives large groups room away from major flows.
 	bandTargets := computeTopLevelBandTargets(topLevel, layers, outEdges, groupSizes)
@@ -2322,6 +2656,16 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 	// Re-pack each layer against the straight corridor of cross-layer edges.
 	// This makes the node placement itself respect likely edge paths.
 	repackLayersAgainstEdgeCorridors(layerNodes, maxLayer, layerX, yCoords, groupSizes, layers, fullAdj, longSpans, anchoredBandTargets)
+
+	// Re-enforce minimum spacing after corridor repacking, which may have
+	// shifted nodes into their neighbours' space.
+	for l := 0; l <= maxLayer; l++ {
+		ids := layerNodes[l]
+		if len(ids) <= 1 {
+			continue
+		}
+		enforceLayerSpacing(ids, yCoords, groupSizes)
+	}
 
 	// Build positions map
 	positions := buildTopLevelPositions(layerNodes, maxLayer, layerX, yCoords)
@@ -2448,8 +2792,24 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 		}
 	}
 
+	// Dedicated overlap resolution: push overlapping top-level boxes apart
+	// along their smallest overlap axis before the general route cleanup.
+	resolveTopLevelOverlaps(positions, groupSizes)
+
 	// Final hard cleanup: if the predicted route between top-level elements still
 	// crosses unrelated group/node boxes, locally move the offending boxes.
+	cleanupRouteBoxIntersections(positions, edges, nodeMap, childRelPos, groupSizes)
+
+	// Re-run child layout finalization with the FINAL top-level positions so
+	// children within groups align toward their actual external connections
+	// (the first run used coarse positions which may differ significantly).
+	finalizeGroupLayoutsWithExternalPulls(nodes, children, edges, nodeMap, positions, childRelPos, groupSizes)
+
+	// Micro-adjust children to steer cross-group routes through gaps.
+	adjustChildrenToAvoidRouteCrossings(positions, edges, nodeMap, childRelPos, groupSizes)
+
+	// Second cleanup pass: the child adjustments may have fixed most
+	// route-box intersections; mop up any remaining violations.
 	cleanupRouteBoxIntersections(positions, edges, nodeMap, childRelPos, groupSizes)
 
 	result := make([]LayoutPosition, 0, len(nodes))
@@ -2514,8 +2874,8 @@ func autoSizeGroup(childIDs []string) (float64, float64) {
 	cols := int(math.Ceil(math.Sqrt(float64(count))))
 	rows := int(math.Ceil(float64(count) / float64(cols)))
 
-	cellW := nodeW + cellPad
-	cellH := nodeH + cellPad
+	cellW := childLayoutNodeW + childLayoutCellPad
+	cellH := childLayoutNodeH + childLayoutCellPad
 
 	gridW := float64(cols) * cellW
 	gridH := float64(rows) * cellH
@@ -2546,8 +2906,8 @@ func computeGroupSizeAndLayout(childIDs []string, edges []model.Edge, nodeMap ma
 		}
 	}
 
-	cellW := nodeW + cellPad
-	cellH := nodeH + cellPad
+	cellW := childLayoutNodeW + childLayoutCellPad
+	cellH := childLayoutNodeH + childLayoutCellPad
 
 	if w, h, ok := layoutChildrenRectangular(childIDs, edges, relPos, nil); ok {
 		return w, h
@@ -2556,6 +2916,527 @@ func computeGroupSizeAndLayout(childIDs []string, edges []model.Edge, nodeMap ma
 		return layoutChildrenByLayers(childIDs, childEdges, cellW, cellH, relPos)
 	}
 	return layoutChildrenGrid(childIDs, cellW, cellH, relPos)
+}
+
+func buildChildPredictedRoutesFromRelPos(childEdges []model.Edge, relPos map[string][2]float64) [][]Point {
+	routes := make([][]Point, 0, len(childEdges))
+	for _, e := range childEdges {
+		srcPos, ok := relPos[e.SourceID]
+		if !ok {
+			continue
+		}
+		tgtPos, ok := relPos[e.TargetID]
+		if !ok {
+			continue
+		}
+		src := Point{X: srcPos[0], Y: srcPos[1]}
+		tgt := Point{X: tgtPos[0], Y: tgtPos[1]}
+		points := []Point{src}
+		points = append(points, compute8DirWaypoints(src, tgt)...)
+		points = append(points, tgt)
+		routes = append(routes, points)
+	}
+	return routes
+}
+
+func childRectBoxAt(pos [2]float64, padding float64) rectBox {
+	return rectBox{
+		Left:   pos[0] - childLayoutNodeW/2 - padding,
+		Right:  pos[0] + childLayoutNodeW/2 + padding,
+		Top:    pos[1] - childLayoutNodeH/2 - padding,
+		Bottom: pos[1] + childLayoutNodeH/2 + padding,
+	}
+}
+
+func childRectsOverlap(a, b rectBox) bool {
+	return a.Left < b.Right && a.Right > b.Left && a.Top < b.Bottom && a.Bottom > b.Top
+}
+
+func countChildBoxOverlaps(childIDs []string, relPos map[string][2]float64, padding float64) int {
+	total := 0
+	for i := 0; i < len(childIDs); i++ {
+		a := childRectBoxAt(relPos[childIDs[i]], padding)
+		for j := i + 1; j < len(childIDs); j++ {
+			b := childRectBoxAt(relPos[childIDs[j]], padding)
+			if childRectsOverlap(a, b) {
+				total++
+			}
+		}
+	}
+	return total
+}
+
+type childLayoutViolations struct {
+	overlapCount       int
+	overlapX           float64
+	overlapY           float64
+	routeIntersections int
+	headerHits         int
+	spanW              float64
+	spanH              float64
+}
+
+func measureChildLayoutViolations(
+	childIDs []string,
+	childEdges []model.Edge,
+	relPos map[string][2]float64,
+) childLayoutViolations {
+	v := childLayoutViolations{}
+	if len(childIDs) == 0 {
+		return v
+	}
+
+	minX, minY := math.MaxFloat64, math.MaxFloat64
+	maxX, maxY := -math.MaxFloat64, -math.MaxFloat64
+	for i := 0; i < len(childIDs); i++ {
+		a := childRectBoxAt(relPos[childIDs[i]], 4)
+		if a.Left < minX {
+			minX = a.Left
+		}
+		if a.Top < minY {
+			minY = a.Top
+		}
+		if a.Right > maxX {
+			maxX = a.Right
+		}
+		if a.Bottom > maxY {
+			maxY = a.Bottom
+		}
+		for j := i + 1; j < len(childIDs); j++ {
+			b := childRectBoxAt(relPos[childIDs[j]], 4)
+			if !childRectsOverlap(a, b) {
+				continue
+			}
+			v.overlapCount++
+			v.overlapX += math.Min(a.Right, b.Right) - math.Max(a.Left, b.Left)
+			v.overlapY += math.Min(a.Bottom, b.Bottom) - math.Max(a.Top, b.Top)
+		}
+	}
+
+	v.routeIntersections = countChildRouteNodeIntersections(childIDs, childEdges, relPos)
+	v.headerHits = countChildHeaderIntersections(childIDs, childEdges, relPos)
+	v.spanW = maxX - minX
+	v.spanH = maxY - minY
+	return v
+}
+
+func scaleChildLayoutAxes(childIDs []string, relPos map[string][2]float64, factorX, factorY float64) {
+	for _, id := range childIDs {
+		pos := relPos[id]
+		relPos[id] = [2]float64{pos[0] * factorX, pos[1] * factorY}
+	}
+}
+
+func cloneChildLayout(childIDs []string, relPos map[string][2]float64) map[string][2]float64 {
+	cloned := make(map[string][2]float64, len(childIDs))
+	for _, id := range childIDs {
+		cloned[id] = relPos[id]
+	}
+	return cloned
+}
+
+func restoreChildLayout(relPos map[string][2]float64, snapshot map[string][2]float64) {
+	for id, pos := range snapshot {
+		relPos[id] = pos
+	}
+}
+
+func recenterAndMeasureChildLayout(
+	childIDs []string,
+	relPos map[string][2]float64,
+) (float64, float64) {
+	if len(childIDs) == 0 {
+		return minGroupW, minGroupH
+	}
+
+	minX, minY := math.MaxFloat64, math.MaxFloat64
+	maxX, maxY := -math.MaxFloat64, -math.MaxFloat64
+	for _, id := range childIDs {
+		pos := relPos[id]
+		if pos[0] < minX {
+			minX = pos[0]
+		}
+		if pos[0] > maxX {
+			maxX = pos[0]
+		}
+		if pos[1] < minY {
+			minY = pos[1]
+		}
+		if pos[1] > maxY {
+			maxY = pos[1]
+		}
+	}
+
+	centerX := (minX + maxX) / 2
+	centerY := (minY + maxY) / 2
+	if centerX != 0 || centerY != 0 {
+		for _, id := range childIDs {
+			pos := relPos[id]
+			relPos[id] = [2]float64{
+				pos[0] - centerX,
+				pos[1] - centerY,
+			}
+		}
+	}
+
+	minX, minY = math.MaxFloat64, math.MaxFloat64
+	maxX, maxY = -math.MaxFloat64, -math.MaxFloat64
+	for _, id := range childIDs {
+		pos := relPos[id]
+		if pos[0] < minX {
+			minX = pos[0]
+		}
+		if pos[0] > maxX {
+			maxX = pos[0]
+		}
+		if pos[1] < minY {
+			minY = pos[1]
+		}
+		if pos[1] > maxY {
+			maxY = pos[1]
+		}
+	}
+
+	groupW := math.Max((maxX-minX)+childLayoutNodeW+groupPadX*2, minGroupW)
+	groupH := math.Max((maxY-minY)+childLayoutNodeH+groupPadTop+groupPadBot, minGroupH)
+	return groupW, groupH
+}
+
+func expandChildLayoutUntilClear(
+	childIDs []string,
+	childEdges []model.Edge,
+	relPos map[string][2]float64,
+) (float64, float64) {
+	if len(childIDs) == 0 {
+		return minGroupW, minGroupH
+	}
+
+	groupW, groupH := recenterAndMeasureChildLayout(childIDs, relPos)
+	for attempt := 0; attempt < childGrowPasses; attempt++ {
+		violations := measureChildLayoutViolations(childIDs, childEdges, relPos)
+		if violations.overlapCount == 0 && violations.routeIntersections == 0 && violations.headerHits == 0 {
+			break
+		}
+
+		growX := 1.0
+		growY := 1.0
+		if violations.overlapCount > 0 {
+			if violations.overlapX >= violations.overlapY {
+				growX += 0.22
+				growY += 0.06
+			} else {
+				growY += 0.22
+				growX += 0.06
+			}
+		}
+		if violations.routeIntersections > 0 {
+			if violations.spanW <= violations.spanH {
+				growX += 0.10
+			} else {
+				growY += 0.10
+			}
+		}
+		if violations.headerHits > 0 {
+			growY += 0.14
+		}
+
+		scaleChildLayoutAxes(childIDs, relPos, growX*childGrowFactor, growY*childGrowFactor)
+		groupW, groupH = recenterAndMeasureChildLayout(childIDs, relPos)
+	}
+
+	// Once the layout is valid, pull it back in until just before it becomes
+	// invalid again so groups don't stay overly large.
+	for attempt := 0; attempt < childCompactPasses; attempt++ {
+		violations := measureChildLayoutViolations(childIDs, childEdges, relPos)
+		if violations.overlapCount > 0 || violations.routeIntersections > 0 || violations.headerHits > 0 {
+			break
+		}
+
+		snapshot := cloneChildLayout(childIDs, relPos)
+		shrinkX, shrinkY := childCompactFactor, childCompactFactor
+		if violations.spanW > violations.spanH*1.15 {
+			shrinkX = childCompactFactor * 0.96
+		}
+		if violations.spanH > violations.spanW*1.15 {
+			shrinkY = childCompactFactor * 0.96
+		}
+		scaleChildLayoutAxes(childIDs, relPos, shrinkX, shrinkY)
+		groupW, groupH = recenterAndMeasureChildLayout(childIDs, relPos)
+
+		after := measureChildLayoutViolations(childIDs, childEdges, relPos)
+		if after.overlapCount > 0 || after.routeIntersections > 0 || after.headerHits > 0 {
+			restoreChildLayout(relPos, snapshot)
+			groupW, groupH = recenterAndMeasureChildLayout(childIDs, relPos)
+			break
+		}
+	}
+	return groupW, groupH
+}
+
+func countChildRouteNodeIntersections(
+	childIDs []string,
+	childEdges []model.Edge,
+	relPos map[string][2]float64,
+) int {
+	total := 0
+	for _, e := range childEdges {
+		srcPos, ok := relPos[e.SourceID]
+		if !ok {
+			continue
+		}
+		tgtPos, ok := relPos[e.TargetID]
+		if !ok {
+			continue
+		}
+		src := Point{X: srcPos[0], Y: srcPos[1]}
+		tgt := Point{X: tgtPos[0], Y: tgtPos[1]}
+		points := []Point{src}
+		points = append(points, compute8DirWaypoints(src, tgt)...)
+		points = append(points, tgt)
+		for _, id := range childIDs {
+			if id == e.SourceID || id == e.TargetID {
+				continue
+			}
+			if polylineIntersectsRect(points, childRectBoxAt(relPos[id], childRoutePad)) {
+				total++
+			}
+		}
+	}
+	return total
+}
+
+func countChildRouteCrossings(childEdges []model.Edge, relPos map[string][2]float64) int {
+	routes := buildChildPredictedRoutesFromRelPos(childEdges, relPos)
+	total := 0
+	for i := 0; i < len(routes); i++ {
+		a := routes[i]
+		for j := i + 1; j < len(routes); j++ {
+			b := routes[j]
+			crossed := false
+			for ai := 0; ai < len(a)-1 && !crossed; ai++ {
+				for bi := 0; bi < len(b)-1; bi++ {
+					a1, a2 := a[ai], a[ai+1]
+					b1, b2 := b[bi], b[bi+1]
+					if pointsApproxEqual(a1, b1) || pointsApproxEqual(a1, b2) || pointsApproxEqual(a2, b1) || pointsApproxEqual(a2, b2) {
+						continue
+					}
+					if segmentsIntersect(a1, a2, b1, b2) {
+						crossed = true
+						break
+					}
+				}
+			}
+			if crossed {
+				total++
+			}
+		}
+	}
+	return total
+}
+
+func countChildHeaderIntersections(
+	childIDs []string,
+	childEdges []model.Edge,
+	relPos map[string][2]float64,
+) int {
+	if len(childIDs) == 0 {
+		return 0
+	}
+	minX, minY := math.MaxFloat64, math.MaxFloat64
+	maxX := -math.MaxFloat64
+	for _, id := range childIDs {
+		pos := relPos[id]
+		if pos[0] < minX {
+			minX = pos[0]
+		}
+		if pos[0] > maxX {
+			maxX = pos[0]
+		}
+		if pos[1] < minY {
+			minY = pos[1]
+		}
+	}
+	groupTop := minY - childLayoutNodeH/2 - groupPadTop
+	headerRect := rectBox{
+		Left:   minX - childLayoutNodeW/2 - groupPadX/2,
+		Right:  maxX + childLayoutNodeW/2 + groupPadX/2,
+		Top:    groupTop,
+		Bottom: groupTop + groupPadTop*0.85,
+	}
+	hits := 0
+	for _, points := range buildChildPredictedRoutesFromRelPos(childEdges, relPos) {
+		if polylineIntersectsRect(points, headerRect) {
+			hits++
+		}
+	}
+	return hits
+}
+
+func layeredChildLayoutCost(
+	childIDs []string,
+	childEdges []model.Edge,
+	relPos map[string][2]float64,
+) float64 {
+	intersections := countChildRouteNodeIntersections(childIDs, childEdges, relPos)
+	crossings := countChildRouteCrossings(childEdges, relPos)
+	headerHits := countChildHeaderIntersections(childIDs, childEdges, relPos)
+	minX, minY := math.MaxFloat64, math.MaxFloat64
+	maxX, maxY := -math.MaxFloat64, -math.MaxFloat64
+	for _, id := range childIDs {
+		pos := relPos[id]
+		if pos[0] < minX {
+			minX = pos[0]
+		}
+		if pos[0] > maxX {
+			maxX = pos[0]
+		}
+		if pos[1] < minY {
+			minY = pos[1]
+		}
+		if pos[1] > maxY {
+			maxY = pos[1]
+		}
+	}
+	groupW := math.Max((maxX-minX)+childLayoutNodeW+groupPadX*2, minGroupW)
+	groupH := math.Max((maxY-minY)+childLayoutNodeH+groupPadTop+groupPadBot, minGroupH)
+	overlaps := countChildBoxOverlaps(childIDs, relPos, 4)
+	return float64(overlaps)*1_500_000 + float64(intersections)*1_000_000 + float64(headerHits)*50_000 + float64(crossings)*12_000 + (groupW+groupH)*4
+}
+
+func layeredColumnOffsetCandidates(layerIndex int, cellH float64) []float64 {
+	offset := math.Max(childLayoutNodeH/2+8, cellH*0.35)
+	if layerIndex%2 == 0 {
+		return []float64{0, offset, -offset}
+	}
+	return []float64{offset, -offset, 0}
+}
+
+func layeredRowSlotSets(count int, cellH, centerY, columnOffset float64) [][]float64 {
+	if count <= 0 {
+		return nil
+	}
+	if count == 1 {
+		return [][]float64{{centerY + columnOffset}}
+	}
+
+	pitch := math.Max(childLayoutNodeH+12, cellH*0.7)
+	totalSlots := count + 1
+	blankIdxs := []int{totalSlots / 2}
+	if totalSlots%2 == 0 {
+		blankIdxs = []int{totalSlots/2 - 1, totalSlots / 2}
+	}
+
+	slotSets := make([][]float64, 0, len(blankIdxs))
+	for _, blankIdx := range blankIdxs {
+		start := -float64(totalSlots-1)*pitch/2 + centerY + columnOffset
+		slots := make([]float64, 0, count)
+		for idx := 0; idx < totalSlots; idx++ {
+			if idx == blankIdx {
+				continue
+			}
+			slots = append(slots, start+float64(idx)*pitch)
+		}
+		slotSets = append(slotSets, slots)
+	}
+	return slotSets
+}
+
+func childNeighborAverageY(id string, childEdges []model.Edge, relPos map[string][2]float64) float64 {
+	sum := 0.0
+	count := 0.0
+	for _, e := range childEdges {
+		var other string
+		switch {
+		case e.SourceID == id:
+			other = e.TargetID
+		case e.TargetID == id:
+			other = e.SourceID
+		default:
+			continue
+		}
+		pos, ok := relPos[other]
+		if !ok {
+			continue
+		}
+		sum += pos[1]
+		count++
+	}
+	if count == 0 {
+		return 0
+	}
+	return sum / count
+}
+
+func permuteStrings(ids []string) [][]string {
+	if len(ids) <= 1 {
+		out := make([]string, len(ids))
+		copy(out, ids)
+		return [][]string{out}
+	}
+	result := make([][]string, 0)
+	for i := range ids {
+		head := ids[i]
+		rest := make([]string, 0, len(ids)-1)
+		rest = append(rest, ids[:i]...)
+		rest = append(rest, ids[i+1:]...)
+		for _, tail := range permuteStrings(rest) {
+			perm := make([]string, 0, len(ids))
+			perm = append(perm, head)
+			perm = append(perm, tail...)
+			result = append(result, perm)
+		}
+	}
+	return result
+}
+
+func columnOrderingCandidates(ids []string, childEdges []model.Edge, relPos map[string][2]float64) [][]string {
+	if len(ids) <= 1 {
+		out := make([]string, len(ids))
+		copy(out, ids)
+		return [][]string{out}
+	}
+	seen := make(map[string]bool)
+	out := make([][]string, 0)
+	addCandidate := func(candidate []string) {
+		key := fmt.Sprint(candidate)
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		dup := make([]string, len(candidate))
+		copy(dup, candidate)
+		out = append(out, dup)
+	}
+
+	current := make([]string, len(ids))
+	copy(current, ids)
+	addCandidate(current)
+
+	asc := make([]string, len(ids))
+	copy(asc, ids)
+	sort.SliceStable(asc, func(i, j int) bool {
+		left := childNeighborAverageY(asc[i], childEdges, relPos)
+		right := childNeighborAverageY(asc[j], childEdges, relPos)
+		if left != right {
+			return left < right
+		}
+		return asc[i] < asc[j]
+	})
+	addCandidate(asc)
+
+	desc := make([]string, len(asc))
+	copy(desc, asc)
+	for i, j := 0, len(desc)-1; i < j; i, j = i+1, j-1 {
+		desc[i], desc[j] = desc[j], desc[i]
+	}
+	addCandidate(desc)
+
+	if len(ids) <= 4 {
+		for _, perm := range permuteStrings(ids) {
+			addCandidate(perm)
+		}
+	}
+	return out
 }
 
 // layoutChildrenByLayers does mini BFS layering. Returns (groupW, groupH).
@@ -2602,35 +3483,57 @@ func layoutChildrenByLayers(childIDs []string, childEdges []model.Edge, cellW, c
 	}
 
 	numLayers := len(layerOrder)
-	maxPerLayer := 0
-	for _, layer := range layerOrder {
-		if len(layer) > maxPerLayer {
-			maxPerLayer = len(layer)
-		}
-	}
-
-	// Size group to fit ALL children without overlap
-	gridW := float64(numLayers) * cellW
-	gridH := float64(maxPerLayer) * cellH
-	groupW := math.Max(gridW+groupPadX*2, minGroupW)
-	groupH := math.Max(gridH+groupPadTop+groupPadBot, minGroupH)
-
-	// Position children: layers left-to-right, nodes top-to-bottom
 	startX := -float64(numLayers-1) * cellW / 2
+	centerY := (groupPadTop - groupPadBot) / 2
 
 	for li, layer := range layerOrder {
-		n := len(layer)
-		startY := -float64(n-1)*cellH/2 + (groupPadTop-groupPadBot)/2
-
+		x := startX + float64(li)*cellW
+		slots := layeredRowSlotSets(len(layer), cellH, centerY, 0)
+		rowSlots := []float64{centerY}
+		if len(slots) > 0 {
+			rowSlots = slots[0]
+		}
 		for ni, id := range layer {
-			relPos[id] = [2]float64{
-				startX + float64(li)*cellW,
-				startY + float64(ni)*cellH,
+			if ni < len(rowSlots) {
+				relPos[id] = [2]float64{x, rowSlots[ni]}
 			}
 		}
 	}
 
-	return groupW, groupH
+	for sweep := 0; sweep < 2; sweep++ {
+		for li, layer := range layerOrder {
+			x := startX + float64(li)*cellW
+			bestCost := layeredChildLayoutCost(childIDs, childEdges, relPos)
+			bestOrder := append([]string(nil), layer...)
+			bestSlots := make([]float64, len(layer))
+			for i, id := range layer {
+				bestSlots[i] = relPos[id][1]
+			}
+
+			for _, offset := range layeredColumnOffsetCandidates(li, cellH) {
+				for _, slots := range layeredRowSlotSets(len(layer), cellH, centerY, offset) {
+					for _, order := range columnOrderingCandidates(layer, childEdges, relPos) {
+						for rowIdx, id := range order {
+							relPos[id] = [2]float64{x, slots[rowIdx]}
+						}
+						cost := layeredChildLayoutCost(childIDs, childEdges, relPos)
+						if cost < bestCost {
+							bestCost = cost
+							bestOrder = append(bestOrder[:0], order...)
+							bestSlots = append(bestSlots[:0], slots...)
+						}
+					}
+				}
+			}
+
+			copy(layerOrder[li], bestOrder)
+			for rowIdx, id := range layerOrder[li] {
+				relPos[id] = [2]float64{x, bestSlots[rowIdx]}
+			}
+		}
+	}
+
+	return expandChildLayoutUntilClear(childIDs, childEdges, relPos)
 }
 
 // layoutChildrenGrid arranges children in a grid. Returns (groupW, groupH).
@@ -2656,6 +3559,9 @@ func layoutChildrenGrid(childIDs []string, cellW, cellH float64, relPos map[stri
 		}
 	}
 
+	if expandedW, expandedH := expandChildLayoutUntilClear(childIDs, nil, relPos); expandedW > groupW || expandedH > groupH {
+		groupW, groupH = expandedW, expandedH
+	}
 	return groupW, groupH
 }
 
@@ -2712,9 +3618,8 @@ func rectangularSlotPools(count int) [][]rectSlot {
 	center := rectSlot{X: 0, Y: offsetY, NX: 0, NY: 0, Priority: 18}
 
 	if count == 5 {
-		// 5 children: one row gets 3 nodes via a single midpoint. Keep the
-		// midpoint on the bottom so trailing children sit beneath siblings,
-		// matching the previous behavior before this refactor.
+		// Keep one spare slot so the assignment can leave an intentional lane
+		// open instead of filling every midpoint.
 		return [][]rectSlot{
 			append(append([]rectSlot(nil), corners...),
 				rectSlot{X: 0, Y: rectCompactSideY + offsetY, NX: 0, NY: 1, Priority: 6},
@@ -2728,26 +3633,27 @@ func rectangularSlotPools(count int) [][]rectSlot {
 			append(append([]rectSlot(nil), corners...),
 				rectSlot{X: rectCompactSideX, Y: offsetY, NX: 1, NY: 0, Priority: 6},
 			),
+			append(append([]rectSlot(nil), corners...), topMid, botMid),
+			append(append([]rectSlot(nil), corners...), leftMid, rightMid),
 		}
 	}
 
 	if count == 6 {
-		// 2 rows of 3 (wide) or 3 rows of 2 (tall). Each candidate keeps
-		// its paired midpoints on opposite sides of the group center.
+		// Prefer candidates that can leave a spare lane through the box.
 		wide := append(append([]rectSlot(nil), corners...), topMid, botMid)
 		tall := append(append([]rectSlot(nil), corners...), leftMid, rightMid)
-		return [][]rectSlot{wide, tall}
+		ring := append(append([]rectSlot(nil), corners...), topMid, botMid, leftMid, rightMid)
+		return [][]rectSlot{wide, tall, ring}
 	}
 
 	if count == 7 {
-		// 7 = corners + one full midpoint pair + one lone midpoint.
-		// The lone midpoint must be orthogonal to the pair so the result
-		// still reads as a rectangle with an extra center-line node.
+		// Prefer ring-style layouts that still leave at least one midpoint empty.
 		h1 := append(append([]rectSlot(nil), corners...), topMid, botMid, leftMid)
 		h2 := append(append([]rectSlot(nil), corners...), topMid, botMid, rightMid)
 		v1 := append(append([]rectSlot(nil), corners...), leftMid, rightMid, topMid)
 		v2 := append(append([]rectSlot(nil), corners...), leftMid, rightMid, botMid)
-		return [][]rectSlot{h1, h2, v1, v2}
+		ring := append(append([]rectSlot(nil), corners...), topMid, botMid, leftMid, rightMid)
+		return [][]rectSlot{h1, h2, v1, v2, ring}
 	}
 
 	// 8 children = 4 corners + 4 midpoints (all edge slots in use).
@@ -2988,13 +3894,1024 @@ func bestRectangularSlotAssignmentWithCost(
 	return assigned, total
 }
 
-func layoutChildrenRectangular(
+func childInternalEdges(childIDs []string, edges []model.Edge) []model.Edge {
+	childSet := make(map[string]bool, len(childIDs))
+	for _, id := range childIDs {
+		childSet[id] = true
+	}
+	childEdges := make([]model.Edge, 0, len(edges))
+	for _, e := range edges {
+		if childSet[e.SourceID] && childSet[e.TargetID] && e.EdgeType != model.EdgeTypeRelated {
+			childEdges = append(childEdges, e)
+		}
+	}
+	return childEdges
+}
+
+func assignedRectPositions(kids []string, assigned map[string]rectSlot) map[string][2]float64 {
+	rel := make(map[string][2]float64, len(kids))
+	for _, id := range kids {
+		slot, ok := assigned[id]
+		if !ok {
+			continue
+		}
+		rel[id] = [2]float64{slot.X, slot.Y}
+	}
+	return rel
+}
+
+func countAssignedChildRouteNodeIntersections(
+	kids []string,
+	childEdges []model.Edge,
+	assigned map[string]rectSlot,
+) int {
+	rel := assignedRectPositions(kids, assigned)
+	total := 0
+	for _, e := range childEdges {
+		srcPos, ok := rel[e.SourceID]
+		if !ok {
+			continue
+		}
+		tgtPos, ok := rel[e.TargetID]
+		if !ok {
+			continue
+		}
+		src := Point{X: srcPos[0], Y: srcPos[1]}
+		tgt := Point{X: tgtPos[0], Y: tgtPos[1]}
+		points := []Point{src}
+		points = append(points, compute8DirWaypoints(src, tgt)...)
+		points = append(points, tgt)
+		for _, id := range kids {
+			if id == e.SourceID || id == e.TargetID {
+				continue
+			}
+			if polylineIntersectsRect(points, childRectBoxAt(rel[id], childRoutePad)) {
+				total++
+			}
+		}
+	}
+	return total
+}
+
+func countAssignedChildRouteCrossings(childEdges []model.Edge, assigned map[string]rectSlot) int {
+	type route struct {
+		src, tgt string
+		points   []Point
+	}
+	rel := make(map[string][2]float64, len(assigned))
+	for id, slot := range assigned {
+		rel[id] = [2]float64{slot.X, slot.Y}
+	}
+	routes := make([]route, 0, len(childEdges))
+	for _, e := range childEdges {
+		srcPos, ok := rel[e.SourceID]
+		if !ok {
+			continue
+		}
+		tgtPos, ok := rel[e.TargetID]
+		if !ok {
+			continue
+		}
+		src := Point{X: srcPos[0], Y: srcPos[1]}
+		tgt := Point{X: tgtPos[0], Y: tgtPos[1]}
+		points := []Point{src}
+		points = append(points, compute8DirWaypoints(src, tgt)...)
+		points = append(points, tgt)
+		routes = append(routes, route{src: e.SourceID, tgt: e.TargetID, points: points})
+	}
+	total := 0
+	for i := 0; i < len(routes); i++ {
+		a := routes[i]
+		for j := i + 1; j < len(routes); j++ {
+			b := routes[j]
+			if a.src == b.src || a.src == b.tgt || a.tgt == b.src || a.tgt == b.tgt {
+				continue
+			}
+			crossed := false
+			for ai := 0; ai < len(a.points)-1 && !crossed; ai++ {
+				for bi := 0; bi < len(b.points)-1; bi++ {
+					a1, a2 := a.points[ai], a.points[ai+1]
+					b1, b2 := b.points[bi], b.points[bi+1]
+					if pointsApproxEqual(a1, b1) || pointsApproxEqual(a1, b2) || pointsApproxEqual(a2, b1) || pointsApproxEqual(a2, b2) {
+						continue
+					}
+					if segmentsIntersect(a1, a2, b1, b2) {
+						crossed = true
+						break
+					}
+				}
+			}
+			if crossed {
+				total++
+			}
+		}
+	}
+	return total
+}
+
+func scoreRectangularAssignment(
+	kids []string,
+	assigned map[string]rectSlot,
+	childEdges []model.Edge,
+) float64 {
+	if len(assigned) == 0 {
+		return math.MaxFloat64
+	}
+	rel := assignedRectPositions(kids, assigned)
+	minX, minY := math.MaxFloat64, math.MaxFloat64
+	maxX, maxY := -math.MaxFloat64, -math.MaxFloat64
+	centerCount := 0
+	for _, id := range kids {
+		pos := rel[id]
+		if pos[0] < minX {
+			minX = pos[0]
+		}
+		if pos[0] > maxX {
+			maxX = pos[0]
+		}
+		if pos[1] < minY {
+			minY = pos[1]
+		}
+		if pos[1] > maxY {
+			maxY = pos[1]
+		}
+		slot := assigned[id]
+		if math.Abs(slot.NX) < 0.25 && math.Abs(slot.NY) < 0.25 {
+			centerCount++
+		}
+	}
+
+	intersections := countAssignedChildRouteNodeIntersections(kids, childEdges, assigned)
+	crossings := countAssignedChildRouteCrossings(childEdges, assigned)
+	overlaps := countChildBoxOverlaps(kids, rel, 4)
+
+	groupTop := minY - childLayoutNodeH/2 - groupPadTop
+	headerBottom := groupTop + groupPadTop*0.85
+	headerRect := rectBox{
+		Left:   minX - childLayoutNodeW/2 - groupPadX/2,
+		Right:  maxX + childLayoutNodeW/2 + groupPadX/2,
+		Top:    groupTop,
+		Bottom: headerBottom,
+	}
+	headerHits := 0
+	for _, e := range childEdges {
+		srcPos, ok := rel[e.SourceID]
+		if !ok {
+			continue
+		}
+		tgtPos, ok := rel[e.TargetID]
+		if !ok {
+			continue
+		}
+		src := Point{X: srcPos[0], Y: srcPos[1]}
+		tgt := Point{X: tgtPos[0], Y: tgtPos[1]}
+		points := []Point{src}
+		points = append(points, compute8DirWaypoints(src, tgt)...)
+		points = append(points, tgt)
+		if polylineIntersectsRect(points, headerRect) {
+			headerHits++
+		}
+	}
+
+	groupW := math.Max((maxX-minX)+childLayoutNodeW+groupPadX*2, minGroupW)
+	groupH := math.Max((maxY-minY)+childLayoutNodeH+groupPadTop+groupPadBot, minGroupH)
+	return float64(overlaps)*1_500_000 + float64(intersections)*1_000_000 + float64(headerHits)*40_000 + float64(crossings)*12_000 + float64(centerCount)*2_000 + (groupW+groupH)*3
+}
+
+func shouldUsePassThroughChildLayout(
+	kids []string,
+	childEdges []model.Edge,
+	metrics map[string]childRectMetric,
+) bool {
+	if len(kids) < 4 || len(kids) > 8 {
+		return false
+	}
+	if len(childEdges) == 0 {
+		return false
+	}
+
+	horizontalExternal := 0
+	verticalExternal := 0
+	inCount := 0
+	outCount := 0
+	bridgeCount := 0
+	for _, id := range kids {
+		m := metrics[id]
+		if m.externalDegree == 0 {
+			continue
+		}
+		if math.Abs(m.pull.avgX) >= math.Abs(m.pull.avgY)*1.1 {
+			horizontalExternal += m.externalDegree
+		} else {
+			verticalExternal += m.externalDegree
+		}
+		if m.externalIn > 0 {
+			inCount++
+		}
+		if m.externalOut > 0 {
+			outCount++
+		}
+		if (m.externalIn > 0 && (m.externalOut > 0 || m.internalOut > 0)) ||
+			(m.externalOut > 0 && (m.externalIn > 0 || m.internalIn > 0)) {
+			bridgeCount++
+		}
+	}
+
+	return horizontalExternal >= max(4, verticalExternal*2) && inCount > 0 && outCount > 0 && bridgeCount > 0
+}
+
+func childExternalAxisStats(kids []string, metrics map[string]childRectMetric) (horizontal, vertical, leftish, rightish, upish, downish int) {
+	for _, id := range kids {
+		m := metrics[id]
+		if m.externalDegree == 0 {
+			continue
+		}
+		if math.Abs(m.pull.avgX) >= math.Abs(m.pull.avgY)*1.1 {
+			horizontal += m.externalDegree
+		} else {
+			vertical += m.externalDegree
+		}
+		if m.pull.avgX < -80 || m.externalIn > m.externalOut {
+			leftish++
+		}
+		if m.pull.avgX > 80 || m.externalOut > m.externalIn {
+			rightish++
+		}
+		if m.pull.avgY < -80 {
+			upish++
+		}
+		if m.pull.avgY > 80 {
+			downish++
+		}
+	}
+	return
+}
+
+func shouldUseVerticalLineChildLayout(
+	kids []string,
+	childEdges []model.Edge,
+	metrics map[string]childRectMetric,
+) bool {
+	if len(kids) < 3 || len(kids) > 6 {
+		return false
+	}
+	if len(childEdges) > len(kids) {
+		return false
+	}
+	horizontal, vertical, leftish, rightish, _, _ := childExternalAxisStats(kids, metrics)
+	if horizontal < max(3, vertical*2) {
+		return false
+	}
+	return leftish+rightish >= max(2, len(kids)/2)
+}
+
+func shouldUseHorizontalLineChildLayout(
+	kids []string,
+	childEdges []model.Edge,
+	metrics map[string]childRectMetric,
+) bool {
+	if len(kids) < 3 || len(kids) > 6 {
+		return false
+	}
+	if len(childEdges) > len(kids) {
+		return false
+	}
+	horizontal, vertical, _, _, upish, downish := childExternalAxisStats(kids, metrics)
+	if vertical < max(3, horizontal*2) {
+		return false
+	}
+	return upish+downish >= max(2, len(kids)/2)
+}
+
+func centeredAxisPositions(count int, step, offset float64) []float64 {
+	if count <= 0 {
+		return nil
+	}
+	positions := make([]float64, count)
+	base := float64(count-1) / 2
+	for i := 0; i < count; i++ {
+		positions[i] = offset + (float64(i)-base)*step
+	}
+	return positions
+}
+
+func verticalLineSlotPools(count int) [][]rectSlot {
+	offsetY := (groupPadTop - groupPadBot) / 2
+	makeMain := func(x float64, rows []float64) []rectSlot {
+		slots := make([]rectSlot, 0, len(rows))
+		for _, y := range rows {
+			ny := 0.0
+			if offsetY != y {
+				ny = math.Max(-1, math.Min(1, (y-offsetY)/(lineAxisStep*1.5)))
+			}
+			slots = append(slots, rectSlot{X: x, Y: y, NX: 0, NY: ny, Priority: 2})
+		}
+		return slots
+	}
+	makeSide := func(x float64, rows []float64) []rectSlot {
+		slots := make([]rectSlot, 0, len(rows))
+		nx := 1.0
+		if x < 0 {
+			nx = -1
+		}
+		for _, y := range rows {
+			ny := 0.0
+			if offsetY != y {
+				ny = math.Max(-1, math.Min(1, (y-offsetY)/(lineAxisStep*1.5)))
+			}
+			slots = append(slots, rectSlot{X: x, Y: y, NX: nx, NY: ny, Priority: 8})
+		}
+		return slots
+	}
+
+	pureRows := centeredAxisPositions(count, lineAxisStep, offsetY)
+	pure := makeMain(0, pureRows)
+
+	mainCount := count - 1
+	if mainCount < 3 {
+		mainCount = count
+	}
+	mainRows := centeredAxisPositions(mainCount, lineAxisStep, offsetY)
+	sideRows := centeredAxisPositions(min(2, count-1), lineAxisStep*1.2, offsetY)
+	right := append(makeMain(-lineMainOffset, mainRows), makeSide(lineSidecarOffset, sideRows)...)
+	left := append(makeMain(lineMainOffset, mainRows), makeSide(-lineSidecarOffset, sideRows)...)
+
+	return [][]rectSlot{right, left, pure}
+}
+
+func horizontalLineSlotPools(count int) [][]rectSlot {
+	offsetY := (groupPadTop - groupPadBot) / 2
+	makeMain := func(y float64, cols []float64) []rectSlot {
+		slots := make([]rectSlot, 0, len(cols))
+		for _, x := range cols {
+			nx := 0.0
+			if x != 0 {
+				nx = math.Max(-1, math.Min(1, x/(lineAxisStep*1.5)))
+			}
+			slots = append(slots, rectSlot{X: x, Y: y, NX: nx, NY: 0, Priority: 2})
+		}
+		return slots
+	}
+	makeSide := func(y float64, cols []float64) []rectSlot {
+		slots := make([]rectSlot, 0, len(cols))
+		ny := 1.0
+		if y < offsetY {
+			ny = -1
+		}
+		for _, x := range cols {
+			nx := 0.0
+			if x != 0 {
+				nx = math.Max(-1, math.Min(1, x/(lineAxisStep*1.5)))
+			}
+			slots = append(slots, rectSlot{X: x, Y: y, NX: nx, NY: ny, Priority: 8})
+		}
+		return slots
+	}
+
+	pureCols := centeredAxisPositions(count, lineAxisStep, 0)
+	pure := makeMain(offsetY, pureCols)
+
+	mainCount := count - 1
+	if mainCount < 3 {
+		mainCount = count
+	}
+	mainCols := centeredAxisPositions(mainCount, lineAxisStep, 0)
+	sideCols := centeredAxisPositions(min(2, count-1), lineAxisStep*1.2, 0)
+	bottom := append(makeMain(offsetY-lineMainOffset, mainCols), makeSide(offsetY+lineSidecarOffset, sideCols)...)
+	top := append(makeMain(offsetY+lineMainOffset, mainCols), makeSide(offsetY-lineSidecarOffset, sideCols)...)
+
+	return [][]rectSlot{bottom, top, pure}
+}
+
+func scoreVerticalLineAssignment(id string, slot rectSlot, metrics map[string]childRectMetric, demands map[string]childBoundaryDemand) float64 {
+	m := metrics[id]
+	score := slot.Priority
+	extWeight := math.Max(1, float64(m.externalDegree))
+	isSidecar := math.Abs(slot.NX) > 0.6
+
+	if isSidecar {
+		if slot.NX > 0 && !(m.pull.avgX > 80 || m.externalOut > m.externalIn) {
+			score += 150 * extWeight
+		}
+		if slot.NX < 0 && !(m.pull.avgX < -80 || m.externalIn > m.externalOut) {
+			score += 150 * extWeight
+		}
+		if m.internalDegree > 1 {
+			score += 80
+		}
+	} else {
+		if math.Abs(m.pull.avgX) > 180 && m.externalDegree > 0 {
+			score += 24 * extWeight
+		}
+		if m.internalDegree > 0 {
+			score -= 8
+		}
+	}
+
+	desiredY := boundaryDesiredY(id, demands, m.pull, slot.Y)
+	score += math.Abs(slot.Y-desiredY) * 0.16
+	return score
+}
+
+func scoreHorizontalLineAssignment(id string, slot rectSlot, metrics map[string]childRectMetric, demands map[string]childBoundaryDemand) float64 {
+	m := metrics[id]
+	score := slot.Priority
+	extWeight := math.Max(1, float64(m.externalDegree))
+	isSidecar := math.Abs(slot.NY) > 0.6
+
+	if isSidecar {
+		if slot.NY > 0 && !(m.pull.avgY > 80 || m.externalOut > m.externalIn) {
+			score += 150 * extWeight
+		}
+		if slot.NY < 0 && !(m.pull.avgY < -80 || m.externalIn > m.externalOut) {
+			score += 150 * extWeight
+		}
+		if m.internalDegree > 1 {
+			score += 80
+		}
+	} else {
+		if math.Abs(m.pull.avgY) > 180 && m.externalDegree > 0 {
+			score += 24 * extWeight
+		}
+		if m.internalDegree > 0 {
+			score -= 8
+		}
+	}
+
+	desiredX := boundaryDesiredX(id, demands, m.pull, slot.X)
+	score += math.Abs(slot.X-desiredX) * 0.16
+	return score
+}
+
+func scoreLineAssignmentShape(
+	kids []string,
+	assigned map[string]rectSlot,
+) float64 {
+	sideLeft := 0
+	sideRight := 0
+	sideTop := 0
+	sideBottom := 0
+	for _, id := range kids {
+		slot, ok := assigned[id]
+		if !ok {
+			continue
+		}
+		switch {
+		case slot.NX > 0.6:
+			sideRight++
+		case slot.NX < -0.6:
+			sideLeft++
+		case slot.NY > 0.6:
+			sideBottom++
+		case slot.NY < -0.6:
+			sideTop++
+		}
+	}
+	score := 0.0
+	if sideLeft > 0 && sideRight > 0 {
+		score += 2_000
+	}
+	if sideTop > 0 && sideBottom > 0 {
+		score += 2_000
+	}
+	if sideLeft > 2 {
+		score += float64(sideLeft-2) * 600
+	}
+	if sideRight > 2 {
+		score += float64(sideRight-2) * 600
+	}
+	if sideTop > 2 {
+		score += float64(sideTop-2) * 600
+	}
+	if sideBottom > 2 {
+		score += float64(sideBottom-2) * 600
+	}
+	return score
+}
+
+func bestCustomSlotAssignmentWithCost(
+	kids []string,
+	slots []rectSlot,
+	scoreFn func(string, rectSlot) float64,
+) (map[string]rectSlot, float64) {
+	type state struct {
+		index int
+		mask  int
+	}
+
+	memo := make(map[state]float64)
+	choice := make(map[state]int)
+	var solve func(index, mask int) float64
+	solve = func(index, mask int) float64 {
+		if index == len(kids) {
+			return 0
+		}
+		key := state{index: index, mask: mask}
+		if val, ok := memo[key]; ok {
+			return val
+		}
+
+		best := math.MaxFloat64
+		bestSlot := -1
+		for slotIdx := 0; slotIdx < len(slots); slotIdx++ {
+			if mask&(1<<slotIdx) != 0 {
+				continue
+			}
+			cost := scoreFn(kids[index], slots[slotIdx]) + solve(index+1, mask|(1<<slotIdx))
+			if cost < best {
+				best = cost
+				bestSlot = slotIdx
+			}
+		}
+		memo[key] = best
+		choice[key] = bestSlot
+		return best
+	}
+
+	total := solve(0, 0)
+	assigned := make(map[string]rectSlot, len(kids))
+	mask := 0
+	for index, id := range kids {
+		key := state{index: index, mask: mask}
+		slotIdx := choice[key]
+		if slotIdx < 0 {
+			continue
+		}
+		assigned[id] = slots[slotIdx]
+		mask |= 1 << slotIdx
+	}
+	return assigned, total
+}
+
+func passThroughSlotPools(count int) [][]rectSlot {
+	offsetY := (groupPadTop - groupPadBot) / 2
+	upperY := offsetY - math.Max(passThroughLaneGap+childLayoutNodeH/2, rectCompactSideY+8)
+	lowerY := offsetY + math.Max(passThroughLaneGap+childLayoutNodeH/2, rectCompactSideY+8)
+
+	makeSlots := func(xsUpper, xsLower []float64) []rectSlot {
+		maxAbs := 1.0
+		for _, x := range xsUpper {
+			if math.Abs(x) > maxAbs {
+				maxAbs = math.Abs(x)
+			}
+		}
+		for _, x := range xsLower {
+			if math.Abs(x) > maxAbs {
+				maxAbs = math.Abs(x)
+			}
+		}
+		slots := make([]rectSlot, 0, len(xsUpper)+len(xsLower))
+		for _, x := range xsUpper {
+			slots = append(slots, rectSlot{X: x, Y: upperY, NX: x / maxAbs, NY: -1, Priority: 4})
+		}
+		for _, x := range xsLower {
+			slots = append(slots, rectSlot{X: x, Y: lowerY, NX: x / maxAbs, NY: 1, Priority: 2})
+		}
+		return slots
+	}
+
+	switch count {
+	case 4:
+		return [][]rectSlot{
+			makeSlots([]float64{-passThroughStep, passThroughStep}, []float64{-passThroughStep, passThroughStep}),
+		}
+	case 5:
+		return [][]rectSlot{
+			makeSlots([]float64{-passThroughStep, passThroughStep}, []float64{-1.6 * passThroughStep, 0, 1.6 * passThroughStep}),
+			makeSlots([]float64{-1.6 * passThroughStep, 0, 1.6 * passThroughStep}, []float64{-passThroughStep, passThroughStep}),
+		}
+	case 6:
+		return [][]rectSlot{
+			makeSlots([]float64{-1.8 * passThroughStep, 0, 1.8 * passThroughStep}, []float64{-1.8 * passThroughStep, 0, 1.8 * passThroughStep}),
+		}
+	case 7:
+		return [][]rectSlot{
+			makeSlots([]float64{-2.3 * passThroughStep, -0.8 * passThroughStep, 0.8 * passThroughStep, 2.3 * passThroughStep}, []float64{-1.6 * passThroughStep, 0, 1.6 * passThroughStep}),
+			makeSlots([]float64{-1.6 * passThroughStep, 0, 1.6 * passThroughStep}, []float64{-2.3 * passThroughStep, -0.8 * passThroughStep, 0.8 * passThroughStep, 2.3 * passThroughStep}),
+		}
+	case 8:
+		return [][]rectSlot{
+			makeSlots([]float64{-2.3 * passThroughStep, -0.8 * passThroughStep, 0.8 * passThroughStep, 2.3 * passThroughStep}, []float64{-2.3 * passThroughStep, -0.8 * passThroughStep, 0.8 * passThroughStep, 2.3 * passThroughStep}),
+		}
+	default:
+		return nil
+	}
+}
+
+func scorePassThroughAssignment(id string, slot rectSlot, metrics map[string]childRectMetric) float64 {
+	m := metrics[id]
+	score := slot.Priority
+	extWeight := math.Max(1, float64(m.externalDegree))
+
+	if math.Abs(m.pull.avgX) > 80 {
+		if m.pull.avgX > 0 && slot.NX < 0 {
+			score += 120 * extWeight
+		}
+		if m.pull.avgX < 0 && slot.NX > 0 {
+			score += 120 * extWeight
+		}
+		score += (1 - math.Abs(slot.NX)) * 60 * extWeight
+	}
+	if math.Abs(m.pull.avgY) > 80 {
+		if m.pull.avgY > 0 && slot.NY < 0 {
+			score += 40 * extWeight
+		}
+		if m.pull.avgY < 0 && slot.NY > 0 {
+			score += 40 * extWeight
+		}
+	}
+
+	if (m.externalIn > 0 && m.externalOut > 0) || (m.externalDegree > 0 && m.internalIn > 0 && m.internalOut > 0) {
+		score += math.Abs(slot.X) * 0.25
+	}
+	if m.externalDegree == 0 && m.internalDegree > 0 {
+		score += math.Abs(slot.X) * 0.12
+	}
+	return score
+}
+
+func scorePassThroughAssignmentWithBoundary(id string, slot rectSlot, metrics map[string]childRectMetric, demands map[string]childBoundaryDemand) float64 {
+	score := scorePassThroughAssignment(id, slot, metrics)
+	m := metrics[id]
+	demand, ok := demands[id]
+	if !ok {
+		return score
+	}
+	if demand.leftCount+demand.rightCount > 0 {
+		desiredY := boundaryDesiredY(id, demands, m.pull, slot.Y)
+		score += math.Abs(slot.Y-desiredY) * 0.12
+	}
+	if demand.topCount+demand.botCount > 0 {
+		desiredX := boundaryDesiredX(id, demands, m.pull, slot.X)
+		score += math.Abs(slot.X-desiredX) * 0.06
+	}
+	return score
+}
+
+func bestPassThroughSlotAssignmentWithCost(
+	kids []string,
+	slots []rectSlot,
+	metrics map[string]childRectMetric,
+) (map[string]rectSlot, float64) {
+	type state struct {
+		index int
+		mask  int
+	}
+
+	memo := make(map[state]float64)
+	choice := make(map[state]int)
+	var solve func(index, mask int) float64
+	solve = func(index, mask int) float64 {
+		if index == len(kids) {
+			return 0
+		}
+		key := state{index: index, mask: mask}
+		if val, ok := memo[key]; ok {
+			return val
+		}
+
+		best := math.MaxFloat64
+		bestSlot := -1
+		for slotIdx := 0; slotIdx < len(slots); slotIdx++ {
+			if mask&(1<<slotIdx) != 0 {
+				continue
+			}
+			cost := scorePassThroughAssignment(kids[index], slots[slotIdx], metrics) + solve(index+1, mask|(1<<slotIdx))
+			if cost < best {
+				best = cost
+				bestSlot = slotIdx
+			}
+		}
+		memo[key] = best
+		choice[key] = bestSlot
+		return best
+	}
+
+	total := solve(0, 0)
+	assigned := make(map[string]rectSlot, len(kids))
+	mask := 0
+	for index, id := range kids {
+		key := state{index: index, mask: mask}
+		slotIdx := choice[key]
+		if slotIdx < 0 {
+			continue
+		}
+		assigned[id] = slots[slotIdx]
+		mask |= 1 << slotIdx
+	}
+	return assigned, total
+}
+
+func shouldUseExternalPullBoundaryLayout(
+	kids []string,
+	childEdges []model.Edge,
+	pulls map[string]childExternalPull,
+) bool {
+	if len(kids) < 5 || len(childEdges) > len(kids)/3 {
+		return false
+	}
+	pulledKids := 0
+	totalExternal := 0
+	for _, id := range kids {
+		pull, ok := pulls[id]
+		if !ok || pull.count == 0 {
+			continue
+		}
+		pulledKids++
+		totalExternal += pull.count
+	}
+	if pulledKids < len(kids)/2 {
+		return false
+	}
+	return totalExternal >= len(kids)
+}
+
+func layoutChildrenPassThroughCorridor(
 	childIDs []string,
 	edges []model.Edge,
 	relPos map[string][2]float64,
 	pulls map[string]childExternalPull,
+	demands map[string]childBoundaryDemand,
+	childEdges []model.Edge,
 ) (float64, float64, bool) {
-	if !shouldUseRectangularChildLayout(len(childIDs)) {
+	metrics := computeChildRectMetrics(childIDs, edges, pulls)
+	if !shouldUsePassThroughChildLayout(childIDs, childEdges, metrics) {
+		return 0, 0, false
+	}
+
+	kids := append([]string(nil), childIDs...)
+	sort.SliceStable(kids, func(i, j int) bool {
+		extI, intI := childRectUrgency(kids[i], metrics)
+		extJ, intJ := childRectUrgency(kids[j], metrics)
+		if extI != extJ {
+			return extI > extJ
+		}
+		if intI != intJ {
+			return intI > intJ
+		}
+		return kids[i] < kids[j]
+	})
+
+	var assigned map[string]rectSlot
+	bestCost := math.MaxFloat64
+	for _, pool := range passThroughSlotPools(len(kids)) {
+		if len(pool) < len(kids) {
+			continue
+		}
+		cand, cost := bestCustomSlotAssignmentWithCost(kids, pool, func(id string, slot rectSlot) float64 {
+			return scorePassThroughAssignmentWithBoundary(id, slot, metrics, demands)
+		})
+		if len(cand) != len(kids) {
+			continue
+		}
+		cost += scoreRectangularAssignment(kids, cand, childEdges)
+		if cost < bestCost {
+			bestCost = cost
+			assigned = cand
+		}
+	}
+	if assigned == nil {
+		return 0, 0, false
+	}
+
+	for _, id := range kids {
+		slot := assigned[id]
+		relPos[id] = [2]float64{slot.X, slot.Y}
+	}
+	groupW, groupH := expandChildLayoutUntilClear(kids, childEdges, relPos)
+	return groupW, groupH, true
+}
+
+func layoutChildrenVerticalLine(
+	childIDs []string,
+	edges []model.Edge,
+	relPos map[string][2]float64,
+	pulls map[string]childExternalPull,
+	demands map[string]childBoundaryDemand,
+	childEdges []model.Edge,
+) (float64, float64, bool) {
+	metrics := computeChildRectMetrics(childIDs, edges, pulls)
+	if !shouldUseVerticalLineChildLayout(childIDs, childEdges, metrics) {
+		return 0, 0, false
+	}
+
+	kids := append([]string(nil), childIDs...)
+	sort.SliceStable(kids, func(i, j int) bool {
+		extI, intI := childRectUrgency(kids[i], metrics)
+		extJ, intJ := childRectUrgency(kids[j], metrics)
+		if extI != extJ {
+			return extI > extJ
+		}
+		if intI != intJ {
+			return intI > intJ
+		}
+		return kids[i] < kids[j]
+	})
+
+	var assigned map[string]rectSlot
+	bestCost := math.MaxFloat64
+	for _, pool := range verticalLineSlotPools(len(kids)) {
+		if len(pool) < len(kids) {
+			continue
+		}
+		cand, cost := bestCustomSlotAssignmentWithCost(kids, pool, func(id string, slot rectSlot) float64 {
+			return scoreVerticalLineAssignment(id, slot, metrics, demands)
+		})
+		if len(cand) != len(kids) {
+			continue
+		}
+		cost += scoreRectangularAssignment(kids, cand, childEdges)
+		cost += scoreLineAssignmentShape(kids, cand)
+		if cost < bestCost {
+			bestCost = cost
+			assigned = cand
+		}
+	}
+	if assigned == nil {
+		return 0, 0, false
+	}
+
+	for _, id := range kids {
+		slot := assigned[id]
+		relPos[id] = [2]float64{slot.X, slot.Y}
+	}
+	groupW, groupH := expandChildLayoutUntilClear(kids, childEdges, relPos)
+	return groupW, groupH, true
+}
+
+func layoutChildrenHorizontalLine(
+	childIDs []string,
+	edges []model.Edge,
+	relPos map[string][2]float64,
+	pulls map[string]childExternalPull,
+	demands map[string]childBoundaryDemand,
+	childEdges []model.Edge,
+) (float64, float64, bool) {
+	metrics := computeChildRectMetrics(childIDs, edges, pulls)
+	if !shouldUseHorizontalLineChildLayout(childIDs, childEdges, metrics) {
+		return 0, 0, false
+	}
+
+	kids := append([]string(nil), childIDs...)
+	sort.SliceStable(kids, func(i, j int) bool {
+		extI, intI := childRectUrgency(kids[i], metrics)
+		extJ, intJ := childRectUrgency(kids[j], metrics)
+		if extI != extJ {
+			return extI > extJ
+		}
+		if intI != intJ {
+			return intI > intJ
+		}
+		return kids[i] < kids[j]
+	})
+
+	var assigned map[string]rectSlot
+	bestCost := math.MaxFloat64
+	for _, pool := range horizontalLineSlotPools(len(kids)) {
+		if len(pool) < len(kids) {
+			continue
+		}
+		cand, cost := bestCustomSlotAssignmentWithCost(kids, pool, func(id string, slot rectSlot) float64 {
+			return scoreHorizontalLineAssignment(id, slot, metrics, demands)
+		})
+		if len(cand) != len(kids) {
+			continue
+		}
+		cost += scoreRectangularAssignment(kids, cand, childEdges)
+		cost += scoreLineAssignmentShape(kids, cand)
+		if cost < bestCost {
+			bestCost = cost
+			assigned = cand
+		}
+	}
+	if assigned == nil {
+		return 0, 0, false
+	}
+
+	for _, id := range kids {
+		slot := assigned[id]
+		relPos[id] = [2]float64{slot.X, slot.Y}
+	}
+	groupW, groupH := expandChildLayoutUntilClear(kids, childEdges, relPos)
+	return groupW, groupH, true
+}
+
+func externalBoundarySlotPools() [][]rectSlot {
+	offsetY := (groupPadTop - groupPadBot) / 2
+	xOuter := rectCompactSideX + 84.0
+	xInner := rectCompactCornerX + 44.0
+	yTop := -rectCompactSideY + offsetY
+	yUpper := offsetY - 18.0
+	yLower := offsetY + 44.0
+	yBottom := rectCompactSideY + offsetY + 18.0
+
+	bottomHeavy := []rectSlot{
+		{X: -xInner, Y: yTop, NX: -0.55, NY: -1, Priority: 8},
+		{X: xInner, Y: yTop, NX: 0.55, NY: -1, Priority: 8},
+		{X: -xOuter, Y: yUpper, NX: -1, NY: -0.2, Priority: 5},
+		{X: xOuter, Y: yUpper, NX: 1, NY: -0.2, Priority: 5},
+		{X: -xOuter, Y: yLower, NX: -1, NY: 0.45, Priority: 2},
+		{X: xOuter, Y: yLower, NX: 1, NY: 0.45, Priority: 2},
+		{X: -xOuter, Y: yBottom, NX: -1, NY: 1, Priority: 0},
+		{X: -xInner, Y: yBottom, NX: -0.55, NY: 1, Priority: 0},
+		{X: 0, Y: yBottom, NX: 0, NY: 1, Priority: 0},
+		{X: xInner, Y: yBottom, NX: 0.55, NY: 1, Priority: 0},
+		{X: xOuter, Y: yBottom, NX: 1, NY: 1, Priority: 0},
+	}
+
+	balanced := []rectSlot{
+		{X: -xOuter, Y: yTop, NX: -1, NY: -1, Priority: 0},
+		{X: -xInner, Y: yTop, NX: -0.55, NY: -1, Priority: 4},
+		{X: xInner, Y: yTop, NX: 0.55, NY: -1, Priority: 4},
+		{X: xOuter, Y: yTop, NX: 1, NY: -1, Priority: 0},
+		{X: xOuter, Y: yUpper, NX: 1, NY: -0.2, Priority: 6},
+		{X: xOuter, Y: yLower, NX: 1, NY: 0.45, Priority: 2},
+		{X: xOuter, Y: yBottom, NX: 1, NY: 1, Priority: 0},
+		{X: xInner, Y: yBottom, NX: 0.55, NY: 1, Priority: 0},
+		{X: -xInner, Y: yBottom, NX: -0.55, NY: 1, Priority: 0},
+		{X: -xOuter, Y: yBottom, NX: -1, NY: 1, Priority: 0},
+		{X: -xOuter, Y: yLower, NX: -1, NY: 0.45, Priority: 2},
+		{X: -xOuter, Y: yUpper, NX: -1, NY: -0.2, Priority: 6},
+	}
+
+	return [][]rectSlot{bottomHeavy, balanced}
+}
+
+func scoreExternalBoundaryAssignment(
+	kids []string,
+	assigned map[string]rectSlot,
+	metrics map[string]childRectMetric,
+) float64 {
+	score := 0.0
+	topUsed := 0
+	totalWeightedY := 0.0
+	totalWeight := 0.0
+
+	for _, id := range kids {
+		slot, ok := assigned[id]
+		if !ok {
+			continue
+		}
+		m := metrics[id]
+		weight := math.Max(1, float64(m.externalDegree))
+		if slot.NY < -0.2 {
+			topUsed++
+		}
+		if m.pull.count == 0 {
+			continue
+		}
+
+		totalWeightedY += m.pull.avgY * weight
+		totalWeight += weight
+
+		if m.pull.avgY > 120 && slot.NY < 0.25 {
+			score += (0.25 - slot.NY) * 280 * weight
+		}
+		if m.pull.avgY > 220 && slot.NY < 0.6 {
+			score += (0.6 - slot.NY) * 240 * weight
+		}
+		if m.pull.avgY < -120 && slot.NY > -0.25 {
+			score += (slot.NY + 0.25) * 280 * weight
+		}
+		if m.pull.avgX > 120 && slot.NX < 0.1 {
+			score += (0.1 - slot.NX) * 160 * weight
+		}
+		if m.pull.avgX < -120 && slot.NX > -0.1 {
+			score += (slot.NX + 0.1) * 160 * weight
+		}
+		if m.externalOut > m.externalIn && slot.NY < 0 {
+			score += 40 * weight
+		}
+		if m.externalIn > m.externalOut && slot.NY > 0.65 {
+			score += 36 * weight
+		}
+	}
+
+	if totalWeight > 0 {
+		avgY := totalWeightedY / totalWeight
+		topQuota := len(kids) / 4
+		if topQuota < 1 {
+			topQuota = 1
+		}
+		if avgY > 140 && topUsed > topQuota {
+			score += float64(topUsed-topQuota) * 900
+		}
+		if avgY > 260 && topUsed > 1 {
+			score += float64(topUsed-1) * 1500
+		}
+	}
+
+	return score
+}
+
+func layoutChildrenExternalPullBoundary(
+	childIDs []string,
+	edges []model.Edge,
+	relPos map[string][2]float64,
+	pulls map[string]childExternalPull,
+	childEdges []model.Edge,
+) (float64, float64, bool) {
+	if !shouldUseExternalPullBoundaryLayout(childIDs, childEdges, pulls) {
 		return 0, 0, false
 	}
 
@@ -3014,7 +4931,7 @@ func layoutChildrenRectangular(
 
 	var assigned map[string]rectSlot
 	bestCost := math.MaxFloat64
-	for _, pool := range rectangularSlotPools(len(kids)) {
+	for _, pool := range externalBoundarySlotPools() {
 		if len(pool) < len(kids) {
 			continue
 		}
@@ -3022,6 +4939,8 @@ func layoutChildrenRectangular(
 		if len(cand) != len(kids) {
 			continue
 		}
+		cost += scoreRectangularAssignment(kids, cand, childEdges)
+		cost += scoreExternalBoundaryAssignment(kids, cand, metrics)
 		if cost < bestCost {
 			bestCost = cost
 			assigned = cand
@@ -3050,8 +4969,74 @@ func layoutChildrenRectangular(
 		}
 	}
 
-	groupW := math.Max((maxX-minX)+nodeW+groupPadX*2, minGroupW)
-	groupH := math.Max((maxY-minY)+nodeH+groupPadTop+groupPadBot, minGroupH)
+	groupW, groupH := expandChildLayoutUntilClear(kids, childEdges, relPos)
+	return groupW, groupH, true
+}
+
+func layoutChildrenRectangular(
+	childIDs []string,
+	edges []model.Edge,
+	relPos map[string][2]float64,
+	pulls map[string]childExternalPull,
+) (float64, float64, bool) {
+	if !shouldUseRectangularChildLayout(len(childIDs)) {
+		return 0, 0, false
+	}
+
+	metrics := computeChildRectMetrics(childIDs, edges, pulls)
+	childEdges := childInternalEdges(childIDs, edges)
+	kids := append([]string(nil), childIDs...)
+	sort.SliceStable(kids, func(i, j int) bool {
+		extI, intI := childRectUrgency(kids[i], metrics)
+		extJ, intJ := childRectUrgency(kids[j], metrics)
+		if extI != extJ {
+			return extI > extJ
+		}
+		if intI != intJ {
+			return intI > intJ
+		}
+		return kids[i] < kids[j]
+	})
+
+	var assigned map[string]rectSlot
+	bestCost := math.MaxFloat64
+	for _, pool := range rectangularSlotPools(len(kids)) {
+		if len(pool) < len(kids) {
+			continue
+		}
+		cand, cost := bestRectangularSlotAssignmentWithCost(kids, pool, metrics)
+		if len(cand) != len(kids) {
+			continue
+		}
+		cost += scoreRectangularAssignment(kids, cand, childEdges)
+		if cost < bestCost {
+			bestCost = cost
+			assigned = cand
+		}
+	}
+	if assigned == nil {
+		return 0, 0, false
+	}
+	minX, minY := math.MaxFloat64, math.MaxFloat64
+	maxX, maxY := -math.MaxFloat64, -math.MaxFloat64
+	for _, id := range kids {
+		slot := assigned[id]
+		relPos[id] = [2]float64{slot.X, slot.Y}
+		if slot.X < minX {
+			minX = slot.X
+		}
+		if slot.X > maxX {
+			maxX = slot.X
+		}
+		if slot.Y < minY {
+			minY = slot.Y
+		}
+		if slot.Y > maxY {
+			maxY = slot.Y
+		}
+	}
+
+	groupW, groupH := expandChildLayoutUntilClear(kids, childEdges, relPos)
 	return groupW, groupH, true
 }
 
@@ -3059,6 +5044,17 @@ type childExternalPull struct {
 	avgX  float64
 	avgY  float64
 	count int
+}
+
+type childBoundaryDemand struct {
+	leftOrder  float64
+	rightOrder float64
+	topOrder   float64
+	botOrder   float64
+	leftCount  int
+	rightCount int
+	topCount   int
+	botCount   int
 }
 
 func childExternalPulls(
@@ -3111,6 +5107,109 @@ func childExternalPulls(
 	}
 
 	return pulls
+}
+
+func buildChildBoundaryDemands(
+	groupID string,
+	groupPos [2]float64,
+	kids []string,
+	edges []model.Edge,
+	nodeMap map[string]*model.Node,
+	positions map[string][2]float64,
+) map[string]childBoundaryDemand {
+	childSet := make(map[string]bool, len(kids))
+	demands := make(map[string]childBoundaryDemand, len(kids))
+	for _, kid := range kids {
+		childSet[kid] = true
+		demands[kid] = childBoundaryDemand{}
+	}
+
+	for _, e := range edges {
+		var kid, external string
+		if childSet[e.SourceID] && !childSet[e.TargetID] {
+			kid = e.SourceID
+			external = resolveTopLevel(e.TargetID, nodeMap)
+		} else if childSet[e.TargetID] && !childSet[e.SourceID] {
+			kid = e.TargetID
+			external = resolveTopLevel(e.SourceID, nodeMap)
+		}
+		if kid == "" || external == groupID {
+			continue
+		}
+
+		extPos, ok := positions[external]
+		if !ok {
+			continue
+		}
+
+		demand := demands[kid]
+		dx := extPos[0] - groupPos[0]
+		dy := extPos[1] - groupPos[1]
+		if math.Abs(dx) >= math.Abs(dy) {
+			if dx < 0 {
+				demand.leftOrder += dy
+				demand.leftCount++
+			} else {
+				demand.rightOrder += dy
+				demand.rightCount++
+			}
+		} else {
+			if dy < 0 {
+				demand.topOrder += dx
+				demand.topCount++
+			} else {
+				demand.botOrder += dx
+				demand.botCount++
+			}
+		}
+		demands[kid] = demand
+	}
+
+	for kid, demand := range demands {
+		if demand.leftCount > 0 {
+			demand.leftOrder /= float64(demand.leftCount)
+		}
+		if demand.rightCount > 0 {
+			demand.rightOrder /= float64(demand.rightCount)
+		}
+		if demand.topCount > 0 {
+			demand.topOrder /= float64(demand.topCount)
+		}
+		if demand.botCount > 0 {
+			demand.botOrder /= float64(demand.botCount)
+		}
+		demands[kid] = demand
+	}
+
+	return demands
+}
+
+func boundaryDesiredY(id string, demands map[string]childBoundaryDemand, pull childExternalPull, fallback float64) float64 {
+	if demand, ok := demands[id]; ok {
+		total := demand.leftCount + demand.rightCount
+		if total > 0 {
+			sum := demand.leftOrder*float64(demand.leftCount) + demand.rightOrder*float64(demand.rightCount)
+			return sum / float64(total)
+		}
+	}
+	if pull.count > 0 {
+		return pull.avgY
+	}
+	return fallback
+}
+
+func boundaryDesiredX(id string, demands map[string]childBoundaryDemand, pull childExternalPull, fallback float64) float64 {
+	if demand, ok := demands[id]; ok {
+		total := demand.topCount + demand.botCount
+		if total > 0 {
+			sum := demand.topOrder*float64(demand.topCount) + demand.botOrder*float64(demand.botCount)
+			return sum / float64(total)
+		}
+	}
+	if pull.count > 0 {
+		return pull.avgX
+	}
+	return fallback
 }
 
 // childConnAvgRelY returns the average relative Y of group children that node `id` connects to.

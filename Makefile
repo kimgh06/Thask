@@ -41,6 +41,7 @@ release-cli:
 	cd cli && GOOS=linux   GOARCH=amd64 go build -ldflags "$(CLI_LDFLAGS)" -o ../dist/thask-linux-amd64  ./cmd/thask
 	cd cli && GOOS=linux   GOARCH=arm64 go build -ldflags "$(CLI_LDFLAGS)" -o ../dist/thask-linux-arm64  ./cmd/thask
 	cd cli && GOOS=windows GOARCH=amd64 go build -ldflags "$(CLI_LDFLAGS)" -o ../dist/thask-windows-amd64.exe ./cmd/thask
+	cd cli && npm publish --access public --otp=$(THASKOTP)
 	@echo "Built binaries in dist/"
 	@ls -lh dist/
 
