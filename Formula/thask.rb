@@ -9,20 +9,20 @@ class Thask < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/kimgh06/Thask/releases/download/v#{version}/thask-darwin-arm64.tar.gz"
-      sha256 "35cb0ab45afd4e937208c81d7ec73ed94b5ce37ec6db2fd19950e524b24df3a9"
+      sha256 "7001200b44559d0f3d2a9b8a3b51b22ffbfa50a04ef71ca11902eaebd4e09966"
     else
       url "https://github.com/kimgh06/Thask/releases/download/v#{version}/thask-darwin-amd64.tar.gz"
-      sha256 "b74d7997a6b74eea6b13cff9f51f75b2915a09934556042a15dd26be0c3d6125"
+      sha256 "71de82db82a7fc00665cfea923fb955cd1003def395c7ccf1ac5ef9193c0aba1"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/kimgh06/Thask/releases/download/v#{version}/thask-linux-arm64.tar.gz"
-      sha256 "9bb0efdb4b10872406d409d22fa31bf317839406c7a44f5604a2406637066914"
+      sha256 "3978b7e22d6c5d78acbc37c2ad240fdb1059f3d6a59a52e91e53c81c8f5298ef"
     else
       url "https://github.com/kimgh06/Thask/releases/download/v#{version}/thask-linux-amd64.tar.gz"
-      sha256 "7726018a05c22a4360e1f65924dd878e20419903091870403197a39a5eeb0778"
+      sha256 "cfb2da645fdfd17fa87116e78577b72c779e5cd6e02d7894564d0db97a75635f"
     end
   end
 
