@@ -16,8 +16,8 @@
 		{ title: 'CLI & MCP', desc: 'Terminal-first workflow. Claude Code and Cursor integration.' },
 		{ title: 'Project Sharing', desc: 'Share graphs via link. Viewer or editor access.' },
 		{ title: 'REST API', desc: 'Versioned /api/v1/ with OpenAPI spec, interactive docs, and idempotency.' },
-		{ title: 'Graph Capture', desc: 'Export any project as PNG (Playwright worker) or SVG. One CLI command, one HTTP call.' },
-		{ title: 'Smart Layout', desc: 'Group-aware Sugiyama with corridor routing and SVG bridges over crossings.' },
+		{ title: 'Graph Capture', desc: 'Export any project as PNG via Playwright + Browserless Chrome, or lightweight SVG server-side. One CLI command: thask graph capture.' },
+		{ title: 'Smart Layout', desc: 'Server-side dagre layout with group-aware Sugiyama, corridor routing, and SVG bridge overlays at edge crossings.' },
 		{ title: 'Self-Hosted', desc: 'One command. Your data stays on your server.' },
 	];
 </script>
@@ -146,6 +146,24 @@
 				<p class="t-out t-ok">&#10003; frontend  :7243</p>
 				<p class="t-out">&nbsp;</p>
 				<p class="t-out">Open <span class="t-link">http://localhost:7243</span></p>
+			</div>
+		</div>
+		<div class="terminal" style="margin-top:1.5rem">
+			<div class="terminal-bar">
+				<span class="terminal-dot" style="background:#e05252"></span>
+				<span class="terminal-dot" style="background:#e2b340"></span>
+				<span class="terminal-dot" style="background:#5ea87a"></span>
+				<span class="terminal-title">claude code + mcp</span>
+			</div>
+			<div class="terminal-body">
+				<p><span class="t-prompt">$</span> npm i -g @thask-org/cli</p>
+				<p><span class="t-prompt">$</span> thask config set url https://thask.kimgh06.com</p>
+				<p><span class="t-prompt">$</span> thask config set token &lt;your-api-key&gt;</p>
+				<p class="t-out">&nbsp;</p>
+				<p class="t-out"># .claude/mcp.json</p>
+				<p class="t-out">&#123; "mcpServers": &#123; "thask": &#123;</p>
+				<p class="t-out t-ok">  "command": "thask", "args": ["mcp", "serve"]</p>
+				<p class="t-out">&#125; &#125; &#125;</p>
 			</div>
 		</div>
 	</section>
