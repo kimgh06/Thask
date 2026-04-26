@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/thask/backend/internal/model"
@@ -41,6 +42,19 @@ func (r *ProjectRepo) FindByID(ctx context.Context, id string) (*model.Project, 
 		`SELECT `+projectCols+` FROM projects WHERE id = $1`, id,
 	)
 	return scanProject(row)
+}
+
+// GraphUpdatedAt returns the latest update time across the project's graph
+// (project metadata, nodes, edges) — used for og:image cache busting.
+func (r *ProjectRepo) GraphUpdatedAt(ctx context.Context, projectID string) (time.Time, error) {
+	var t time.Time
+	err := r.pool.QueryRow(ctx, `
+		SELECT GREATEST(
+			(SELECT updated_at FROM projects WHERE id = $1),
+			COALESCE((SELECT MAX(updated_at) FROM nodes WHERE project_id = $1), 'epoch'::timestamptz),
+			COALESCE((SELECT MAX(updated_at) FROM edges WHERE project_id = $1), 'epoch'::timestamptz)
+		)`, projectID).Scan(&t)
+	return t, err
 }
 
 func (r *ProjectRepo) FindByShareToken(ctx context.Context, token string) (*model.Project, error) {

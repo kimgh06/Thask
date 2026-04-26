@@ -213,12 +213,18 @@ func (h *ProjectHandler) SharedGet(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, dto.Err("Not found"))
 	}
 
+	graphUpdatedAt, err := h.projectRepo.GraphUpdatedAt(ctx, projectID)
+	if err != nil {
+		graphUpdatedAt = project.UpdatedAt
+	}
+
 	// Return limited info for public access
 	return c.JSON(http.StatusOK, dto.OK(map[string]any{
-		"id":          project.ID,
-		"name":        project.Name,
-		"description": project.Description,
-		"linkSharing": project.LinkSharing,
+		"id":             project.ID,
+		"name":           project.Name,
+		"description":    project.Description,
+		"linkSharing":    project.LinkSharing,
+		"graphUpdatedAt": graphUpdatedAt,
 	}))
 }
 
