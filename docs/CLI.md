@@ -45,6 +45,28 @@ Located at `~/.config/thask/config.json`:
 }
 ```
 
+### Auto-Update Notifications
+
+Every command checks for a newer release on GitHub and prints a one-line warning to stderr when one is available:
+
+```
+🆕 thask v0.6.0 available  (current: v0.5.6)
+   brew upgrade thask  ·  npm i -g @thask-org/cli
+```
+
+**Skip conditions** — the check is silently skipped when:
+- Running in CI (`CI` environment variable is set)
+- stderr is not a TTY (piped or redirected output)
+- `THASK_NO_UPDATE_CHECK=1` is set
+- Running `thask mcp serve` (to avoid polluting stdio transport)
+
+**Cache** — version info is cached at `~/.thask/update-check.json` and refreshed at most once per 24 hours in the background.
+
+To disable permanently:
+```bash
+export THASK_NO_UPDATE_CHECK=1
+```
+
 ---
 
 ## config
@@ -631,43 +653,45 @@ Output (JSON):
 
 ## scan
 
-Scan a Go project's internal dependencies and import them as graph nodes/edges.
+Scan a project's source code and import the dependency graph automatically.
 
-### scan --path \<dir\> [\--project \<id\>] [\--dry-run] [\--max-files \<n\>]
+### scan [--path .] [--max-files 500]
 
-Parses `go.mod` and `.go` files to extract intra-module package dependencies. Each internal package becomes a node (type: TASK), each import becomes an edge (type: depends_on). Stdlib and external deps are excluded.
+Scan the Go project at `--path` and import all package-level dependencies as nodes and edges (merge mode). Requires `--project` or `THASK_PROJECT` to be set.
 
 ```bash
-# Preview scan results without importing
-thask scan --path . --dry-run
-
-# Scan and import to a project (merge mode)
-thask scan --path . --project <projectId>
-
-# Limit file count
-thask scan --path ./backend --max-files 100 --dry-run
+thask scan -p <projectId>
+thask scan -p <projectId> --path ./myservice
+thask scan -p <projectId> --max-files 200
 ```
+
+### scan --dry-run
+
+Print the discovered nodes/edges as JSON to stdout without importing anything.
+
+```bash
+thask scan --path . --dry-run
+thask scan --plugin ./my-scanner.py --path . --dry-run | jq '.nodes | length'
+```
+
+### scan --plugin \<path\>
+
+Use an external scanner plugin instead of the built-in Go scanner. The plugin must accept `--path <dir>` and output JSON matching the import format.
+
+```bash
+thask scan -p <projectId> --plugin ./python-scanner.py --path ./myapp
+```
+
+See [docs/PLUGINS.md](PLUGINS.md) for the plugin contract and an example Python scanner.
+
+### Flags
 
 | Flag | Default | Description |
 |---|---|---|
-| `--path` | `.` | Path to Go project root (must contain `go.mod`) |
-| `--project` | - | Target project ID (required unless `--dry-run`) |
-| `--max-files` | `500` | Max `.go` files to scan before aborting |
-| `--dry-run` | `false` | Print JSON to stdout without importing |
-
-Output (`--dry-run`):
-```json
-{
-  "mode": "merge",
-  "nodes": [{"type": "TASK", "title": "internal/handler", ...}],
-  "edges": [{"sourceTitle": "cmd/server", "targetTitle": "internal/handler", "edgeType": "depends_on"}]
-}
-```
-
-Errors:
-- Missing `go.mod`: `no go.mod found in <path>`
-- Too many files: `exceeded maxFiles limit (501/500 files found)`
-- Parse errors in `.go` files: warning to stderr, file skipped
+| `--path` | `.` | Path to project root |
+| `--max-files` | `500` | Maximum source files to process |
+| `--dry-run` | `false` | Print JSON to stdout, skip import |
+| `--plugin` | — | Path to external scanner executable |
 
 ---
 
