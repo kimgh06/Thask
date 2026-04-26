@@ -16,6 +16,8 @@
 		{ title: 'CLI & MCP', desc: 'Terminal-first workflow. Claude Code and Cursor integration.' },
 		{ title: 'Project Sharing', desc: 'Share graphs via link. Viewer or editor access.' },
 		{ title: 'REST API', desc: 'Versioned /api/v1/ with OpenAPI spec, interactive docs, and idempotency.' },
+		{ title: 'Graph Capture', desc: 'Export any project as PNG (Playwright worker) or SVG. One CLI command, one HTTP call.' },
+		{ title: 'Smart Layout', desc: 'Group-aware Sugiyama with corridor routing and SVG bridges over crossings.' },
 		{ title: 'Self-Hosted', desc: 'One command. Your data stays on your server.' },
 	];
 </script>
