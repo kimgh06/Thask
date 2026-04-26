@@ -169,26 +169,26 @@
 <style>
 	.thask-watermark {
 		position: fixed;
-		right: 20px;
-		bottom: 16px;
+		right: 32px;
+		bottom: 28px;
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		padding: 6px 12px 6px 8px;
-		background: rgba(19, 18, 20, 0.72);
-		backdrop-filter: blur(6px);
-		border: 1px solid rgba(201, 168, 76, 0.18);
-		border-radius: 8px;
+		gap: 18px;
+		padding: 18px 32px 18px 24px;
+		background: rgba(19, 18, 20, 0.78);
+		backdrop-filter: blur(8px);
+		border: 1.5px solid rgba(201, 168, 76, 0.22);
+		border-radius: 16px;
 		pointer-events: none;
 	}
 	.thask-watermark img {
-		width: 22px;
-		height: 22px;
-		border-radius: 4px;
+		width: 64px;
+		height: 64px;
+		border-radius: 10px;
 	}
 	.thask-watermark span {
 		font-family: 'JetBrains Mono', ui-monospace, monospace;
-		font-size: 13px;
+		font-size: 38px;
 		font-weight: 700;
 		letter-spacing: -0.01em;
 		color: #f0e7d6;
