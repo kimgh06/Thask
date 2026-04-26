@@ -219,7 +219,15 @@
 	<meta property="og:title" content={projectName || 'Shared Graph'} />
 	<meta property="og:description" content={projectDescription || 'Interactive graph on Thask'} />
 	<meta property="og:image" content={ogImageUrl} />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="630" />
+	<meta property="og:image:type" content="image/png" />
+	<meta property="og:image:alt" content="{projectName || 'Shared Graph'} preview" />
 	<meta property="og:type" content="website" />
+	<meta name="twitter:card" content="summary_large_image" />
+	<meta name="twitter:title" content={projectName || 'Shared Graph'} />
+	<meta name="twitter:description" content={projectDescription || 'Interactive graph on Thask'} />
+	<meta name="twitter:image" content={ogImageUrl} />
 </svelte:head>
 
 <div class="flex flex-col h-screen" style="background: var(--color-bg);">
