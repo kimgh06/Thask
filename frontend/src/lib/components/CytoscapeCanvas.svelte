@@ -17,6 +17,7 @@
 	import { initEdgehandles, attachEdgeCreationHandlers, isOnGroupBorder } from '$lib/cytoscape/handlers/edgeCreation';
 	import { attachSelectionHandlers } from '$lib/cytoscape/handlers/selection';
 	import { attachDynamicRouting } from '$lib/cytoscape/edgeRouter';
+	import { attachEdgeBridgeOverlay } from '$lib/cytoscape/edgeBridgeOverlay';
 	import { attachStatusDots } from '$lib/cytoscape/statusDot';
 
 	// Register extensions once at module level
@@ -296,6 +297,10 @@
 			// Dynamic 8-direction edge routing
 			const cleanupRouting = attachDynamicRouting(cy);
 			cleanups.push({ cleanup: cleanupRouting });
+
+			// Circuit-style bridge overlay for horizontal underpasses
+			const cleanupBridgeOverlay = attachEdgeBridgeOverlay(cy);
+			cleanups.push({ cleanup: cleanupBridgeOverlay });
 		}
 
 		// Zoom tracking

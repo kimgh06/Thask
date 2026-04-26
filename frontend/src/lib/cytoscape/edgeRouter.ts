@@ -1,6 +1,24 @@
 import type cytoscape from 'cytoscape';
 
-interface Point { x: number; y: number }
+export interface Point { x: number; y: number }
+
+export type RouteAxis = 'vertical' | 'horizontal' | 'diagonal';
+
+export interface RoutedSegment {
+	edgeId: string;
+	index: number;
+	from: Point;
+	to: Point;
+	axis: RouteAxis;
+}
+
+export interface RoutedEdgePath {
+	edgeId: string;
+	points: Point[];
+	segments: RoutedSegment[];
+}
+
+const ROUTE_SCRATCH_KEY = '_thaskRoute';
 
 /**
  * Compute 8-direction waypoints between src and tgt.
@@ -43,6 +61,86 @@ function compute8DirWaypoints(src: Point, tgt: Point): Point[] {
 		return [{ x: src.x + Math.sign(dx) * absDy, y: tgt.y }];
 	}
 	return [{ x: tgt.x, y: src.y + Math.sign(dy) * absDx }];
+}
+
+function classifyAxis(from: Point, to: Point): RouteAxis {
+	const dx = Math.abs(to.x - from.x);
+	const dy = Math.abs(to.y - from.y);
+	const EPS = 0.75;
+
+	if (dx <= EPS) return 'vertical';
+	if (dy <= EPS) return 'horizontal';
+	return 'diagonal';
+}
+
+function buildSegments(edgeId: string, points: Point[]): RoutedSegment[] {
+	const segments: RoutedSegment[] = [];
+	for (let i = 0; i < points.length - 1; i += 1) {
+		const from = points[i];
+		const to = points[i + 1];
+		segments.push({
+			edgeId,
+			index: i,
+			from,
+			to,
+			axis: classifyAxis(from, to),
+		});
+	}
+	return segments;
+}
+
+function buildShiftedRoutePoints(src: Point, tgt: Point, waypoints: Point[], offset: number): Point[] {
+	if (waypoints.length === 0) {
+		if (Math.abs(offset) < 0.001) return [src, tgt];
+		const dx = tgt.x - src.x;
+		const dy = tgt.y - src.y;
+		const len = Math.sqrt(dx * dx + dy * dy) || 1;
+		const nx = -dy / len;
+		const ny = dx / len;
+		const mid = {
+			x: (src.x + tgt.x) / 2 + nx * offset,
+			y: (src.y + tgt.y) / 2 + ny * offset,
+		};
+		return [src, mid, tgt];
+	}
+
+	const dx = tgt.x - src.x;
+	const dy = tgt.y - src.y;
+	const len = Math.sqrt(dx * dx + dy * dy) || 1;
+	const nx = -dy / len;
+	const ny = dx / len;
+
+	return [
+		src,
+		...waypoints.map((wp) => ({
+			x: wp.x + nx * offset,
+			y: wp.y + ny * offset,
+		})),
+		tgt,
+	];
+}
+
+function storeRoute(edge: cytoscape.EdgeSingular, points: Point[]): void {
+	edge.scratch(ROUTE_SCRATCH_KEY, {
+		edgeId: edge.id(),
+		points,
+		segments: buildSegments(edge.id(), points),
+	} satisfies RoutedEdgePath);
+}
+
+export function getStoredRoute(edge: cytoscape.EdgeSingular): RoutedEdgePath | null {
+	const value = edge.scratch(ROUTE_SCRATCH_KEY) as RoutedEdgePath | undefined;
+	if (!value || value.points.length < 2) return null;
+	return value;
+}
+
+export function getStoredRoutes(cy: cytoscape.Core): RoutedEdgePath[] {
+	const routes: RoutedEdgePath[] = [];
+	cy.edges().forEach((edge) => {
+		const route = getStoredRoute(edge);
+		if (route) routes.push(route);
+	});
+	return routes;
 }
 
 /**
@@ -100,6 +198,8 @@ export function applyDynamicRouting(cy: cytoscape.Core): void {
 
 		// Parallel edge offset: spread overlapping edges apart
 		const offset = total > 1 ? (idx - (total - 1) / 2) * 12 : 0;
+		const routePoints = buildShiftedRoutePoints(src, tgt, wps, offset);
+		storeRoute(edge, routePoints);
 
 		if (wps.length > 0) {
 			const { distances, weights } = waypointsToSegments(src, tgt, wps);
