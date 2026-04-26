@@ -158,5 +158,39 @@
 		<div class="fixed inset-0 flex items-center justify-center text-xs" style="color: var(--color-text-muted); background: var(--color-bg);">
 			Ready
 		</div>
+	{:else}
+		<div class="thask-watermark">
+			<img src="/icon.svg" alt="" />
+			<span>Thask</span>
+		</div>
 	{/if}
 </div>
+
+<style>
+	.thask-watermark {
+		position: fixed;
+		right: 20px;
+		bottom: 16px;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 12px 6px 8px;
+		background: rgba(19, 18, 20, 0.72);
+		backdrop-filter: blur(6px);
+		border: 1px solid rgba(201, 168, 76, 0.18);
+		border-radius: 8px;
+		pointer-events: none;
+	}
+	.thask-watermark img {
+		width: 22px;
+		height: 22px;
+		border-radius: 4px;
+	}
+	.thask-watermark span {
+		font-family: 'JetBrains Mono', ui-monospace, monospace;
+		font-size: 13px;
+		font-weight: 700;
+		letter-spacing: -0.01em;
+		color: #f0e7d6;
+	}
+</style>
