@@ -62,9 +62,24 @@ function readBody(req) {
 }
 
 async function browser() {
-	if (!browserPromise) {
-		browserPromise = chromium.connectOverCDP(BROWSER_WS_ENDPOINT);
+	// Browserless GCs idle browsers (SIGKILL between sessions). A cached
+	// connection can resolve to a closed browser, breaking newContext.
+	// Reset if the cached promise is stale.
+	if (browserPromise) {
+		try {
+			const b = await browserPromise;
+			if (b.isConnected()) return b;
+		} catch {
+			// fall through to reconnect
+		}
+		browserPromise = undefined;
 	}
+	browserPromise = chromium.connectOverCDP(BROWSER_WS_ENDPOINT).then((b) => {
+		b.on('disconnected', () => {
+			browserPromise = undefined;
+		});
+		return b;
+	});
 	return browserPromise;
 }
 
