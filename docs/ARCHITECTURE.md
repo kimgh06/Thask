@@ -218,6 +218,31 @@ frontend/
 | `eventhub` | Pub/sub hub for SSE realtime events (node/edge CRUD, layout, import) |
 | `layout` | Server-side graph layout algorithms (dagre, grid) with GROUP auto-sizing |
 
+### Capture Worker (`capture/`)
+
+Out-of-process Node.js + Playwright service that turns a project graph into a PNG.
+
+```
+CLI / API caller
+   │  GET /api/v1/projects/:id/graph/capture?format=png
+   ▼
+Backend (NodeHandler.Capture)
+   │  POST http://capture:7241/capture/graph  { nodes, edges, width, ... }
+   │  X-Thask-Capture-Secret: <CAPTURE_INTERNAL_SECRET>
+   ▼
+Capture worker (capture/src/server.js)
+   │  chromium.connectOverCDP(BROWSER_WS_ENDPOINT)
+   ▼
+Browserless Chrome → opens FRONTEND_URL/capture
+   │  window.__thaskCapture.load({ nodes, edges })  → fit/zoom → metrics
+   ▼
+PNG bytes ─────────────────────────────► caller
+```
+
+- Sandbox: `read_only` rootfs, `cap_drop: ALL`, `no-new-privileges`, optional shared secret
+- Input clamps: width/height ≤ 4096, scale ≤ 4, body ≤ 8 MB, URL allowlist (frontend + `data:` / `blob:` only)
+- 503 if `CAPTURE_URL` is empty; SVG path renders inline in `og_image.go` and never needs the worker
+
 ### Frontend — Stores (Svelte 5 Runes)
 
 | Store | Responsibility |

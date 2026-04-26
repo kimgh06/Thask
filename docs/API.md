@@ -158,6 +158,7 @@ All v1 endpoints mirror their `/api/` counterparts with the same request/respons
 | GET | `/api/v1/teams/:slug/projects` | Yes | List projects |
 | GET | `/api/v1/projects/:id` | Yes | Get project |
 | GET | `/api/v1/projects/:id/graph` | Yes | Full graph (not paginated) |
+| GET | `/api/v1/projects/:id/graph/capture` | Yes | Render graph as PNG (Playwright worker) or SVG |
 | GET | `/api/v1/projects/:id/nodes` | Yes | List nodes |
 | GET | `/api/v1/projects/:id/nodes/:nodeId` | Yes | Get node detail |
 | GET | `/api/v1/projects/:id/edges` | Yes | List edges |

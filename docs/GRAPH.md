@@ -204,10 +204,17 @@ When a node's status changes to PASS or FAIL, the waterfall algorithm propagates
 
 ## Export & Import
 
-### PNG Export
+### PNG Export (client-side)
 - **Toolbar:** Export button → PNG
 - Full-graph capture with dark background (#131214), 2x scale
 - Implemented in `frontend/src/lib/export.ts`
+
+### Server-side Capture (CLI / API)
+- **CLI:** `thask graph capture -p <projectId> --out graph.png` (also `--format svg`)
+- **API:** `GET /api/v1/projects/:id/graph/capture?format=png&width=1600&height=1000&padding=80&scale=2&crop=true`
+- PNG path goes through the **capture worker** (`capture/`): a Playwright + Browserless service that opens `/capture` and screenshots the rendered Cytoscape canvas. Returns 503 if `CAPTURE_URL` is not configured
+- SVG path is rendered inline by the backend in `backend/internal/handler/og_image.go` — lightweight, no headless browser required
+- Use SVG for small previews (OG cards, embed thumbnails); use PNG for full-fidelity exports
 
 ### JSON Export
 - **Toolbar:** Export button → JSON

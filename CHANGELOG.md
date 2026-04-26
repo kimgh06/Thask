@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-04-26
+
+### Added
+- **Graph image capture**: `GET /api/v1/projects/:id/graph/capture` renders a project as PNG (via Playwright worker) or SVG (server-side). New `thask graph capture` CLI command with `--format/--width/--height/--padding/--scale/--crop/--out` flags
+- **Capture worker** (`capture/`): standalone Node.js + Playwright service on port 7241. Connects to a Browserless Chrome instance; opens `frontend/src/routes/capture/+page.svelte` to render Cytoscape and stream the screenshot back. Hardened: read-only filesystem, dropped capabilities, no-new-privileges, optional `CAPTURE_INTERNAL_SECRET`, URL allowlist, body/dimension/scale clamping
+- **Edge bridge overlay**: SVG bridges and soft-bypasses drawn at edge crossings so overlapping edges remain readable (`frontend/src/lib/cytoscape/edgeBridgeOverlay.ts`)
+- `make dev-services` / `make dev-capture` Makefile targets, `--profile capture` Docker Compose profile
+
+### Improved
+- **Layout algorithm**: group-aware orientation selection, corridor routing for inter-group edges, tighter intra-group placement (4,500+ line rewrite of `backend/internal/service/layout.go`)
+- Frontend dev server now binds `0.0.0.0` and allows `host.docker.internal`, so the dockerised capture worker can reach it
+
+### Configuration
+- New backend env vars: `CAPTURE_URL`, `CAPTURE_INTERNAL_SECRET`, `CAPTURE_TIMEOUT_SECONDS`
+- New compose env vars: `CAPTURE_PORT`, `CAPTURE_FRONTEND_URL`, `BROWSER_WS_ENDPOINT`
+
+## [0.5.5] - 2026-04-26
+
+### Added
+- **CLI auto-update notification**: every command checks `~/.thask/update-check.json` and prints a yellow stderr alert when a newer GitHub Release exists. Refresh runs in the background and is awaited via a deferred cleanup so the cache reliably updates even on fast commands. Skips in CI, non-TTY, when `THASK_NO_UPDATE_CHECK=1`, or when running `thask mcp serve`
+
+## [0.5.4] - 2026-04-26
+
+### Added
+- **Homebrew distribution**: `Formula/thask.rb` is committed in this repo; install via `brew tap kimgh06/thask https://github.com/kimgh06/Thask && brew install kimgh06/thask/thask`
+- `make release-cli` automates the full pipeline: parallel cross-platform build → tarballs → SHA256 + formula update → commit/tag/push → npm publish → GitHub Release in one shot. Reads version from `cli/package.json`. npm 2FA bypass-token in `~/.npmrc` removes the OTP prompt
+
+## [0.5.3] - 2026-04-25
+
+### Fixed
+- `thask guide` command: replaced `fmt.Println` with `fmt.Print` to fix a `go vet` warning about a redundant trailing newline
+
 ## [0.5.2] - 2026-04-19
 
 ### Added
