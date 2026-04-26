@@ -200,6 +200,19 @@ When a node's status changes to PASS or FAIL, the waterfall algorithm propagates
 - Graph animates to center on the focused node
 - Press Enter to cycle through matches
 
+### Edge Bridge Overlay
+
+When edges cross each other in a complex graph, Thask draws visual bridges to keep the diagram readable.
+
+Two rendering modes are used depending on crossing geometry:
+
+| Mode | Appearance | When Used |
+|---|---|---|
+| Bridge | Arc over the crossing (like a road overpass) | Edges cross at a sharp angle |
+| Soft-bypass | Arc that gently routes around the crossing | Edges cross at a shallow angle |
+
+The overlay is an SVG layer rendered on top of the Cytoscape canvas. It updates automatically when nodes move, edges change, or the viewport is zoomed/panned. No configuration is needed — bridges appear wherever crossings are detected.
+
 ---
 
 ## Export & Import
@@ -246,6 +259,7 @@ When multiple nodes are selected (box select or Ctrl+Click), the MultiSelectView
 
 | File | Responsibility |
 |---|---|
+| `frontend/src/lib/cytoscape/edgeBridgeOverlay.ts` | SVG bridge/soft-bypass overlay drawn over edge crossings |
 | `frontend/src/lib/cytoscape/styles.ts` | 60+ Cytoscape style rules |
 | `frontend/src/lib/cytoscape/layouts.ts` | fCOSE and preset layout configurations |
 | `frontend/src/lib/cytoscape/groupHelpers.ts` | `getChildNodes()`, `getDescendantNodes()`, `getDescendantIdSet()` |
