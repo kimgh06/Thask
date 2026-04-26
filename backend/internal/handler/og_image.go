@@ -12,12 +12,19 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/thask/backend/internal/dto"
 	mw "github.com/thask/backend/internal/middleware"
 	"github.com/thask/backend/internal/model"
 )
+
+// ogPNGTimeout caps how long a social-media crawler will wait for og:image.
+// Slack/Kakao/Twitter crawlers tend to give up around 5–10s, so we bound the
+// PNG path well under the configured CaptureTimeout (default 30s) and fall
+// back to inline SVG if the worker exceeds this.
+const ogPNGTimeout = 8 * time.Second
 
 var typeColors = map[model.NodeType]string{
 	model.NodeTypeFlow:   "#e2b340",
@@ -29,7 +36,9 @@ var typeColors = map[model.NodeType]string{
 	model.NodeTypeGroup:  "#7c7570",
 }
 
-// OGImage renders an SVG preview of the project graph.
+// OGImage renders a preview of the project graph for SNS share cards.
+// Prefers PNG via the capture worker (better SNS compatibility); falls back
+// to inline SVG if the worker is unconfigured, slow, or fails.
 func (h *NodeHandler) OGImage(c echo.Context) error {
 	ctx := c.Request().Context()
 	projectID := mw.ResolveProjectID(c)
@@ -42,6 +51,19 @@ func (h *NodeHandler) OGImage(c echo.Context) error {
 	edges, err := h.edgeRepo.FindByProjectID(ctx, projectID)
 	if err != nil {
 		return c.String(http.StatusInternalServerError, "")
+	}
+
+	if h.captureURL != "" {
+		pngCtx, cancel := context.WithTimeout(ctx, ogPNGTimeout)
+		defer cancel()
+		if png, ct, _, err := h.capturePNG(pngCtx, nodes, edges, 1200, 630, 80, 2, true); err == nil {
+			if ct == "" {
+				ct = "image/png"
+			}
+			c.Response().Header().Set("Cache-Control", "public, max-age=300")
+			return c.Blob(http.StatusOK, ct, png)
+		}
+		// fall through to inline SVG on worker error/timeout
 	}
 
 	svg := renderGraphSVG(nodes, edges, 1200, 630)
