@@ -87,12 +87,14 @@ git push origin "${VERSION}"
 echo "  Pushed main + ${VERSION} to origin"
 
 # ── 4. npm publish ────────────────────────────────────────────────────────────
+# Uses ~/.npmrc auth token. If the token has "Bypass 2FA for publishing",
+# no OTP is needed. Otherwise, set THASKOTP=<6-digit-code>.
 echo ""
 echo "=== Publishing to npm ==="
 if [[ -n "${THASKOTP:-}" ]]; then
   (cd cli && npm publish --access public --otp="${THASKOTP}")
 else
-  echo "  Skipping npm (THASKOTP not set — run: THASKOTP=<otp> make release-cli)"
+  (cd cli && npm publish --access public)
 fi
 
 # ── 5. GitHub Release ─────────────────────────────────────────────────────────
