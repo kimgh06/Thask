@@ -7,6 +7,7 @@ import (
 	"github.com/thask/cli/internal/client"
 	"github.com/thask/cli/internal/config"
 	"github.com/thask/cli/internal/output"
+	"github.com/thask/cli/internal/update"
 )
 
 var (
@@ -25,6 +26,13 @@ var rootCmd = &cobra.Command{
 	Use:   "thask",
 	Short: "Thask CLI — graph-based task management for humans and AI agents",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Skip update check for MCP serve (long-running stdio process —
+		// stray stderr output may confuse the connected agent).
+		if cmd.CommandPath() != "thask mcp serve" {
+			cleanup := update.Check(Version)
+			cobra.OnFinalize(cleanup)
+		}
+
 		cfg = config.Load()
 
 		// Flag overrides
