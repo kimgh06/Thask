@@ -293,15 +293,14 @@
 				getMouseModelPos: () => lastMouseModelPos,
 			});
 			cleanups.push(edgeCreationHandlers);
-
-			// Dynamic 8-direction edge routing
-			const cleanupRouting = attachDynamicRouting(cy);
-			cleanups.push({ cleanup: cleanupRouting });
-
-			// Circuit-style bridge overlay for horizontal underpasses
-			const cleanupBridgeOverlay = attachEdgeBridgeOverlay(cy);
-			cleanups.push({ cleanup: cleanupBridgeOverlay });
 		}
+
+		// Visual renderers — active in readonly too so shared iframes match the editor
+		const cleanupRouting = attachDynamicRouting(cy);
+		cleanups.push({ cleanup: cleanupRouting });
+
+		const cleanupBridgeOverlay = attachEdgeBridgeOverlay(cy);
+		cleanups.push({ cleanup: cleanupBridgeOverlay });
 
 		// Zoom tracking
 		cy.on('pan zoom', () => { onZoomChange?.(cy!.zoom()); });
