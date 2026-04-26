@@ -56,7 +56,9 @@ func (h *NodeHandler) OGImage(c echo.Context) error {
 	if h.captureURL != "" {
 		pngCtx, cancel := context.WithTimeout(ctx, ogPNGTimeout)
 		defer cancel()
-		if png, ct, _, err := h.capturePNG(pngCtx, nodes, edges, 1200, 630, 80, 2, true); err == nil {
+		// crop=false so the output is exactly 1200x630 (OG image standard);
+		// the worker fits the whole graph into that viewport.
+		if png, ct, _, err := h.capturePNG(pngCtx, nodes, edges, 1200, 630, 80, 2, false); err == nil {
 			if ct == "" {
 				ct = "image/png"
 			}
