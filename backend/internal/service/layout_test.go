@@ -160,7 +160,7 @@ func TestLayoutChildrenRectangularUsesRoleAwareTemplate(t *testing.T) {
 		{ID: "e8", SourceID: "scanner", TargetID: "api", EdgeType: model.EdgeTypeDependsOn},
 	}
 
-	w, h, ok := layoutChildrenRectangular(childIDs, edges, relPos, pulls)
+	w, h, ok := layoutChildrenRectangular(childIDs, edges, relPos, pulls, nil, nil)
 	if !ok {
 		t.Fatal("expected rectangular child layout to apply")
 	}
@@ -186,11 +186,11 @@ func TestLayoutChildrenRectangularUsesRoleAwareTemplate(t *testing.T) {
 	if !(entry[0] < 0 && entry[1] > centerY) {
 		t.Fatalf("expected entry in lower-left quadrant, got %+v", entry)
 	}
-	if !(api[0] > 0 && api[1] > centerY) {
-		t.Fatalf("expected api in lower-right quadrant, got %+v", api)
+	if !(api[0] > 0 && api[1] >= centerY-16) {
+		t.Fatalf("expected api on right side and not pulled into upper half, got %+v", api)
 	}
-	if !(math.Abs(mcp[0]) < math.Abs(api[0]) && mcp[1] > centerY) {
-		t.Fatalf("expected mcp in lower middle area, got %+v", mcp)
+	if !(mcp[1] > centerY) {
+		t.Fatalf("expected mcp to stay in lower half, got %+v", mcp)
 	}
 
 	intersections := 0
@@ -216,6 +216,257 @@ func TestLayoutChildrenRectangularUsesRoleAwareTemplate(t *testing.T) {
 	}
 	if intersections != 0 {
 		t.Fatalf("expected rectangular layout to avoid internal node-over-node routes, got %d intersections relPos=%v", intersections, relPos)
+	}
+}
+
+func TestChildLayoutCostPenalizesExternalRouteNodeIntersections(t *testing.T) {
+	childIDs := []string{"auth", "eventhub"}
+	externalLinks := []childExternalLink{
+		{routeID: "e1", childID: "eventhub", dx: -420, dy: 0, inbound: true},
+	}
+
+	badRel := map[string][2]float64{
+		"auth":     {0, 0},
+		"eventhub": {176, 0},
+	}
+	goodRel := map[string][2]float64{
+		"auth":     {0, 132},
+		"eventhub": {176, 0},
+	}
+
+	badHits := countChildExternalRouteNodeIntersections(childIDs, externalLinks, badRel)
+	if badHits == 0 {
+		t.Fatalf("expected left-entry route to hit auth in bad layout, got badRel=%v", badRel)
+	}
+
+	goodHits := countChildExternalRouteNodeIntersections(childIDs, externalLinks, goodRel)
+	if goodHits >= badHits {
+		t.Fatalf("expected improved layout to reduce external route hits, got bad=%d good=%d", badHits, goodHits)
+	}
+
+	badCost := childLayoutCost(childIDs, nil, externalLinks, badRel)
+	goodCost := childLayoutCost(childIDs, nil, externalLinks, goodRel)
+	if goodCost >= badCost {
+		t.Fatalf("expected external route intersections to increase layout cost, got bad=%v good=%v", badCost, goodCost)
+	}
+}
+
+func TestChildLayoutCostPenalizesOverlyElongatedShape(t *testing.T) {
+	childIDs := []string{"a", "b", "c", "d"}
+	wideRel := map[string][2]float64{
+		"a": {-300, 0},
+		"b": {-100, 0},
+		"c": {100, 0},
+		"d": {300, 0},
+	}
+	compactRel := map[string][2]float64{
+		"a": {-90, -70},
+		"b": {90, -70},
+		"c": {-90, 70},
+		"d": {90, 70},
+	}
+
+	wideCost := childLayoutCost(childIDs, nil, nil, wideRel)
+	compactCost := childLayoutCost(childIDs, nil, nil, compactRel)
+	if compactCost >= wideCost {
+		t.Fatalf("expected elongated layout to cost more than compact layout, wide=%v compact=%v", wideCost, compactCost)
+	}
+}
+
+func TestCountPredictedChildRouteCrossingsIgnoresSharedEndpointsButCountsRealCrossings(t *testing.T) {
+	routes := []childPredictedRouteInfo{
+		{
+			srcID:  "a",
+			tgtID:  "b",
+			points: []Point{{X: -100, Y: -100}, {X: 100, Y: 100}},
+		},
+		{
+			srcID:  "c",
+			tgtID:  "d",
+			points: []Point{{X: -100, Y: 100}, {X: 100, Y: -100}},
+		},
+		{
+			srcID:  "b",
+			tgtID:  "e",
+			points: []Point{{X: 100, Y: 100}, {X: 220, Y: 220}},
+		},
+	}
+
+	crossings := countPredictedChildRouteCrossings(routes)
+	if crossings != 1 {
+		t.Fatalf("expected exactly one real crossing, got %d routes=%v", crossings, routes)
+	}
+}
+
+func TestChildLayoutCostPenalizesMixedInternalExternalCrossings(t *testing.T) {
+	childIDs := []string{"left", "right", "sink"}
+	childEdges := []model.Edge{
+		{ID: "e1", SourceID: "left", TargetID: "right", EdgeType: model.EdgeTypeDependsOn},
+	}
+	externalLinks := []childExternalLink{
+		{routeID: "in", childID: "sink", dx: 0, dy: -420, inbound: true},
+	}
+
+	badRel := map[string][2]float64{
+		"left":  {-150, 0},
+		"right": {150, 0},
+		"sink":  {0, 80},
+	}
+	goodRel := map[string][2]float64{
+		"left":  {-150, 180},
+		"right": {150, 180},
+		"sink":  {0, 80},
+	}
+
+	badCrossings := countChildAllRouteCrossings(childIDs, childEdges, externalLinks, badRel)
+	goodCrossings := countChildAllRouteCrossings(childIDs, childEdges, externalLinks, goodRel)
+	if badCrossings == 0 {
+		t.Fatalf("expected mixed internal/external crossing in bad layout, got badRel=%v", badRel)
+	}
+	if goodCrossings >= badCrossings {
+		t.Fatalf("expected improved layout to reduce mixed crossings, got bad=%d good=%d", badCrossings, goodCrossings)
+	}
+
+	badCost := childLayoutCost(childIDs, childEdges, externalLinks, badRel)
+	goodCost := childLayoutCost(childIDs, childEdges, externalLinks, goodRel)
+	if goodCost >= badCost {
+		t.Fatalf("expected mixed crossings to raise layout cost, got bad=%v good=%v", badCost, goodCost)
+	}
+}
+
+func TestScoreChildPlacementAffinityPenalizesBoundaryOrderInversions(t *testing.T) {
+	childIDs := []string{"top", "bottom"}
+	metrics := map[string]childRectMetric{
+		"top": {
+			externalDegree: 1,
+			pull:           childExternalPull{avgX: -320, avgY: -220, count: 1},
+		},
+		"bottom": {
+			externalDegree: 1,
+			pull:           childExternalPull{avgX: -320, avgY: 220, count: 1},
+		},
+	}
+	demands := map[string]childBoundaryDemand{
+		"top": {
+			leftOrder: -240,
+			leftCount: 1,
+		},
+		"bottom": {
+			leftOrder: 240,
+			leftCount: 1,
+		},
+	}
+
+	goodRel := map[string][2]float64{
+		"top":    {-140, -120},
+		"bottom": {-140, 120},
+	}
+	badRel := map[string][2]float64{
+		"top":    {-140, 120},
+		"bottom": {-140, -120},
+	}
+
+	goodScore := scoreChildPlacementAffinity(childIDs, goodRel, metrics, demands)
+	badScore := scoreChildPlacementAffinity(childIDs, badRel, metrics, demands)
+	if badScore <= goodScore {
+		t.Fatalf("expected boundary order inversion to be penalized, good=%v bad=%v", goodScore, badScore)
+	}
+}
+
+func TestRefineChildSlotAssignmentSwapsSameSideOrder(t *testing.T) {
+	childIDs := []string{"top", "bottom"}
+	pool := []rectSlot{
+		{X: -120, Y: -120, NX: -1, NY: -1},
+		{X: -120, Y: 120, NX: -1, NY: 1},
+	}
+	assigned := map[string]rectSlot{
+		"top":    pool[1],
+		"bottom": pool[0],
+	}
+	metrics := map[string]childRectMetric{
+		"top": {
+			externalDegree: 1,
+			pull:           childExternalPull{avgX: -320, avgY: -220, count: 1},
+		},
+		"bottom": {
+			externalDegree: 1,
+			pull:           childExternalPull{avgX: -320, avgY: 220, count: 1},
+		},
+	}
+	demands := map[string]childBoundaryDemand{
+		"top": {
+			leftOrder: -240,
+			leftCount: 1,
+		},
+		"bottom": {
+			leftOrder: 240,
+			leftCount: 1,
+		},
+	}
+
+	slotScoreFn := func(string, rectSlot) float64 { return 0 }
+	extraCostFn := func(_ map[string]rectSlot, rel map[string][2]float64) float64 {
+		return scoreChildPlacementAffinity(childIDs, rel, metrics, demands)
+	}
+
+	beforeCost := childSlotAssignmentCost(childIDs, assigned, slotScoreFn, extraCostFn)
+	refined, afterCost := refineChildSlotAssignment(childIDs, pool, assigned, slotScoreFn, extraCostFn)
+
+	if !(refined["top"].Y < refined["bottom"].Y) {
+		t.Fatalf("expected refinement to restore top-before-bottom ordering, got refined=%v", refined)
+	}
+	if afterCost >= beforeCost {
+		t.Fatalf("expected refinement to reduce slot assignment cost, before=%v after=%v refined=%v", beforeCost, afterCost, refined)
+	}
+}
+
+func TestExpandChildLayoutUntilClearGrowsPerpendicularToHorizontalExternalRoute(t *testing.T) {
+	childIDs := []string{"auth", "shared", "require"}
+	externalLinks := []childExternalLink{
+		{routeID: "in", childID: "auth", dx: 420, dy: 0, inbound: true},
+	}
+	relPos := map[string][2]float64{
+		"auth":    {-140, 0},
+		"shared":  {140, 16},
+		"require": {140, -160},
+	}
+
+	beforeHits := countChildExternalRouteNodeIntersections(childIDs, externalLinks, relPos)
+	if beforeHits == 0 {
+		t.Fatalf("expected seed layout to have a horizontal external-route collision, got relPos=%v", relPos)
+	}
+
+	beforeGap := math.Abs(relPos["shared"][1] - relPos["auth"][1])
+	_, _ = expandChildLayoutUntilClear(childIDs, nil, externalLinks, relPos)
+	afterHits := countChildExternalRouteNodeIntersections(childIDs, externalLinks, relPos)
+	afterGap := math.Abs(relPos["shared"][1] - relPos["auth"][1])
+
+	if afterHits != 0 {
+		t.Fatalf("expected expansion to clear horizontal external-route collision, got hits=%d relPos=%v", afterHits, relPos)
+	}
+	if afterGap <= beforeGap {
+		t.Fatalf("expected horizontal-route cleanup to increase vertical separation, beforeGap=%v afterGap=%v relPos=%v", beforeGap, afterGap, relPos)
+	}
+}
+
+func TestScoreChildPlacementAffinityKeepsRightPulledNodeOnRight(t *testing.T) {
+	childIDs := []string{"shared"}
+	metrics := map[string]childRectMetric{
+		"shared": {
+			externalDegree: 1,
+			externalOut:    1,
+			pull:           childExternalPull{avgX: 480, avgY: 40, count: 1},
+		},
+	}
+	demands := map[string]childBoundaryDemand{
+		"shared": {rightCount: 1, rightOrder: 40},
+	}
+
+	leftScore := scoreChildPlacementAffinity(childIDs, map[string][2]float64{"shared": {-140, 0}}, metrics, demands)
+	rightScore := scoreChildPlacementAffinity(childIDs, map[string][2]float64{"shared": {140, 0}}, metrics, demands)
+
+	if rightScore >= leftScore {
+		t.Fatalf("expected right-bound placement to be preferred, got left=%v right=%v", leftScore, rightScore)
 	}
 }
 
@@ -273,7 +524,7 @@ func TestExpandChildLayoutUntilClearGrowsDenseChildCluster(t *testing.T) {
 		t.Fatal("expected dense seed positions to overlap before expansion")
 	}
 
-	w, h := expandChildLayoutUntilClear(childIDs, childEdges, relPos)
+	w, h := expandChildLayoutUntilClear(childIDs, childEdges, nil, relPos)
 	if countChildBoxOverlaps(childIDs, relPos, 4) != 0 {
 		t.Fatalf("expected expansion to remove child overlap, got relPos=%v", relPos)
 	}
@@ -282,6 +533,29 @@ func TestExpandChildLayoutUntilClearGrowsDenseChildCluster(t *testing.T) {
 	}
 	if w < minGroupW || h < minGroupH {
 		t.Fatalf("expected sensible grown group size, got w=%v h=%v", w, h)
+	}
+}
+
+func TestExpandChildLayoutUntilClearCompactsOverWideSafeLayout(t *testing.T) {
+	childIDs := []string{"a", "b", "c"}
+	relPos := map[string][2]float64{
+		"a": {-520, -180},
+		"b": {0, 0},
+		"c": {520, 180},
+	}
+
+	beforeW, beforeH := recenterAndMeasureChildLayout(childIDs, relPos)
+	w, h := expandChildLayoutUntilClear(childIDs, nil, nil, relPos)
+	violations := measureChildLayoutViolations(childIDs, nil, nil, relPos)
+
+	if !childLayoutViolationsClear(violations) {
+		t.Fatalf("expected compacted layout to remain valid, got violations=%+v relPos=%v", violations, relPos)
+	}
+	if w >= beforeW*0.7 {
+		t.Fatalf("expected overly wide safe layout to compact substantially, beforeW=%v afterW=%v relPos=%v", beforeW, w, relPos)
+	}
+	if h >= beforeH*0.8 {
+		t.Fatalf("expected overly tall safe layout to compact substantially, beforeH=%v afterH=%v relPos=%v", beforeH, h, relPos)
 	}
 }
 
@@ -375,8 +649,184 @@ func TestCountPredictedRouteCrossingsDetectsCrossingRoutes(t *testing.T) {
 	}
 }
 
+func TestCountPredictedRouteHotspotsDetectsSharedRouteRegion(t *testing.T) {
+	nodes := []model.Node{
+		{ID: "a", Title: "A", Type: model.NodeTypeTask},
+		{ID: "b", Title: "B", Type: model.NodeTypeTask},
+		{ID: "c", Title: "C", Type: model.NodeTypeTask},
+		{ID: "d", Title: "D", Type: model.NodeTypeTask},
+	}
+	nodeMap := make(map[string]*model.Node, len(nodes))
+	for i := range nodes {
+		nodeMap[nodes[i].ID] = &nodes[i]
+	}
+
+	edges := []model.Edge{
+		{ID: "e1", SourceID: "a", TargetID: "d", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e2", SourceID: "c", TargetID: "b", EdgeType: model.EdgeTypeDependsOn},
+	}
+	positions := map[string][2]float64{
+		"a": {0, 0},
+		"b": {400, 0},
+		"c": {0, 400},
+		"d": {400, 400},
+	}
+
+	hotspots, byNode := countPredictedRouteHotspots(edges, positions, nodeMap, map[string][2]float64{})
+	if hotspots == 0 {
+		t.Fatalf("expected crossing routes to share at least one hotspot cell, got 0")
+	}
+	for _, id := range []string{"a", "b", "c", "d"} {
+		if byNode[id] == 0 {
+			t.Fatalf("expected hotspot attribution for %s, got %+v", id, byNode)
+		}
+	}
+}
+
+func TestRefineLayerOrderByPredictedRoutesReducesTopLevelCrossings(t *testing.T) {
+	nodes := []model.Node{
+		{ID: "a", Title: "A", Type: model.NodeTypeTask},
+		{ID: "b", Title: "B", Type: model.NodeTypeTask},
+		{ID: "c", Title: "C", Type: model.NodeTypeTask},
+		{ID: "d", Title: "D", Type: model.NodeTypeTask},
+	}
+	nodeMap := make(map[string]*model.Node, len(nodes))
+	for i := range nodes {
+		nodeMap[nodes[i].ID] = &nodes[i]
+	}
+
+	layerNodes := map[int][]string{
+		0: {"a", "c"},
+		1: {"b", "d"},
+	}
+	layerX := map[int]float64{
+		0: 0,
+		1: 400,
+	}
+	yCoords := map[string]float64{
+		"a": 0,
+		"c": 160,
+		"b": 0,
+		"d": 160,
+	}
+	edges := []model.Edge{
+		{ID: "e1", SourceID: "a", TargetID: "d", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e2", SourceID: "c", TargetID: "b", EdgeType: model.EdgeTypeDependsOn},
+	}
+
+	beforePos := buildTopLevelPositions(layerNodes, 1, layerX, yCoords)
+	beforeCrossings, _ := countPredictedRouteCrossings(edges, beforePos, nodeMap, map[string][2]float64{})
+	beforeCost := topLevelPredictedRouteCost(layerNodes, 1, layerX, yCoords, map[string][2]float64{}, edges, nodeMap, map[string][2]float64{})
+	if beforeCrossings == 0 {
+		t.Fatalf("expected starting order to produce a crossing, got positions=%v", beforePos)
+	}
+
+	refineLayerOrderByPredictedRoutes(layerNodes, 1, layerX, yCoords, map[string][2]float64{}, edges, nodeMap, map[string][2]float64{})
+
+	afterPos := buildTopLevelPositions(layerNodes, 1, layerX, yCoords)
+	afterCrossings, _ := countPredictedRouteCrossings(edges, afterPos, nodeMap, map[string][2]float64{})
+	afterCost := topLevelPredictedRouteCost(layerNodes, 1, layerX, yCoords, map[string][2]float64{}, edges, nodeMap, map[string][2]float64{})
+
+	if afterCrossings >= beforeCrossings {
+		t.Fatalf("expected local route-aware reorder to reduce crossings, before=%d after=%d beforePos=%v afterPos=%v", beforeCrossings, afterCrossings, beforePos, afterPos)
+	}
+	if afterCost >= beforeCost {
+		t.Fatalf("expected route-aware reorder to lower cost, before=%v after=%v", beforeCost, afterCost)
+	}
+}
+
+func TestRefineLayerCentersByPredictedRoutesMovesNodeOffRouteCorridor(t *testing.T) {
+	nodes := []model.Node{
+		{ID: "src", Title: "Source", Type: model.NodeTypeTask},
+		{ID: "mid", Title: "Middle", Type: model.NodeTypeTask},
+		{ID: "tgt", Title: "Target", Type: model.NodeTypeTask},
+	}
+	nodeMap := make(map[string]*model.Node, len(nodes))
+	for i := range nodes {
+		nodeMap[nodes[i].ID] = &nodes[i]
+	}
+
+	layerNodes := map[int][]string{
+		0: {"src"},
+		1: {"mid"},
+		2: {"tgt"},
+	}
+	layerX := map[int]float64{
+		0: 0,
+		1: 240,
+		2: 480,
+	}
+	yCoords := map[string]float64{
+		"src": 0,
+		"mid": 0,
+		"tgt": 0,
+	}
+	edges := []model.Edge{
+		{ID: "e1", SourceID: "src", TargetID: "tgt", EdgeType: model.EdgeTypeDependsOn},
+	}
+
+	beforePos := buildTopLevelPositions(layerNodes, 2, layerX, yCoords)
+	beforeHits, _ := countPredictedRouteBoxIntersections(edges, beforePos, nodeMap, map[string][2]float64{}, map[string][2]float64{})
+	if beforeHits == 0 {
+		t.Fatalf("expected src->tgt corridor to hit middle node before refinement, got positions=%v", beforePos)
+	}
+
+	refineLayerCentersByPredictedRoutes(layerNodes, 2, layerX, yCoords, map[string][2]float64{}, edges, nodeMap, map[string][2]float64{}, nil)
+
+	afterPos := buildTopLevelPositions(layerNodes, 2, layerX, yCoords)
+	afterHits, _ := countPredictedRouteBoxIntersections(edges, afterPos, nodeMap, map[string][2]float64{}, map[string][2]float64{})
+	if afterHits >= beforeHits {
+		t.Fatalf("expected route-aware center refinement to reduce corridor hits, before=%d after=%d before=%v after=%v", beforeHits, afterHits, beforePos, afterPos)
+	}
+	if afterPos["mid"][1] == beforePos["mid"][1] {
+		t.Fatalf("expected middle node to move away from the route corridor, got before=%v after=%v", beforePos, afterPos)
+	}
+}
+
+func TestRefineTopLevelLayersByPredictedRoutesMovesNodeToAdjacentLayer(t *testing.T) {
+	nodes := []model.Node{
+		{ID: "src1", Title: "Source 1", Type: model.NodeTypeTask},
+		{ID: "src2", Title: "Source 2", Type: model.NodeTypeTask},
+		{ID: "mid", Title: "Middle", Type: model.NodeTypeTask},
+		{ID: "sink", Title: "Sink", Type: model.NodeTypeTask},
+	}
+	nodeMap := make(map[string]*model.Node, len(nodes))
+	for i := range nodes {
+		nodeMap[nodes[i].ID] = &nodes[i]
+	}
+
+	topLevel := []string{"src1", "src2", "mid", "sink"}
+	layers := map[string]int{
+		"src1": 0,
+		"src2": 0,
+		"mid":  2,
+		"sink": 3,
+	}
+	outEdges := map[string][]string{
+		"src1": {"mid"},
+		"src2": {"mid"},
+		"mid":  {"sink"},
+	}
+	edges := []model.Edge{
+		{ID: "e1", SourceID: "src1", TargetID: "mid", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e2", SourceID: "src2", TargetID: "mid", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e3", SourceID: "mid", TargetID: "sink", EdgeType: model.EdgeTypeDependsOn},
+	}
+
+	beforeCost := layerAssignmentOrderAndCost(topLevel, layers, outEdges, edges, nodeMap, map[string][2]float64{}, map[string][2]float64{})
+	refineTopLevelLayersByPredictedRoutes(topLevel, layers, outEdges, edges, nodeMap, map[string][2]float64{}, map[string][2]float64{})
+	afterCost := layerAssignmentOrderAndCost(topLevel, layers, outEdges, edges, nodeMap, map[string][2]float64{}, map[string][2]float64{})
+
+	if layers["mid"] != 1 {
+		t.Fatalf("expected middle node to shift to adjacent layer 1, got layers=%v", layers)
+	}
+	if afterCost >= beforeCost {
+		t.Fatalf("expected layer refinement to reduce total placement cost, before=%v after=%v", beforeCost, afterCost)
+	}
+}
+
 func TestLayoutChildrenExternalPullBoundaryLeavesTopMostlyOpen(t *testing.T) {
-	childIDs := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
+	childIDs := []string{"a", "b", "c", "d", "e", "f", "g"}
 	edges := []model.Edge{
 		{ID: "e1", SourceID: "a", TargetID: "svc", EdgeType: model.EdgeTypeDependsOn},
 		{ID: "e2", SourceID: "b", TargetID: "svc", EdgeType: model.EdgeTypeDependsOn},
@@ -385,7 +835,6 @@ func TestLayoutChildrenExternalPullBoundaryLeavesTopMostlyOpen(t *testing.T) {
 		{ID: "e5", SourceID: "e", TargetID: "svc", EdgeType: model.EdgeTypeDependsOn},
 		{ID: "e6", SourceID: "f", TargetID: "svc", EdgeType: model.EdgeTypeDependsOn},
 		{ID: "e7", SourceID: "g", TargetID: "mw", EdgeType: model.EdgeTypeTriggers},
-		{ID: "e8", SourceID: "h", TargetID: "mw", EdgeType: model.EdgeTypeTriggers},
 	}
 	pulls := map[string]childExternalPull{
 		"a": {avgX: 200, avgY: 360, count: 1},
@@ -395,11 +844,10 @@ func TestLayoutChildrenExternalPullBoundaryLeavesTopMostlyOpen(t *testing.T) {
 		"e": {avgX: 240, avgY: 360, count: 1},
 		"f": {avgX: 160, avgY: 360, count: 1},
 		"g": {avgX: -200, avgY: 420, count: 1},
-		"h": {avgX: -240, avgY: 420, count: 1},
 	}
 	relPos := map[string][2]float64{}
 
-	w, h, ok := layoutChildrenExternalPullBoundary(childIDs, edges, relPos, pulls, nil)
+	w, h, ok := layoutChildrenExternalPullBoundary(childIDs, edges, relPos, pulls, nil, nil, nil)
 	if !ok {
 		t.Fatal("expected external pull boundary layout to apply")
 	}
@@ -420,18 +868,17 @@ func TestLayoutChildrenExternalPullBoundaryLeavesTopMostlyOpen(t *testing.T) {
 	if topCount > 2 {
 		t.Fatalf("expected bottom-biased boundary layout, got topCount=%d relPos=%v", topCount, relPos)
 	}
-	if bottomCount < 5 {
+	if bottomCount < 4 {
 		t.Fatalf("expected most nodes to sit in lower half, got bottomCount=%d relPos=%v", bottomCount, relPos)
 	}
 }
 
 func TestLayoutChildrenExternalPullBoundaryBackendLikeCase(t *testing.T) {
-	childIDs := []string{"project", "impact", "echo", "auth", "edge", "team", "event", "node"}
+	childIDs := []string{"project", "impact", "echo", "edge", "team", "event", "node"}
 	edges := []model.Edge{
 		{ID: "e1", SourceID: "api_client", TargetID: "echo", EdgeType: model.EdgeTypeDependsOn},
 		{ID: "e2", SourceID: "cli_client", TargetID: "echo", EdgeType: model.EdgeTypeDependsOn},
 		{ID: "e3", SourceID: "echo", TargetID: "authmw", EdgeType: model.EdgeTypeTriggers},
-		{ID: "e4", SourceID: "auth", TargetID: "authsvc", EdgeType: model.EdgeTypeDependsOn},
 		{ID: "e5", SourceID: "edge", TargetID: "edgerepo", EdgeType: model.EdgeTypeDependsOn},
 		{ID: "e6", SourceID: "edge", TargetID: "eventhub", EdgeType: model.EdgeTypeTriggers},
 		{ID: "e7", SourceID: "event", TargetID: "eventhub", EdgeType: model.EdgeTypeDependsOn},
@@ -454,7 +901,6 @@ func TestLayoutChildrenExternalPullBoundaryBackendLikeCase(t *testing.T) {
 		"project": {avgX: -240, avgY: 480, count: 2},
 		"impact":  {avgX: -60, avgY: 440, count: 2},
 		"echo":    {avgX: -186.7, avgY: 160, count: 3},
-		"auth":    {avgX: 360, avgY: 400, count: 1},
 		"edge":    {avgX: -40, avgY: 453.3, count: 3},
 		"team":    {avgX: -240, avgY: 480, count: 2},
 		"event":   {avgX: -60, avgY: 440, count: 2},
@@ -462,7 +908,7 @@ func TestLayoutChildrenExternalPullBoundaryBackendLikeCase(t *testing.T) {
 	}
 	relPos := map[string][2]float64{}
 
-	_, _, ok := layoutChildrenExternalPullBoundary(childIDs, edges, relPos, pulls, nil)
+	_, _, ok := layoutChildrenExternalPullBoundary(childIDs, edges, relPos, pulls, nil, nil, nil)
 	if !ok {
 		t.Fatal("expected external pull boundary layout to apply")
 	}
@@ -499,7 +945,7 @@ func TestLayoutChildrenExternalPullBoundaryRecentersAsymmetricGroup(t *testing.T
 	}
 	relPos := map[string][2]float64{}
 
-	w, _, ok := layoutChildrenExternalPullBoundary(childIDs, edges, relPos, pulls, nil)
+	w, _, ok := layoutChildrenExternalPullBoundary(childIDs, edges, relPos, pulls, nil, nil, nil)
 	if !ok {
 		t.Fatal("expected external pull boundary layout to apply")
 	}
@@ -518,6 +964,84 @@ func TestLayoutChildrenExternalPullBoundaryRecentersAsymmetricGroup(t *testing.T
 	}
 	if w < minGroupW {
 		t.Fatalf("expected sensible width after recenter, got %v", w)
+	}
+}
+
+func TestLayoutChildrenExternalPullBoundaryRespectsBoundaryDemands(t *testing.T) {
+	childIDs := []string{"user", "node", "project", "edge", "postgres"}
+	edges := []model.Edge{
+		{ID: "e1", SourceID: "team_handler", TargetID: "user", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e2", SourceID: "node_handler", TargetID: "node", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e3", SourceID: "project_handler", TargetID: "project", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e4", SourceID: "edge_handler", TargetID: "edge", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e5", SourceID: "user", TargetID: "postgres", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e6", SourceID: "node", TargetID: "postgres", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e7", SourceID: "project", TargetID: "postgres", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e8", SourceID: "edge", TargetID: "postgres", EdgeType: model.EdgeTypeDependsOn},
+	}
+	pulls := map[string]childExternalPull{
+		"user":     {avgX: -360, avgY: 260, count: 1},
+		"node":     {avgX: -120, avgY: 260, count: 1},
+		"project":  {avgX: 80, avgY: 260, count: 1},
+		"edge":     {avgX: 220, avgY: 260, count: 1},
+		"postgres": {avgX: 260, avgY: -180, count: 4},
+	}
+	demands := map[string]childBoundaryDemand{
+		"user": {
+			leftCount: 1,
+			leftOrder: 220,
+			botCount:  1,
+			botOrder:  -260,
+		},
+		"node": {
+			botCount: 1,
+			botOrder: -60,
+		},
+		"project": {
+			botCount: 1,
+			botOrder: 80,
+		},
+		"edge": {
+			rightCount: 1,
+			rightOrder: 180,
+			botCount:   1,
+			botOrder:   220,
+		},
+		"postgres": {
+			topCount:   4,
+			topOrder:   0,
+			rightCount: 1,
+			rightOrder: 0,
+		},
+	}
+	childEdges := childInternalEdges(childIDs, edges)
+	relPos := map[string][2]float64{}
+
+	_, _, ok := layoutChildrenExternalPullBoundary(childIDs, edges, relPos, pulls, demands, childEdges, nil)
+	if !ok {
+		t.Fatal("expected external pull boundary layout to apply")
+	}
+
+	if relPos["postgres"][1] > 0 {
+		t.Fatalf("expected postgres to stay in upper half for top-boundary demand, got relPos=%v", relPos)
+	}
+	if relPos["user"][1] < 0 || relPos["edge"][1] < 0 {
+		t.Fatalf("expected bottom-demand repos to stay in lower half, got relPos=%v", relPos)
+	}
+	if relPos["user"][0] > 0 || relPos["edge"][0] < 0 {
+		t.Fatalf("expected left/right corner demands to shape repo positions, got relPos=%v", relPos)
+	}
+}
+
+func TestShouldUseExternalPullBoundaryLayoutRejectsEightNodeGroups(t *testing.T) {
+	kids := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
+	pulls := make(map[string]childExternalPull, len(kids))
+	for _, id := range kids {
+		pulls[id] = childExternalPull{avgX: 280, avgY: 0, count: 1}
+	}
+
+	if shouldUseExternalPullBoundaryLayout(kids, nil, pulls) {
+		t.Fatal("expected external-pull boundary layout to reject 8-node groups")
 	}
 }
 
@@ -544,7 +1068,7 @@ func TestLayoutChildrenPassThroughCorridorKeepsCenterLaneOpen(t *testing.T) {
 	relPos := map[string][2]float64{}
 	childEdges := childInternalEdges(childIDs, edges)
 
-	w, h, ok := layoutChildrenPassThroughCorridor(childIDs, edges, relPos, pulls, nil, childEdges)
+	w, h, ok := layoutChildrenPassThroughCorridor(childIDs, edges, relPos, pulls, nil, childEdges, nil)
 	if !ok {
 		t.Fatal("expected pass-through corridor layout to apply")
 	}
@@ -584,7 +1108,7 @@ func TestLayoutChildrenVerticalLineBuildsMainSpineWithSidecar(t *testing.T) {
 	childEdges := childInternalEdges(childIDs, edges)
 	relPos := map[string][2]float64{}
 
-	w, h, ok := layoutChildrenVerticalLine(childIDs, edges, relPos, pulls, nil, childEdges)
+	w, h, ok := layoutChildrenVerticalLine(childIDs, edges, relPos, pulls, nil, childEdges, nil)
 	if !ok {
 		t.Fatal("expected vertical line layout to apply")
 	}
@@ -651,7 +1175,7 @@ func TestLayoutChildrenVerticalLineRespectsBoundaryPortOrder(t *testing.T) {
 	childEdges := childInternalEdges(childIDs, edges)
 	relPos := map[string][2]float64{}
 
-	_, _, ok := layoutChildrenVerticalLine(childIDs, edges, relPos, pulls, demands, childEdges)
+	_, _, ok := layoutChildrenVerticalLine(childIDs, edges, relPos, pulls, demands, childEdges, nil)
 	if !ok {
 		t.Fatal("expected vertical line layout to apply")
 	}
@@ -660,6 +1184,204 @@ func TestLayoutChildrenVerticalLineRespectsBoundaryPortOrder(t *testing.T) {
 		relPos["eventhub"][1] < relPos["auth"][1] &&
 		relPos["auth"][1] < relPos["waterfall"][1]) {
 		t.Fatalf("expected left-boundary order to be preserved down the spine, got relPos=%v", relPos)
+	}
+}
+
+func TestLayoutChildrenVerticalLineCanKeepStrongRightPulledNodesOnRightBoundary(t *testing.T) {
+	childIDs := []string{"auth", "project", "team", "require", "shared"}
+	edges := []model.Edge{
+		{ID: "e1", SourceID: "echo", TargetID: "auth", EdgeType: model.EdgeTypeTriggers},
+		{ID: "e2", SourceID: "auth", TargetID: "project", EdgeType: model.EdgeTypeTriggers},
+		{ID: "e3", SourceID: "auth", TargetID: "team", EdgeType: model.EdgeTypeTriggers},
+		{ID: "e4", SourceID: "project", TargetID: "require", EdgeType: model.EdgeTypeTriggers},
+		{ID: "e5", SourceID: "shared", TargetID: "node", EdgeType: model.EdgeTypeTriggers},
+		{ID: "e6", SourceID: "require", TargetID: "node", EdgeType: model.EdgeTypeTriggers},
+		{ID: "e7", SourceID: "require", TargetID: "team_handler", EdgeType: model.EdgeTypeTriggers},
+	}
+	pulls := map[string]childExternalPull{
+		"auth":    {avgX: 320, avgY: -120, count: 1},
+		"project": {avgX: 260, avgY: 120, count: 1},
+		"team":    {avgX: 320, avgY: 220, count: 1},
+		"require": {avgX: 380, avgY: 260, count: 3},
+		"shared":  {avgX: 360, avgY: 40, count: 1},
+	}
+	demands := map[string]childBoundaryDemand{
+		"auth": {
+			rightOrder: -120,
+			rightCount: 1,
+		},
+		"project": {
+			rightOrder: 120,
+			rightCount: 1,
+		},
+		"team": {
+			rightOrder: 220,
+			rightCount: 1,
+		},
+		"require": {
+			rightOrder: 260,
+			rightCount: 3,
+		},
+		"shared": {
+			rightOrder: 40,
+			rightCount: 1,
+		},
+	}
+	childEdges := childInternalEdges(childIDs, edges)
+	relPos := map[string][2]float64{}
+
+	_, _, ok := layoutChildrenVerticalLine(childIDs, edges, relPos, pulls, demands, childEdges, nil)
+	if !ok {
+		t.Fatal("expected vertical line layout to apply")
+	}
+
+	colCounts := make(map[float64]int)
+	for _, id := range childIDs {
+		colCounts[relPos[id][0]]++
+	}
+	if len(colCounts) < 2 {
+		t.Fatalf("expected right-boundary vertical line layout to use at least two columns, got relPos=%v", relPos)
+	}
+	if !(relPos["require"][0] > 0 && relPos["shared"][0] > 0) {
+		t.Fatalf("expected strongest right-pulled nodes to stay on the right half, got relPos=%v", relPos)
+	}
+}
+
+func TestLayoutChildrenVerticalLineRejectsDenseBranchyGroup(t *testing.T) {
+	childIDs := []string{"a", "b", "c", "d", "e"}
+	edges := []model.Edge{
+		{ID: "e1", SourceID: "a", TargetID: "b", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e2", SourceID: "a", TargetID: "c", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e3", SourceID: "a", TargetID: "d", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e4", SourceID: "e", TargetID: "b", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e5", SourceID: "e", TargetID: "c", EdgeType: model.EdgeTypeDependsOn},
+	}
+	pulls := map[string]childExternalPull{
+		"a": {avgX: -260, avgY: -120, count: 1},
+		"b": {avgX: -280, avgY: -20, count: 1},
+		"c": {avgX: -240, avgY: 60, count: 1},
+		"d": {avgX: 260, avgY: 120, count: 1},
+		"e": {avgX: 220, avgY: 180, count: 1},
+	}
+	childEdges := childInternalEdges(childIDs, edges)
+	relPos := map[string][2]float64{}
+
+	_, _, ok := layoutChildrenVerticalLine(childIDs, edges, relPos, pulls, nil, childEdges, nil)
+	if ok {
+		t.Fatalf("expected dense branchy group to skip vertical-line layout, got relPos=%v", relPos)
+	}
+}
+
+func TestLayoutChildrenTwoColumnFlowBuildsMainAndSinkColumns(t *testing.T) {
+	groupID := "services"
+	childIDs := []string{"layout", "eventhub", "auth", "waterfall", "impact"}
+	nodes := []model.Node{
+		{ID: groupID, Title: "Services", Type: model.NodeTypeGroup},
+		{ID: "layout", Title: "Layout", Type: model.NodeTypeTask, ParentID: &groupID},
+		{ID: "eventhub", Title: "EventHub", Type: model.NodeTypeTask, ParentID: &groupID},
+		{ID: "auth", Title: "Auth", Type: model.NodeTypeTask, ParentID: &groupID},
+		{ID: "waterfall", Title: "Waterfall", Type: model.NodeTypeTask, ParentID: &groupID},
+		{ID: "impact", Title: "Impact", Type: model.NodeTypeTask, ParentID: &groupID},
+		{ID: "left_top", Title: "Left Top", Type: model.NodeTypeTask},
+		{ID: "left_mid", Title: "Left Mid", Type: model.NodeTypeTask},
+		{ID: "left_low", Title: "Left Low", Type: model.NodeTypeTask},
+		{ID: "store", Title: "Store", Type: model.NodeTypeTask},
+	}
+	nodeMap := make(map[string]*model.Node, len(nodes))
+	for i := range nodes {
+		nodeMap[nodes[i].ID] = &nodes[i]
+	}
+	edges := []model.Edge{
+		{ID: "e1", SourceID: "left_top", TargetID: "layout", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e2", SourceID: "left_mid", TargetID: "waterfall", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e3", SourceID: "left_low", TargetID: "auth", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e4", SourceID: "auth", TargetID: "impact", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e5", SourceID: "waterfall", TargetID: "eventhub", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e6", SourceID: "impact", TargetID: "eventhub", EdgeType: model.EdgeTypeDependsOn},
+		{ID: "e7", SourceID: "impact", TargetID: "store", EdgeType: model.EdgeTypeDependsOn},
+	}
+	positions := map[string][2]float64{
+		groupID:    {0, 0},
+		"left_top": {-420, -220},
+		"left_mid": {-420, 20},
+		"left_low": {-420, 220},
+		"store":    {-520, -160},
+	}
+	pulls := childExternalPulls(groupID, positions[groupID], childIDs, edges, nodeMap, positions)
+	demands := buildChildBoundaryDemands(groupID, positions[groupID], childIDs, edges, nodeMap, positions)
+	childEdges := childInternalEdges(childIDs, edges)
+	relPos := map[string][2]float64{}
+
+	w, h, ok := layoutChildrenTwoColumnFlow(childIDs, edges, relPos, pulls, demands, childEdges, nil)
+	if !ok {
+		t.Fatal("expected two-column flow layout to apply")
+	}
+	if w < minGroupW || h < minGroupH {
+		t.Fatalf("expected sensible group size, got w=%v h=%v", w, h)
+	}
+
+	if !(relPos["layout"][0] < relPos["eventhub"][0] &&
+		relPos["waterfall"][0] < relPos["eventhub"][0] &&
+		relPos["auth"][0] < relPos["impact"][0]) {
+		t.Fatalf("expected main-column nodes left of sink/bridge column, got relPos=%v", relPos)
+	}
+	if !(relPos["layout"][1] < relPos["waterfall"][1] && relPos["waterfall"][1] < relPos["auth"][1]) {
+		t.Fatalf("expected left-boundary order to shape main column, got relPos=%v", relPos)
+	}
+}
+
+func TestLayoutChildrenTwoColumnFlowCanUseExtremeRightSlotsToKeepCenterCorridorOpen(t *testing.T) {
+	groupID := "middleware"
+	childIDs := []string{"auth", "project", "team", "require", "shared"}
+	nodes := []model.Node{
+		{ID: groupID, Title: "Middleware", Type: model.NodeTypeGroup},
+		{ID: "auth", Title: "Auth Middleware", Type: model.NodeTypeBranch, ParentID: &groupID},
+		{ID: "project", Title: "ProjectAccess MW", Type: model.NodeTypeBranch, ParentID: &groupID},
+		{ID: "team", Title: "TeamAccess MW", Type: model.NodeTypeBranch, ParentID: &groupID},
+		{ID: "require", Title: "RequireRole MW", Type: model.NodeTypeBranch, ParentID: &groupID},
+		{ID: "shared", Title: "SharedAccess MW", Type: model.NodeTypeBranch, ParentID: &groupID},
+		{ID: "echo", Title: "Echo Router", Type: model.NodeTypeTask},
+		{ID: "node", Title: "Node Handler", Type: model.NodeTypeTask},
+		{ID: "team_handler", Title: "Team Handler", Type: model.NodeTypeTask},
+		{ID: "impact", Title: "Impact Handler", Type: model.NodeTypeTask},
+	}
+	nodeMap := make(map[string]*model.Node, len(nodes))
+	for i := range nodes {
+		nodeMap[nodes[i].ID] = &nodes[i]
+	}
+	edges := []model.Edge{
+		{ID: "e1", SourceID: "echo", TargetID: "auth", EdgeType: model.EdgeTypeTriggers},
+		{ID: "e2", SourceID: "auth", TargetID: "project", EdgeType: model.EdgeTypeTriggers},
+		{ID: "e3", SourceID: "auth", TargetID: "team", EdgeType: model.EdgeTypeTriggers},
+		{ID: "e4", SourceID: "project", TargetID: "require", EdgeType: model.EdgeTypeTriggers},
+		{ID: "e5", SourceID: "shared", TargetID: "node", EdgeType: model.EdgeTypeTriggers},
+		{ID: "e6", SourceID: "require", TargetID: "node", EdgeType: model.EdgeTypeTriggers},
+		{ID: "e7", SourceID: "require", TargetID: "team_handler", EdgeType: model.EdgeTypeTriggers},
+		{ID: "e8", SourceID: "require", TargetID: "impact", EdgeType: model.EdgeTypeTriggers},
+	}
+	positions := map[string][2]float64{
+		groupID:        {0, 0},
+		"echo":         {520, 60},
+		"node":         {560, 80},
+		"team_handler": {560, 320},
+		"impact":       {560, 480},
+	}
+	pulls := childExternalPulls(groupID, positions[groupID], childIDs, edges, nodeMap, positions)
+	demands := buildChildBoundaryDemands(groupID, positions[groupID], childIDs, edges, nodeMap, positions)
+	childEdges := childInternalEdges(childIDs, edges)
+	externalLinks := buildChildExternalLinks(groupID, positions[groupID], childIDs, edges, nodeMap, positions)
+	relPos := map[string][2]float64{}
+
+	_, _, ok := layoutChildrenTwoColumnFlow(childIDs, edges, relPos, pulls, demands, childEdges, externalLinks)
+	if !ok {
+		t.Fatal("expected two-column flow layout to apply")
+	}
+
+	if !(relPos["require"][0] > 0 && relPos["shared"][0] > 0) {
+		t.Fatalf("expected right-pulled middleware nodes to stay in right column, got relPos=%v", relPos)
+	}
+	if math.Abs(relPos["require"][1]-relPos["shared"][1]) < 200 {
+		t.Fatalf("expected right-column nodes to use spread slots and keep corridor open, got relPos=%v", relPos)
 	}
 }
 
@@ -682,7 +1404,7 @@ func TestLayoutChildrenHorizontalLineBuildsMainRowWithSidecar(t *testing.T) {
 	childEdges := childInternalEdges(childIDs, edges)
 	relPos := map[string][2]float64{}
 
-	w, h, ok := layoutChildrenHorizontalLine(childIDs, edges, relPos, pulls, nil, childEdges)
+	w, h, ok := layoutChildrenHorizontalLine(childIDs, edges, relPos, pulls, nil, childEdges, nil)
 	if !ok {
 		t.Fatal("expected horizontal line layout to apply")
 	}
@@ -702,6 +1424,107 @@ func TestLayoutChildrenHorizontalLineBuildsMainRowWithSidecar(t *testing.T) {
 	}
 	if maxRow < 3 {
 		t.Fatalf("expected horizontal line layout to keep a dominant shared row, got relPos=%v", relPos)
+	}
+}
+
+func TestRenderedChildLayoutCostCountsActualExternalNodeHits(t *testing.T) {
+	groupID := "services"
+	childIDs := []string{"left", "right"}
+	nodes := []model.Node{
+		{ID: groupID, Title: "Services", Type: model.NodeTypeGroup},
+		{ID: "left", Title: "Left", Type: model.NodeTypeTask, ParentID: &groupID},
+		{ID: "right", Title: "Right", Type: model.NodeTypeTask, ParentID: &groupID},
+		{ID: "external", Title: "External", Type: model.NodeTypeTask},
+	}
+	nodeMap := make(map[string]*model.Node, len(nodes))
+	for i := range nodes {
+		nodeMap[nodes[i].ID] = &nodes[i]
+	}
+	edges := []model.Edge{
+		{ID: "e1", SourceID: "external", TargetID: "right", EdgeType: model.EdgeTypeDependsOn},
+	}
+	groupPositions := map[string][2]float64{
+		groupID:    {0, 0},
+		"external": {-240, 0},
+	}
+	childRelPos := map[string][2]float64{
+		"left":  {0, 0},
+		"right": {120, 0},
+	}
+
+	routes := buildRenderedChildRouteInfos(childIDs, edges, nodeMap, groupPositions, childRelPos, childRelPos)
+	hits := countRenderedChildRouteNodeIntersections(childIDs, routes, nodeMap, groupPositions, childRelPos, childRelPos)
+	if hits != 1 {
+		t.Fatalf("expected actual rendered route to cross one sibling node, got %d routes=%+v", hits, routes)
+	}
+
+	cost := renderedChildLayoutCost(groupPositions[groupID], childIDs, edges, nodeMap, groupPositions, childRelPos, childRelPos)
+	if cost <= 0 {
+		t.Fatalf("expected rendered child layout cost to penalize actual external crossing, got %v", cost)
+	}
+}
+
+func TestOptimizeChildAssignmentsForRenderedRoutesSwapsSlotsToReduceHits(t *testing.T) {
+	groupID := "services"
+	childIDs := []string{"left", "right"}
+	nodes := []model.Node{
+		{ID: groupID, Title: "Services", Type: model.NodeTypeGroup},
+		{ID: "left", Title: "Left", Type: model.NodeTypeTask, ParentID: &groupID},
+		{ID: "right", Title: "Right", Type: model.NodeTypeTask, ParentID: &groupID},
+		{ID: "external", Title: "External", Type: model.NodeTypeTask},
+	}
+	nodeMap := make(map[string]*model.Node, len(nodes))
+	for i := range nodes {
+		nodeMap[nodes[i].ID] = &nodes[i]
+	}
+	edges := []model.Edge{
+		{ID: "e1", SourceID: "external", TargetID: "right", EdgeType: model.EdgeTypeDependsOn},
+	}
+	groupPositions := map[string][2]float64{
+		groupID:    {0, 0},
+		"external": {-240, 0},
+	}
+	childRelPos := map[string][2]float64{
+		"left":  {0, 0},
+		"right": {120, 0},
+	}
+
+	pulls := childExternalPulls(groupID, groupPositions[groupID], childIDs, edges, nodeMap, groupPositions)
+	demands := buildChildBoundaryDemands(groupID, groupPositions[groupID], childIDs, edges, nodeMap, groupPositions)
+	metrics := computeChildRectMetrics(childIDs, edges, pulls)
+	childEdges := childInternalEdges(childIDs, edges)
+	externalLinks := buildChildExternalLinks(groupID, groupPositions[groupID], childIDs, edges, nodeMap, groupPositions)
+
+	beforeRoutes := buildRenderedChildRouteInfos(childIDs, edges, nodeMap, groupPositions, childRelPos, childRelPos)
+	beforeHits := countRenderedChildRouteNodeIntersections(childIDs, beforeRoutes, nodeMap, groupPositions, childRelPos, childRelPos)
+	if beforeHits != 1 {
+		t.Fatalf("expected initial rendered crossing count to be 1, got %d", beforeHits)
+	}
+
+	improved := optimizeChildAssignmentsForRenderedRoutes(
+		groupPositions[groupID],
+		childIDs,
+		edges,
+		nodeMap,
+		groupPositions,
+		childRelPos,
+		childRelPos,
+		childEdges,
+		externalLinks,
+		metrics,
+		demands,
+	)
+	if !improved {
+		t.Fatal("expected rendered-route optimizer to improve the assignment")
+	}
+
+	afterRoutes := buildRenderedChildRouteInfos(childIDs, edges, nodeMap, groupPositions, childRelPos, childRelPos)
+	afterHits := countRenderedChildRouteNodeIntersections(childIDs, afterRoutes, nodeMap, groupPositions, childRelPos, childRelPos)
+	if afterHits >= beforeHits {
+		t.Fatalf("expected fewer rendered node hits after swap, before=%d after=%d relPos=%v", beforeHits, afterHits, childRelPos)
+	}
+	if !(childRelPos["right"][0] < childRelPos["left"][0]) {
+		t.Fatalf("expected externally connected node to move to the left slot, got relPos=%v", childRelPos)
 	}
 }
 
