@@ -27,6 +27,8 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set}
       PORT: "7244"
       FRONTEND_URL: ${APP_URL:-http://localhost:7243}
+      CAPTURE_URL: http://capture:7241
+      CAPTURE_INTERNAL_SECRET: ${CAPTURE_INTERNAL_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,6 +38,47 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    restart: unless-stopped
+
+  capture:
+    build:
+      context: ./capture
+      dockerfile: Dockerfile
+    expose:
+      - "7241"
+    environment:
+      PORT: "7241"
+      FRONTEND_URL: ${CAPTURE_FRONTEND_URL:-http://frontend:7243}
+      BROWSER_WS_ENDPOINT: ws://browserless:3000
+      CAPTURE_INTERNAL_SECRET: ${CAPTURE_INTERNAL_SECRET:-}
+    depends_on:
+      frontend:
+        condition: service_healthy
+      browserless:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:7241/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  browserless:
+    image: browserless/chrome:latest
+    environment:
+      PORT: "3000"
+      CONNECTION_TIMEOUT: "60000"
+    expose:
+      - "3000"
+    shm_size: "1gb"
     restart: unless-stopped
 
   frontend:

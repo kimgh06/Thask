@@ -354,6 +354,9 @@ Users ──< TeamMembers >── Teams ──< Projects ──< Nodes ──< N
 | `SESSION_SECRET` | Random string for session signing | — |
 | `PORT` | Backend server port | `7244` |
 | `FRONTEND_URL` | Frontend URL for CORS | `http://localhost:7243` |
+| `CAPTURE_URL` | Internal Playwright capture worker URL | `http://localhost:7241` |
+| `CAPTURE_INTERNAL_SECRET` | Optional shared secret for backend → capture worker calls | — |
+| `CAPTURE_TIMEOUT_SECONDS` | Capture worker request timeout | `30` |
 | `V1_ALLOWED_ORIGINS` | Comma-separated CORS origins for `/api/v1/` | `*` |
 | `MAX_REQUEST_BODY_BYTES` | Max request body size for v1 routes (bytes) | `1048576` (1MB) |
 
@@ -371,6 +374,10 @@ Users ──< TeamMembers >── Teams ──< Projects ──< Nodes ──< N
 | `APP_URL` | Public URL of the application | `http://localhost:7243` |
 | `BACKEND_URL` | Backend URL for frontend proxy | `http://backend:7244` |
 | `POSTGRES_PASSWORD` | PostgreSQL password | `thask_password` |
+| `CAPTURE_PORT` | Local/dev host port for the Playwright capture worker | `7241` |
+| `CAPTURE_INTERNAL_SECRET` | Optional shared secret for backend → capture worker calls | — |
+| `CAPTURE_FRONTEND_URL` | URL the capture worker opens in Chromium | `http://frontend:7243` |
+| `BROWSER_WS_ENDPOINT` | Browserless Chrome WebSocket endpoint used by the capture worker | `ws://browserless:3000` |
 
 ### Deploying to a Custom Domain
 
@@ -392,6 +399,9 @@ Browser ──https──▶ Reverse Proxy (nginx/Cloudflare)
                         │
                         ▼ http://backend:7244 (Docker internal)
                    Backend (Go)
+                        │
+                        ▼ http://capture:7241 (Docker internal, optional)
+                   Capture Worker (Playwright)
                         │
                         ▼ postgres:5432 (Docker internal)
                    PostgreSQL

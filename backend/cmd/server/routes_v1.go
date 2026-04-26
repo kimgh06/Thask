@@ -79,10 +79,11 @@ func RegisterV1Routes(
 
 	// Read — all roles (including viewer)
 	v1Project.GET("", h.Project.Get)
-	v1Project.GET("/graph", h.Node.Graph)       // NOT paginated
-	v1Project.GET("/nodes", h.Node.List)         // paginated via v1 context check in handler
+	v1Project.GET("/graph", h.Node.Graph) // NOT paginated
+	v1Project.GET("/graph/capture", h.Node.Capture)
+	v1Project.GET("/nodes", h.Node.List) // paginated via v1 context check in handler
 	v1Project.GET("/nodes/:nodeId", h.Node.Get)
-	v1Project.GET("/edges", h.Edge.List)         // paginated via v1 context check in handler
+	v1Project.GET("/edges", h.Edge.List) // paginated via v1 context check in handler
 	v1Project.GET("/impact", h.Impact.Analyze)
 	v1Project.GET("/graph/analyze", h.GraphAnalysis.Analyze)
 	v1Project.GET("/activity", h.Activity.List)

@@ -1,13 +1,20 @@
 package handler
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"html"
+	"io"
 	"math"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/labstack/echo/v4"
+	"github.com/thask/backend/internal/dto"
 	mw "github.com/thask/backend/internal/middleware"
 	"github.com/thask/backend/internal/model"
 )
@@ -37,13 +44,118 @@ func (h *NodeHandler) OGImage(c echo.Context) error {
 		return c.String(http.StatusInternalServerError, "")
 	}
 
-	const imgW, imgH = 1200.0, 630.0
+	svg := renderGraphSVG(nodes, edges, 1200, 630)
+	c.Response().Header().Set("Content-Type", "image/svg+xml")
+	c.Response().Header().Set("Cache-Control", "public, max-age=300")
+	return c.String(http.StatusOK, svg)
+}
 
-	if len(nodes) == 0 {
-		svg := renderEmptySVG("Empty Graph", imgW, imgH)
+// Capture renders a project graph image for external API and CLI use.
+func (h *NodeHandler) Capture(c echo.Context) error {
+	format := c.QueryParam("format")
+	if format == "" {
+		format = "png"
+	}
+	if format != "png" && format != "svg" {
+		return c.JSON(http.StatusBadRequest, dto.Err("Only format=png or format=svg is supported"))
+	}
+
+	width := parseImageDimension(c.QueryParam("width"), 1600, 320, 4096)
+	height := parseImageDimension(c.QueryParam("height"), 1000, 240, 4096)
+	padding := parseImageDimension(c.QueryParam("padding"), 80, 0, 400)
+	scale := parseImageDimension(c.QueryParam("scale"), 2, 1, 4)
+	crop := parseBoolQuery(c.QueryParam("crop"), true)
+
+	ctx := c.Request().Context()
+	projectID := mw.ResolveProjectID(c)
+
+	nodes, err := h.nodeRepo.FindByProjectID(ctx, projectID, nil, nil)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to fetch nodes"))
+	}
+
+	edges, err := h.edgeRepo.FindByProjectID(ctx, projectID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to fetch edges"))
+	}
+
+	if format == "svg" {
+		svg := renderGraphSVG(nodes, edges, float64(width), float64(height))
 		c.Response().Header().Set("Content-Type", "image/svg+xml")
-		c.Response().Header().Set("Cache-Control", "public, max-age=300")
+		c.Response().Header().Set("Cache-Control", "no-store")
 		return c.String(http.StatusOK, svg)
+	}
+
+	if h.captureURL == "" {
+		return c.JSON(http.StatusServiceUnavailable, dto.Err("Capture worker is not configured"))
+	}
+	image, contentType, metrics, err := h.capturePNG(ctx, nodes, edges, width, height, padding, scale, crop)
+	if err != nil {
+		return c.JSON(http.StatusBadGateway, dto.Err(err.Error()))
+	}
+	if contentType == "" {
+		contentType = "image/png"
+	}
+	c.Response().Header().Set("Cache-Control", "no-store")
+	if metrics != "" {
+		c.Response().Header().Set("X-Thask-Capture-Metrics", metrics)
+	}
+	return c.Blob(http.StatusOK, contentType, image)
+}
+
+func (h *NodeHandler) capturePNG(ctx context.Context, nodes []model.Node, edges []model.Edge, width, height, padding, scale int, crop bool) ([]byte, string, string, error) {
+	endpoint, err := url.JoinPath(strings.TrimRight(h.captureURL, "/"), "/capture/graph")
+	if err != nil {
+		return nil, "", "", fmt.Errorf("invalid capture worker URL")
+	}
+	payload := map[string]any{
+		"nodes":   nodes,
+		"edges":   edges,
+		"width":   width,
+		"height":  height,
+		"padding": padding,
+		"scale":   scale,
+		"crop":    crop,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("failed to build capture request: %w", err)
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, h.captureTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, "", "", fmt.Errorf("failed to create capture request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "image/png")
+	if h.captureSecret != "" {
+		req.Header.Set("X-Thask-Capture-Secret", h.captureSecret)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("capture worker unavailable: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("failed to read capture response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
+			return nil, "", "", fmt.Errorf("capture failed: %s", errResp.Error)
+		}
+		return nil, "", "", fmt.Errorf("capture failed: HTTP %d", resp.StatusCode)
+	}
+	return respBody, resp.Header.Get("Content-Type"), resp.Header.Get("X-Thask-Capture-Metrics"), nil
+}
+
+func renderGraphSVG(nodes []model.Node, edges []model.Edge, imgW, imgH float64) string {
+	if len(nodes) == 0 {
+		return renderEmptySVG("Empty Graph", imgW, imgH)
 	}
 
 	// Build position map
@@ -167,9 +279,38 @@ func (h *NodeHandler) OGImage(c echo.Context) error {
 
 	sb.WriteString(`</svg>`)
 
-	c.Response().Header().Set("Content-Type", "image/svg+xml")
-	c.Response().Header().Set("Cache-Control", "public, max-age=300")
-	return c.String(http.StatusOK, sb.String())
+	return sb.String()
+}
+
+func parseImageDimension(raw string, fallback, minValue, maxValue int) int {
+	if raw == "" {
+		return fallback
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+	if v < minValue {
+		return minValue
+	}
+	if v > maxValue {
+		return maxValue
+	}
+	return v
+}
+
+func parseBoolQuery(raw string, fallback bool) bool {
+	if raw == "" {
+		return fallback
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func nodeSize(n model.Node) (float64, float64) {

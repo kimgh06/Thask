@@ -15,5 +15,46 @@ services:
       timeout: 5s
       retries: 5
 
+  capture:
+    profiles:
+      - capture
+    build:
+      context: ./capture
+      dockerfile: Dockerfile
+    ports:
+      - "${CAPTURE_PORT:-7241}:7241"
+    environment:
+      PORT: "7241"
+      FRONTEND_URL: ${CAPTURE_FRONTEND_URL:-http://host.docker.internal:7243}
+      BROWSER_WS_ENDPOINT: ws://browserless:3000
+      CAPTURE_INTERNAL_SECRET: ${CAPTURE_INTERNAL_SECRET:-}
+    depends_on:
+      browserless:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:7241/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  browserless:
+    profiles:
+      - capture
+    image: browserless/chrome:latest
+    environment:
+      PORT: "3000"
+      CONNECTION_TIMEOUT: "60000"
+    expose:
+      - "3000"
+    shm_size: "1gb"
+
 volumes:
   pgdata_dev:

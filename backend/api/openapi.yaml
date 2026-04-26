@@ -347,6 +347,75 @@ paths:
                         items:
                           $ref: "#/components/schemas/Edge"
 
+  /projects/{projectId}/graph/capture:
+    get:
+      summary: Capture graph image
+      description: Renders the project graph as a PNG image through the internal Playwright capture worker. `format=svg` returns the lightweight server-side preview renderer.
+      tags: [Graph]
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [png, svg]
+            default: png
+        - name: width
+          in: query
+          schema:
+            type: integer
+            default: 1600
+            minimum: 320
+            maximum: 4096
+        - name: height
+          in: query
+          schema:
+            type: integer
+            default: 1000
+            minimum: 240
+            maximum: 4096
+        - name: padding
+          in: query
+          schema:
+            type: integer
+            default: 80
+            minimum: 0
+            maximum: 400
+        - name: scale
+          in: query
+          schema:
+            type: integer
+            default: 2
+            minimum: 1
+            maximum: 4
+        - name: crop
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: Graph image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/svg+xml:
+              schema:
+                type: string
+        "400":
+          description: Unsupported format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /projects/{projectId}/nodes:
     get:
       summary: List nodes (paginated)

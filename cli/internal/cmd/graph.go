@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -61,6 +62,73 @@ var graphExportCmd = &cobra.Command{
 			return fmt.Errorf("failed to write file: %w", err)
 		}
 		fmt.Printf("Exported to %s\n", filePath)
+		return nil
+	},
+}
+
+var graphCaptureCmd = &cobra.Command{
+	Use:     "capture",
+	Aliases: []string{"cap"},
+	Short:   "Capture the graph as an image",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		pid := resolveProject()
+		if pid == "" {
+			return fmt.Errorf("--project or THASK_PROJECT required")
+		}
+
+		filePath, _ := cmd.Flags().GetString("out")
+		if filePath == "" {
+			filePath, _ = cmd.Flags().GetString("file")
+		}
+		format, _ := cmd.Flags().GetString("format")
+		width, _ := cmd.Flags().GetInt("width")
+		height, _ := cmd.Flags().GetInt("height")
+		padding, _ := cmd.Flags().GetInt("padding")
+		scale, _ := cmd.Flags().GetInt("scale")
+		crop, _ := cmd.Flags().GetBool("crop")
+
+		if format == "" {
+			format = "png"
+		}
+		if format != "png" && format != "svg" {
+			return fmt.Errorf("only --format png or --format svg is supported")
+		}
+		if filePath == "" {
+			if format == "svg" {
+				filePath = "graph.svg"
+			} else {
+				filePath = "graph.png"
+			}
+		}
+
+		q := url.Values{}
+		q.Set("format", format)
+		if width > 0 {
+			q.Set("width", fmt.Sprintf("%d", width))
+		}
+		if height > 0 {
+			q.Set("height", fmt.Sprintf("%d", height))
+		}
+		if padding >= 0 {
+			q.Set("padding", fmt.Sprintf("%d", padding))
+		}
+		if scale > 0 {
+			q.Set("scale", fmt.Sprintf("%d", scale))
+		}
+		q.Set("crop", fmt.Sprintf("%t", crop))
+
+		accept := "image/png"
+		if format == "svg" {
+			accept = "image/svg+xml"
+		}
+		data, _, err := apiClient.GetRaw("/api/v1/projects/"+pid+"/graph/capture?"+q.Encode(), accept)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filePath, data, 0644); err != nil {
+			return fmt.Errorf("failed to write file: %w", err)
+		}
+		fmt.Printf("Captured to %s\n", filePath)
 		return nil
 	},
 }
@@ -189,6 +257,15 @@ func init() {
 
 	graphExportCmd.Flags().String("file", "graph.json", "Output file path")
 
+	graphCaptureCmd.Flags().String("out", "", "Output image path")
+	graphCaptureCmd.Flags().String("file", "", "Output image path (deprecated; use --out)")
+	graphCaptureCmd.Flags().String("format", "png", "Image format: png or svg")
+	graphCaptureCmd.Flags().Int("width", 1600, "Image width in pixels")
+	graphCaptureCmd.Flags().Int("height", 1000, "Image height in pixels")
+	graphCaptureCmd.Flags().Int("padding", 80, "Fit padding in pixels")
+	graphCaptureCmd.Flags().Int("scale", 2, "Output pixel scale: 1-4")
+	graphCaptureCmd.Flags().Bool("crop", true, "Crop PNG output to graph bounds")
+
 	graphLayoutCmd.Flags().String("algorithm", "", "Layout algorithm: dagre (default), grid")
 	graphLayoutCmd.Flags().Bool("preserve-edges", false, "Preserve edge waypoints during layout")
 
@@ -196,6 +273,7 @@ func init() {
 
 	graphCmd.AddCommand(graphGetCmd)
 	graphCmd.AddCommand(graphExportCmd)
+	graphCmd.AddCommand(graphCaptureCmd)
 	graphCmd.AddCommand(graphImportCmd)
 	graphCmd.AddCommand(graphLayoutCmd)
 	graphCmd.AddCommand(graphAnalyzeCmd)

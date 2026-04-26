@@ -555,6 +555,27 @@ thask graph export -p <projectId> --file my-graph.json
 |---|---|---|
 | `--file` | `graph.json` | Output file path |
 
+### graph capture [\--out \<path\>] [\--width 1600] [\--height 1000]
+
+Capture the current graph as a PNG image through the Playwright capture worker. Use `--format svg` for the lightweight server-side preview renderer.
+
+```bash
+thask graph capture -p <projectId>
+thask graph capture -p <projectId> --out autolayout-after.png --width 1600 --height 1000 --scale 2
+thask graph capture -p <projectId> --format svg --out graph.svg
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--out` | `graph.png` | Output image path |
+| `--file` | — | Deprecated alias for `--out` |
+| `--format` | `png` | Image format: `png` or `svg` |
+| `--width` | `1600` | Image width in pixels |
+| `--height` | `1000` | Image height in pixels |
+| `--padding` | `80` | Fit padding in pixels |
+| `--scale` | `2` | Output pixel scale, from `1` to `4` |
+| `--crop` | `true` | Crop PNG output to graph bounds |
+
 ### graph import --file \<path\> [\--mode merge\|replace]
 
 Import a graph from a JSON file. Default mode is `merge` (adds to existing graph). Use `replace` to overwrite.

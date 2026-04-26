@@ -1,18 +1,24 @@
-.PHONY: dev dev-db dev-backend dev-frontend build build-cli release-cli test test-backend test-cli test-e2e clean
+.PHONY: dev dev-db dev-backend dev-frontend dev-capture build build-cli release-cli test test-backend test-cli test-e2e clean
 
 # Development
-dev: dev-db
+dev: dev-services
 	@echo "Starting backend and frontend..."
 	@make -j2 dev-backend dev-frontend
 
+dev-services:
+	docker compose -f docker-compose.dev.yml --profile capture up -d --build db capture
+
 dev-db:
-	docker compose -f docker-compose.dev.yml up -d
+	docker compose -f docker-compose.dev.yml up -d db
 
 dev-backend:
 	cd backend && $$(go env GOPATH)/bin/air
 
 dev-frontend:
-	cd frontend && npm run dev -- --port 7243
+	cd frontend && npm run dev -- --port 7243 --host 0.0.0.0
+
+dev-capture:
+	docker compose -f docker-compose.dev.yml --profile capture up -d --build capture
 
 # Build
 build: build-cli
@@ -69,7 +75,7 @@ down:
 
 # Database
 db-up:
-	docker compose -f docker-compose.dev.yml up -d
+	docker compose -f docker-compose.dev.yml up -d db
 
 db-down:
 	docker compose -f docker-compose.dev.yml down

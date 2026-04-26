@@ -328,6 +328,16 @@ Response includes all nodes and edges:
 }
 ```
 
+**Capture graph image:**
+
+```bash
+curl "http://localhost:7244/api/v1/projects/550e8400-e29b-41d4-a716-446655440000/graph/capture?width=1600&height=1000" \
+  -H "Authorization: Bearer thsk_your_key_here" \
+  -o graph.png
+```
+
+Use `format=svg` for the lightweight server-side preview renderer.
+
 **Import graph (replace):**
 
 ```bash

@@ -77,7 +77,7 @@ func main() {
 		Auth:          handler.NewAuthHandler(userRepo, sessionRepo),
 		Team:          handler.NewTeamHandler(teamRepo, projectRepo, userRepo),
 		Project:       handler.NewProjectHandler(projectRepo, teamRepo, pmRepo, userRepo),
-		Node:          handler.NewNodeHandler(nodeRepo, edgeRepo, historyRepo, hub),
+		Node:          handler.NewNodeHandler(nodeRepo, edgeRepo, historyRepo, hub, cfg.CaptureURL, cfg.CaptureInternalSecret, time.Duration(cfg.CaptureTimeoutSeconds)*time.Second),
 		Edge:          handler.NewEdgeHandler(edgeRepo, hub),
 		Impact:        handler.NewImpactHandler(nodeRepo, edgeRepo),
 		GraphAnalysis: handler.NewGraphAnalysisHandler(edgeRepo),

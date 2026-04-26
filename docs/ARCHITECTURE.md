@@ -39,6 +39,17 @@ Thask uses a **monorepo with separate backend, frontend, and CLI** services. The
 
 ---
 
+## Local Ports
+
+| Service | Port | Notes |
+|---|---:|---|
+| Capture worker | `7241` | Playwright-based graph capture worker |
+| PostgreSQL | `7242` | Local Docker database |
+| Frontend | `7243` | SvelteKit app |
+| Backend | `7244` | Go API server |
+
+---
+
 ## Data Flow
 
 ```

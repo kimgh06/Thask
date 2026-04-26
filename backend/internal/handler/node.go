@@ -17,14 +17,23 @@ import (
 )
 
 type NodeHandler struct {
-	nodeRepo    *repository.NodeRepo
-	edgeRepo    *repository.EdgeRepo
-	historyRepo *repository.HistoryRepo
-	hub         *service.Hub
+	nodeRepo       *repository.NodeRepo
+	edgeRepo       *repository.EdgeRepo
+	historyRepo    *repository.HistoryRepo
+	hub            *service.Hub
+	captureURL     string
+	captureSecret  string
+	captureTimeout time.Duration
 }
 
-func NewNodeHandler(nodeRepo *repository.NodeRepo, edgeRepo *repository.EdgeRepo, historyRepo *repository.HistoryRepo, hub *service.Hub) *NodeHandler {
-	return &NodeHandler{nodeRepo: nodeRepo, edgeRepo: edgeRepo, historyRepo: historyRepo, hub: hub}
+func NewNodeHandler(nodeRepo *repository.NodeRepo, edgeRepo *repository.EdgeRepo, historyRepo *repository.HistoryRepo, hub *service.Hub, captureURL, captureSecret string, captureTimeout time.Duration) *NodeHandler {
+	if captureTimeout <= 0 {
+		captureTimeout = 30 * time.Second
+	}
+	return &NodeHandler{
+		nodeRepo: nodeRepo, edgeRepo: edgeRepo, historyRepo: historyRepo, hub: hub,
+		captureURL: captureURL, captureSecret: captureSecret, captureTimeout: captureTimeout,
+	}
 }
 
 func (h *NodeHandler) List(c echo.Context) error {

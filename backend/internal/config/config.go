@@ -9,12 +9,15 @@ import (
 )
 
 type Config struct {
-	DatabaseURL         string
-	SessionSecret       string
-	Port                string
-	FrontendURL         string
-	V1AllowedOrigins    []string
-	MaxRequestBodyBytes int64
+	DatabaseURL           string
+	SessionSecret         string
+	Port                  string
+	FrontendURL           string
+	CaptureURL            string
+	CaptureInternalSecret string
+	CaptureTimeoutSeconds int
+	V1AllowedOrigins      []string
+	MaxRequestBodyBytes   int64
 }
 
 func Load() *Config {
@@ -39,14 +42,23 @@ func Load() *Config {
 			maxBody = n
 		}
 	}
+	captureTimeout := 30
+	if v := os.Getenv("CAPTURE_TIMEOUT_SECONDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			captureTimeout = n
+		}
+	}
 
 	return &Config{
-		DatabaseURL:         getEnv("DATABASE_URL", "postgresql://thask:thask_dev_password@localhost:7242/thask"),
-		SessionSecret:       getEnv("SESSION_SECRET", "change-me-to-a-random-64-char-string"),
-		Port:                getEnv("PORT", "7244"),
-		FrontendURL:         getEnv("FRONTEND_URL", "http://localhost:7243"),
-		V1AllowedOrigins:    allowedOrigins,
-		MaxRequestBodyBytes: maxBody,
+		DatabaseURL:           getEnv("DATABASE_URL", "postgresql://thask:thask_dev_password@localhost:7242/thask"),
+		SessionSecret:         getEnv("SESSION_SECRET", "change-me-to-a-random-64-char-string"),
+		Port:                  getEnv("PORT", "7244"),
+		FrontendURL:           getEnv("FRONTEND_URL", "http://localhost:7243"),
+		CaptureURL:            getEnv("CAPTURE_URL", "http://localhost:7241"),
+		CaptureInternalSecret: getEnv("CAPTURE_INTERNAL_SECRET", ""),
+		CaptureTimeoutSeconds: captureTimeout,
+		V1AllowedOrigins:      allowedOrigins,
+		MaxRequestBodyBytes:   maxBody,
 	}
 }
 
