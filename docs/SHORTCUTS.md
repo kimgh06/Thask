@@ -10,6 +10,7 @@
 | `G` | Add group |
 | `Delete` / `Backspace` | Delete selected node or edge |
 | `Escape` | Close modal / deselect |
+| `]` | Toggle detail panel collapse/expand |
 | `+` / `=` | Zoom in |
 | `-` | Zoom out |
 | `0` | Fit view |
