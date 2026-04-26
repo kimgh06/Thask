@@ -10,7 +10,7 @@ Thask uses a **monorepo with separate backend, frontend, and CLI** services. The
 │  thask node · thask edge · thask graph · thask impact    │
 ├──────────────────────────────────────────────────────────┤
 │  MCP Server (stdio)                                      │
-│  12 tools · thask.node.* · thask.edge.* · thask.graph.*  │
+│  16 tools · thask.node.* · thask.edge.* · thask.graph.* · thask.scan.* · thask.guide  │
 ╠══════════════════════════════════════════════════════════╣
 │  Frontend (SvelteKit + Svelte 5)                         │
 │  CytoscapeCanvas · GraphToolbar · NodeDetailPanel · ...  │
@@ -92,7 +92,7 @@ cli/
 │   └── main.go                    # CLI entrypoint
 ├── internal/
 │   ├── cmd/                       # Cobra commands (node, edge, team, etc.)
-│   ├── mcp/                       # MCP server (stdio, 12 tools)
+│   ├── mcp/                       # MCP server (stdio, 16 tools)
 │   ├── client/                    # HTTP client for backend API
 │   ├── config/                    # Config file (~/.config/thask/)
 │   └── output/                    # Output formatting (JSON, table, quiet)

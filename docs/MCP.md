@@ -91,7 +91,7 @@ Restart Cursor after adding the configuration.
 
 ## Available Tools
 
-The MCP server exposes 12 tools organized into 4 categories.
+The MCP server exposes 16 tools organized into 5 categories.
 
 ### Node Tools
 
@@ -118,12 +118,26 @@ The MCP server exposes 12 tools organized into 4 categories.
 |---|---|---|---|
 | `thask.graph.get` | Get full graph snapshot (all nodes and edges) | `projectId` | — |
 | `thask.graph.import` | Import graph from JSON (replace or merge) | `projectId`, `mode`, `nodes`, `edges` | — |
+| `thask.graph.layout` | Auto-layout the project graph. Repositions all nodes and auto-sizes GROUP nodes. | `projectId` | `algorithm` (dagre \| grid, default: dagre) |
+| `thask.graph.analyze` | Detect dependency cycles and find the critical path (longest dependency chain) | `projectId` | — |
 
 ### Analysis Tools
 
 | Tool | Description | Required | Optional |
 |---|---|---|---|
 | `thask.impact.analyze` | Analyze cascade impact of changing a node | `projectId`, `nodeId` | — |
+
+### Scan Tools
+
+| Tool | Description | Required | Optional |
+|---|---|---|---|
+| `thask.scan.run` | Scan a Go project's internal dependencies and import them as graph nodes/edges | `projectId`, `path` | `maxFiles` (default 500) |
+
+### Guide
+
+| Tool | Description | Required | Optional |
+|---|---|---|---|
+| `thask.guide` | Get the full AI agent guide for Thask. Call this before your first interaction with a Thask project. | — | — |
 
 ---
 
