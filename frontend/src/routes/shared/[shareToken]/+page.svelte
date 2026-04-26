@@ -10,10 +10,13 @@
 	import { exportPNG, exportJSON } from '$lib/export';
 	import { Eye, Pencil } from 'lucide-svelte';
 
+	let { data } = $props<{ data: { project: { name?: string; description?: string; graphUpdatedAt?: string } | null } }>();
+
 	let nodes = $state<GraphNode[]>([]);
 	let edges = $state<GraphEdge[]>([]);
-	let projectName = $state('');
-	let projectDescription = $state('');
+	let projectName = $state(data.project?.name ?? '');
+	let projectDescription = $state(data.project?.description ?? '');
+	let graphUpdatedAt = $state(data.project?.graphUpdatedAt ?? '');
 	let loading = $state(true);
 	let error = $state('');
 	let sseConnected = $state(false);
@@ -25,6 +28,11 @@
 	const shareToken = $derived(page.params.shareToken ?? '');
 	const isEditor = $derived(linkSharing === 'editor');
 	const sharedApiBase = $derived(`/api/shared/${shareToken}`);
+	const ogImageUrl = $derived(
+		graphUpdatedAt
+			? `${sharedApiBase}/og-image?v=${encodeURIComponent(graphUpdatedAt)}`
+			: `${sharedApiBase}/og-image`
+	);
 
 	// Panel mode derived from graphStore
 	const panelMode = $derived.by(() => {
@@ -99,6 +107,7 @@
 					projectName = res.data.name;
 					projectDescription = res.data.description ?? '';
 					linkSharing = res.data.linkSharing;
+					graphUpdatedAt = res.data.graphUpdatedAt ?? graphUpdatedAt;
 				}
 			})
 			.catch(() => {});
@@ -209,7 +218,7 @@
 	<title>{projectName || 'Shared Graph'} - Thask</title>
 	<meta property="og:title" content={projectName || 'Shared Graph'} />
 	<meta property="og:description" content={projectDescription || 'Interactive graph on Thask'} />
-	<meta property="og:image" content="{sharedApiBase}/og-image" />
+	<meta property="og:image" content={ogImageUrl} />
 	<meta property="og:type" content="website" />
 </svelte:head>
 
