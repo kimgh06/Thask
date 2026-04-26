@@ -34,16 +34,11 @@ CLI_LDFLAGS = -X github.com/thask/cli/internal/cmd.Version=$$(git describe --tag
              -X github.com/thask/cli/internal/cmd.Commit=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown) \
              -X github.com/thask/cli/internal/mcp.Version=$$(git describe --tags --always 2>/dev/null || echo dev)
 
+CLI_VERSION ?= $(shell node -p "require('./cli/package.json').version" 2>/dev/null)
+
 release-cli:
-	@mkdir -p dist
-	cd cli && GOOS=darwin  GOARCH=arm64 go build -ldflags "$(CLI_LDFLAGS)" -o ../dist/thask-darwin-arm64 ./cmd/thask
-	cd cli && GOOS=darwin  GOARCH=amd64 go build -ldflags "$(CLI_LDFLAGS)" -o ../dist/thask-darwin-amd64 ./cmd/thask
-	cd cli && GOOS=linux   GOARCH=amd64 go build -ldflags "$(CLI_LDFLAGS)" -o ../dist/thask-linux-amd64  ./cmd/thask
-	cd cli && GOOS=linux   GOARCH=arm64 go build -ldflags "$(CLI_LDFLAGS)" -o ../dist/thask-linux-arm64  ./cmd/thask
-	cd cli && GOOS=windows GOARCH=amd64 go build -ldflags "$(CLI_LDFLAGS)" -o ../dist/thask-windows-amd64.exe ./cmd/thask
-	cd cli && npm publish --access public --otp=$(THASKOTP)
-	@echo "Built binaries in dist/"
-	@ls -lh dist/
+	@if [ -z "$(CLI_VERSION)" ]; then echo "Error: no git tag found. Run: git tag v0.5.4 or make release-cli CLI_VERSION=0.5.4"; exit 1; fi
+	THASKOTP=$(THASKOTP) ./scripts/release.sh v$(CLI_VERSION)
 
 test-cli:
 	cd cli && go test ./...
