@@ -1,6 +1,6 @@
 {
   "name": "thask",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "description": "Graph-based dependency context for AI agents — auto-injects Thask project state into every Claude Code session",
   "author": {
     "name": "Kanghyun A. Kim"
