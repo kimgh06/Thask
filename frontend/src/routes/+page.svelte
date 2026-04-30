@@ -10,15 +10,21 @@
 	];
 
 	const features = [
-		{ title: '7 Node Types', desc: 'Each with distinct shape and color for instant recognition.' },
-		{ title: '5 Edge Types', desc: 'blocks, depends_on, triggers, related, parent_child.' },
-		{ title: 'Impact Mode', desc: 'BFS-powered blast radius analysis from any node.' },
-		{ title: 'CLI & MCP', desc: 'Terminal-first workflow. Claude Code and Cursor integration.' },
-		{ title: 'Project Sharing', desc: 'Share graphs via link. Viewer or editor access.' },
-		{ title: 'REST API', desc: 'Versioned /api/v1/ with OpenAPI spec, interactive docs, and idempotency.' },
-		{ title: 'Graph Capture', desc: 'Export any project as PNG via Playwright + Browserless Chrome, or lightweight SVG server-side. One CLI command: thask graph capture.' },
-		{ title: 'Smart Layout', desc: 'Server-side dagre layout with group-aware Sugiyama, corridor routing, and SVG bridge overlays at edge crossings.' },
-		{ title: 'Self-Hosted', desc: 'One command. Your data stays on your server.' },
+		{ title: 'Self-Reinforcing Context', desc: 'Agents auto-record their mistakes via thask.mistake.record. Next session starts with "DO NOT repeat" injected into the system prompt.' },
+		{ title: 'Claude Code Plugin', desc: 'One-command install: /plugin marketplace add kimgh06/Thask. SessionStart hook auto-injects project state.' },
+		{ title: 'CLI & MCP', desc: 'Single binary. 18 MCP tools. Works with Claude Code, Cursor, and Codex CLI out of the box.' },
+		{ title: 'Impact Mode', desc: 'BFS-powered blast radius analysis. Ask "what breaks if I change X?" and get a real answer.' },
+		{ title: '7 Node Types', desc: 'FLOW, BRANCH, TASK, BUG, API, UI, GROUP — each with distinct shape and color.' },
+		{ title: '5 Edge Types', desc: 'blocks, depends_on, triggers, related, parent_child — direction matters.' },
+		{ title: 'Project Sharing', desc: 'Share graphs via link. Viewer or editor access. Embeddable iframes.' },
+		{ title: 'REST API', desc: 'Versioned /api/v1/ with OpenAPI spec, interactive docs, idempotency.' },
+		{ title: 'Self-Hosted', desc: 'docker compose up. Your data stays on your server. MIT licensed.' },
+	];
+
+	const tools = [
+		{ name: 'Claude Code', via: 'Plugin + MCP' },
+		{ name: 'Cursor', via: 'MCP (~/.cursor/mcp.json)' },
+		{ name: 'Codex CLI', via: 'MCP (~/.codex/config.toml)' },
 	];
 </script>
 
@@ -51,13 +57,13 @@
 	<section class="hero">
 		<div class="hero-row">
 			<div class="hero-content">
-				<p class="hero-label">DEPENDENCY VISUALIZATION FOR AI-ASSISTED DEV</p>
+				<p class="hero-label">CODEBASE CONTEXT LAYER FOR AI AGENTS</p>
 				<h1 class="hero-title">
-					Map dependencies visually.<br /><span class="hero-accent">Break nothing.</span>
+					Make AI agents <span class="hero-accent">understand</span><br />your dependencies.
 				</h1>
 				<p class="hero-desc">
-					Nodes for every flow, task, and bug. Edges for every dependency.<br />
-					Works with Claude Code & Cursor via MCP.
+					Claude Code and Cursor only see the file you opened.<br />
+					Thask gives them the graph — flows, APIs, bugs, and what depends on what.
 				</p>
 				<div class="hero-actions">
 					<a href="/login" class="btn-primary">Open Editor</a>
@@ -72,6 +78,31 @@
 			<div class="hero-visual">
 				<img src="/mascot.png" alt="Thask mascot" class="hero-mascot" />
 			</div>
+		</div>
+
+		<!-- Before / After -->
+		<div class="ba-grid">
+			<div class="ba-card ba-before">
+				<div class="ba-tag">Before</div>
+				<p class="ba-quote">"Refactor this auth function."</p>
+				<p class="ba-result">→ Agent reads one file. Misses three flows that depend on it. Ships a regression.</p>
+			</div>
+			<div class="ba-card ba-after">
+				<div class="ba-tag ba-tag-good">After Thask</div>
+				<p class="ba-quote">"Refactor this auth function."</p>
+				<p class="ba-result">→ Agent calls <code>thask.impact.analyze</code> → sees 3 dependent flows + 2 UI screens → asks before ripping out the API.</p>
+			</div>
+		</div>
+
+		<!-- Works With -->
+		<div class="works-with">
+			<span class="works-label">Works with</span>
+			{#each tools as t}
+				<span class="tool-chip">
+					<span class="tool-name">{t.name}</span>
+					<span class="tool-via">{t.via}</span>
+				</span>
+			{/each}
 		</div>
 
 		<!-- Live embeds -->
@@ -153,17 +184,32 @@
 				<span class="terminal-dot" style="background:#e05252"></span>
 				<span class="terminal-dot" style="background:#e2b340"></span>
 				<span class="terminal-dot" style="background:#5ea87a"></span>
-				<span class="terminal-title">claude code + mcp</span>
+				<span class="terminal-title">cli + mcp (cursor / codex)</span>
 			</div>
 			<div class="terminal-body">
 				<p><span class="t-prompt">$</span> npm i -g @thask-org/cli</p>
-				<p><span class="t-prompt">$</span> thask config set url https://thask.kimgh06.com</p>
-				<p><span class="t-prompt">$</span> thask config set token &lt;your-api-key&gt;</p>
+				<p><span class="t-prompt">$</span> thask init</p>
+				<p class="t-out t-ok">&#10003; URL + token saved</p>
+				<p class="t-out t-ok">&#10003; Default project picked</p>
+				<p class="t-out t-ok">&#10003; CLAUDE.md patched with agent conventions</p>
+				<p class="t-out t-ok">&#10003; Cursor mcp.json patched</p>
+				<p class="t-out t-ok">&#10003; Codex config.toml patched</p>
+			</div>
+		</div>
+		<div class="terminal" style="margin-top:1.5rem">
+			<div class="terminal-bar">
+				<span class="terminal-dot" style="background:#e05252"></span>
+				<span class="terminal-dot" style="background:#e2b340"></span>
+				<span class="terminal-dot" style="background:#5ea87a"></span>
+				<span class="terminal-title">claude code plugin</span>
+			</div>
+			<div class="terminal-body">
+				<p><span class="t-prompt">&gt;</span> /plugin marketplace add kimgh06/Thask</p>
+				<p><span class="t-prompt">&gt;</span> /plugin install thask@thask</p>
 				<p class="t-out">&nbsp;</p>
-				<p class="t-out"># .claude/mcp.json</p>
-				<p class="t-out">&#123; "mcpServers": &#123; "thask": &#123;</p>
-				<p class="t-out t-ok">  "command": "thask", "args": ["mcp", "serve"]</p>
-				<p class="t-out">&#125; &#125; &#125;</p>
+				<p class="t-out t-ok">SessionStart hook now injects your project's</p>
+				<p class="t-out t-ok">recent mistakes, in-progress, and blockers</p>
+				<p class="t-out t-ok">into every Claude Code session.</p>
 			</div>
 		</div>
 	</section>
@@ -352,6 +398,95 @@
 	.btn-ghost:hover {
 		color: var(--color-text);
 		border-color: var(--color-text-dim);
+	}
+
+	/* Before / After */
+	.ba-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem;
+		margin-bottom: 3rem;
+	}
+	.ba-card {
+		padding: 1.25rem 1.5rem;
+		border-radius: 8px;
+		border: 1px solid var(--color-border-subtle);
+		background: var(--color-surface);
+	}
+	.ba-after {
+		border-color: var(--color-accent);
+		box-shadow: 0 0 0 1px rgba(201, 168, 76, 0.18);
+	}
+	.ba-tag {
+		display: inline-block;
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 0.6875rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--color-text-dim);
+		margin-bottom: 0.5rem;
+	}
+	.ba-tag-good {
+		color: var(--color-accent);
+	}
+	.ba-quote {
+		font-size: 0.9375rem;
+		color: var(--color-text);
+		font-weight: 500;
+		margin-bottom: 0.5rem;
+	}
+	.ba-result {
+		font-size: 0.8125rem;
+		color: var(--color-text-dim);
+		line-height: 1.55;
+	}
+	.ba-result code {
+		font-family: 'JetBrains Mono', monospace;
+		color: var(--color-accent);
+		font-size: 0.75rem;
+		padding: 1px 4px;
+		background: rgba(201, 168, 76, 0.08);
+		border-radius: 3px;
+	}
+
+	/* Works with */
+	.works-with {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		padding: 1rem 1.25rem;
+		margin-bottom: 3rem;
+		border: 1px dashed var(--color-border-subtle);
+		border-radius: 8px;
+	}
+	.works-label {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 0.6875rem;
+		font-weight: 600;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--color-text-dim);
+	}
+	.tool-chip {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 0.5rem;
+		padding: 0.375rem 0.75rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border-subtle);
+		border-radius: 6px;
+	}
+	.tool-name {
+		font-size: 0.8125rem;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+	.tool-via {
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 0.6875rem;
+		color: var(--color-text-dim);
 	}
 
 	/* Live embeds */
@@ -572,6 +707,9 @@
 			display: none;
 		}
 		.hero-embeds {
+			grid-template-columns: 1fr;
+		}
+		.ba-grid {
 			grid-template-columns: 1fr;
 		}
 		.features-grid {
