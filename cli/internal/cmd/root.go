@@ -54,7 +54,7 @@ var rootCmd = &cobra.Command{
 		skipAuth := map[string]bool{
 			"config": true, "set": true, "show": true, "version": true,
 			"serve": true, "aliases": true, "install": true, "uninstall": true,
-			"guide": true,
+			"guide": true, "init": true,
 		}
 		if skipAuth[cmd.Name()] {
 			return nil
