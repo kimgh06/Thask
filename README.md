@@ -197,26 +197,25 @@ Open [http://localhost:7243](http://localhost:7243) and create an account.
 
 ### Local Development (macOS / Linux)
 
+The Makefile is the source of truth — every dev workflow has a target.
+
 ```bash
-# 1. Start PostgreSQL
-make dev-db
-
-# 2. Set up backend
-cd backend
-cp .env.example .env
-go run ./cmd/server
-
-# 3. Set up frontend (in another terminal)
-cd frontend
-cp .env.example .env
-npm install
-npm run dev -- --port 7243
+make dev          # one-shot: starts DB + capture worker, then backend + frontend in parallel
 ```
 
-Or simply:
+Or run pieces individually in separate terminals:
 
 ```bash
-make dev   # starts DB, backend, and frontend together
+make dev-db       # PostgreSQL only (docker compose)
+make dev-capture  # Playwright capture worker (docker compose)
+make dev-backend  # Go backend (requires air: go install github.com/air-verse/air@latest)
+make dev-frontend # SvelteKit frontend on :7243
+```
+
+If `air` isn't installed, run the backend directly:
+
+```bash
+cd backend && cp .env.example .env && go run ./cmd/server
 ```
 
 ### Local Development (Windows)
@@ -428,23 +427,41 @@ Place a reverse proxy (e.g. nginx, Caddy, Cloudflare Tunnel) in front to handle 
 
 ## Makefile Commands
 
+The full surface — `make` is the canonical entrypoint for dev, build, test, and release.
+
+### Development
 | Command | Description |
 |---|---|
-| `make dev` | Start DB + backend + frontend |
+| `make dev` | Start DB + capture worker, then backend + frontend in parallel |
+| `make dev-services` | Start DB + capture worker (docker compose) |
 | `make dev-db` | Start PostgreSQL only |
-| `make dev-backend` | Start Go backend |
-| `make dev-frontend` | Start SvelteKit frontend |
-| `make build` | Build backend + frontend + CLI |
-| `make build-cli` | Build CLI binary |
-| `make release-cli` | Cross-compile CLI for 5 platforms |
-| `make test` | Run Go unit tests + frontend checks |
-| `make test-backend` | Run Go unit tests (verbose) |
-| `make test-cli` | Run CLI tests |
-| `make test-e2e` | Run Playwright E2E tests |
-| `make bench` | Run scanner + graph analysis benchmarks |
-| `make up` | Docker Compose full stack (auto-generates `.env`) |
+| `make dev-backend` | Run Go backend with air hot reload |
+| `make dev-frontend` | Run SvelteKit frontend on `:7243` |
+| `make dev-capture` | Build + start the Playwright capture worker |
+| `make db-up` / `make db-down` | Start / stop the dev PostgreSQL container |
+
+### Build & Release
+| Command | Description |
+|---|---|
+| `make build` | Build CLI + backend (`backend/bin/server`) + frontend |
+| `make build-cli` | Build CLI binary into `bin/thask` (with version + commit ldflags) |
+| `make release-cli` | Cross-compile CLI for 5 platforms, tag, push, npm publish, GitHub Release. Set `CLI_VERSION=x.y.z` (or read from `cli/package.json`). Optional `THASKOTP=...` for npm 2FA. |
+
+### Test
+| Command | Description |
+|---|---|
+| `make test` | Backend Go tests + frontend checks |
+| `make test-backend` | Backend Go tests (verbose) |
+| `make test-cli` | CLI Go tests |
+| `make test-e2e` | Playwright E2E tests |
+| `make bench` | Scanner + graph analysis benchmarks |
+
+### Docker
+| Command | Description |
+|---|---|
+| `make up` | Full stack via Docker Compose (auto-generates `.env` with `SESSION_SECRET` on first run) |
 | `make down` | Stop Docker Compose |
-| `make clean` | Remove build artifacts |
+| `make clean` | Remove `backend/bin`, `bin/`, `dist/`, `frontend/build`, `frontend/.svelte-kit` |
 
 ---
 
