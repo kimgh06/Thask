@@ -420,7 +420,8 @@ Place a reverse proxy (e.g. nginx, Caddy, Cloudflare Tunnel) in front to handle 
 - [Keyboard Shortcuts](docs/SHORTCUTS.md) — All shortcuts and interactions
 - [CLI Reference](docs/CLI.md) — Installation, commands, shell aliases
 - [MCP Guide](docs/MCP.md) — AI agent integration (Claude Code, Cursor)
-- [Plugins](docs/PLUGINS.md) — Scanner plugin system
+- [Claude Code Plugin](docs/CLAUDE_CODE_PLUGIN.md) — Auto-inject project context + register MCP server in every session
+- [Scanner Plugins](docs/PLUGINS.md) — Scanner plugin system for new languages
 - [V1 API Guide](backend/api/README.md) — External API quickstart for third-party developers
 
 ---
