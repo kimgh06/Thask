@@ -139,9 +139,22 @@ func AllTools() []ToolDef {
 			}, []string{"projectId"}),
 		},
 		{
+			Name:        "thask.mistake.record",
+			Description: "Record an agent mistake as a BUG node under the project's '실수 기록' GROUP (auto-created if missing). Use whenever the user corrects you, you get a tool/command wrong, or you repeat a prior error. The recorded mistake will be surfaced by thask.guide in future sessions to prevent recurrence.",
+			InputSchema: objectSchema(map[string]any{
+				"projectId": prop("string", "Project UUID"),
+				"title":     prop("string", "Short label for the mistake (e.g. '/plugin install ?path= 구문 발명')"),
+				"cause":     prop("string", "Why it happened — the wrong assumption or missing check"),
+				"fix":       prop("string", "How it was corrected this time"),
+				"lesson":    prop("string", "Rule for future sessions to avoid repeating it"),
+			}, []string{"projectId", "title", "lesson"}),
+		},
+		{
 			Name:        "thask.guide",
-			Description: "Get the full AI agent guide for Thask. Call this before your first interaction with a Thask project to learn conventions, rules, and workflows.",
-			InputSchema: objectSchema(map[string]any{}, []string{}),
+			Description: "Get the full AI agent guide for Thask. Pass projectId to also receive recent mistakes, in-progress work, and blockers from that project — call this at the start of every session to load user-specific context.",
+			InputSchema: objectSchema(map[string]any{
+				"projectId": prop("string", "Optional project UUID. When provided, the response includes a 'Your Project Context' section with recent mistakes, in-progress nodes, and blockers."),
+			}, []string{}),
 		},
 	}
 }

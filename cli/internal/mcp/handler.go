@@ -29,6 +29,7 @@ var handlers = map[string]ToolHandler{
 	"thask.graph.layout":      handleGraphLayout,
 	"thask.scan.run":          handleScanRun,
 	"thask.graph.analyze":     handleGraphAnalyze,
+	"thask.mistake.record":    handleMistakeRecord,
 	"thask.guide":             handleGuide,
 }
 
@@ -209,6 +210,101 @@ func handleGraphAnalyze(c *client.Client, args map[string]any) (any, error) {
 	return c.Get("/api/projects/" + str(args, "projectId") + "/graph/analyze")
 }
 
-func handleGuide(_ *client.Client, _ map[string]any) (any, error) {
-	return map[string]string{"guide": GuideText}, nil
+func handleGuide(c *client.Client, args map[string]any) (any, error) {
+	pid := str(args, "projectId")
+	return map[string]string{"guide": RenderGuide(c, pid)}, nil
+}
+
+const mistakeGroupTitle = "실수 기록"
+
+func handleMistakeRecord(c *client.Client, args map[string]any) (any, error) {
+	pid := str(args, "projectId")
+	title := str(args, "title")
+	lesson := str(args, "lesson")
+	if pid == "" || title == "" || lesson == "" {
+		return nil, fmt.Errorf("projectId, title, and lesson are required")
+	}
+
+	groupID, err := findOrCreateMistakeGroup(c, pid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve mistake group: %w", err)
+	}
+
+	var sb strings.Builder
+	if cause := str(args, "cause"); cause != "" {
+		sb.WriteString("**원인:** ")
+		sb.WriteString(cause)
+		sb.WriteString("\n\n")
+	}
+	if fix := str(args, "fix"); fix != "" {
+		sb.WriteString("**수정:** ")
+		sb.WriteString(fix)
+		sb.WriteString("\n\n")
+	}
+	sb.WriteString("**교훈:** ")
+	sb.WriteString(lesson)
+
+	raw, err := c.Post("/api/projects/"+pid+"/nodes", map[string]any{
+		"type":        "BUG",
+		"title":       title,
+		"description": sb.String(),
+		"status":      "FAIL",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create mistake node: %w", err)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &created); err != nil {
+		return nil, fmt.Errorf("failed to parse created node: %w", err)
+	}
+
+	if _, err := c.Patch("/api/projects/"+pid+"/nodes/"+created.ID, map[string]any{
+		"parentId": groupID,
+	}); err != nil {
+		return nil, fmt.Errorf("failed to attach mistake to group: %w", err)
+	}
+
+	return map[string]any{
+		"id":      created.ID,
+		"groupId": groupID,
+		"title":   title,
+		"message": "Mistake recorded under '" + mistakeGroupTitle + "'.",
+	}, nil
+}
+
+func findOrCreateMistakeGroup(c *client.Client, pid string) (string, error) {
+	raw, err := c.Get("/api/projects/" + pid + "/nodes?type=GROUP")
+	if err != nil {
+		return "", err
+	}
+	var groups []struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+	}
+	if err := json.Unmarshal(raw, &groups); err != nil {
+		return "", fmt.Errorf("failed to parse group list: %w", err)
+	}
+	for _, g := range groups {
+		if g.Title == mistakeGroupTitle || g.Title == "Mistakes" || g.Title == "Mistake Log" {
+			return g.ID, nil
+		}
+	}
+
+	raw, err = c.Post("/api/projects/"+pid+"/nodes", map[string]any{
+		"type":        "GROUP",
+		"title":       mistakeGroupTitle,
+		"description": "Agent mistakes recorded for self-reinforcing learning. Surfaced via thask.guide in future sessions.",
+	})
+	if err != nil {
+		return "", err
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &created); err != nil {
+		return "", fmt.Errorf("failed to parse created group: %w", err)
+	}
+	return created.ID, nil
 }

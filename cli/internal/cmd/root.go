@@ -92,6 +92,7 @@ func init() {
 	rootCmd.AddCommand(aliasesCmd)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(guideCmd)
+	rootCmd.AddCommand(mistakeCmd)
 }
 
 func Execute() {

@@ -23,13 +23,16 @@ var mcpServeCmd = &cobra.Command{
 		if tokenFlag != "" {
 			c.Token = tokenFlag
 		}
+		if projectFlag != "" {
+			c.Project = projectFlag
+		}
 
 		if err := c.Validate(); err != nil {
 			return err
 		}
 
 		apiC := client.New(c.URL, c.Token)
-		return mcp.Serve(apiC)
+		return mcp.Serve(apiC, c.Project)
 	},
 }
 
