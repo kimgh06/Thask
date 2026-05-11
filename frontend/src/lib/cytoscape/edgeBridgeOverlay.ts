@@ -155,6 +155,21 @@ function chooseCrossingStyle(
 	if (b.axis === 'diagonal' && a.axis === 'vertical') {
 		return { segment: b, other: a, style: 'soft-bypass' };
 	}
+	if (a.axis === 'diagonal' && b.axis === 'diagonal') {
+		const aDx = a.to.x - a.from.x;
+		const aDy = a.to.y - a.from.y;
+		const bDx = b.to.x - b.from.x;
+		const bDy = b.to.y - b.from.y;
+		const aTopLeftToBottomRight = aDx * aDy > 0;
+		const bTopLeftToBottomRight = bDx * bDy > 0;
+
+		if (aTopLeftToBottomRight && !bTopLeftToBottomRight) {
+			return { segment: a, other: b, style: 'soft-bypass' };
+		}
+		if (bTopLeftToBottomRight && !aTopLeftToBottomRight) {
+			return { segment: b, other: a, style: 'soft-bypass' };
+		}
+	}
 	return null;
 }
 
@@ -361,7 +376,7 @@ export function attachEdgeBridgeOverlay(cy: cytoscape.Core): () => void {
 	svg.style.width = '100%';
 	svg.style.height = '100%';
 	svg.style.pointerEvents = 'none';
-	svg.style.overflow = 'visible';
+	svg.style.overflow = 'hidden';
 	svg.style.zIndex = '5';
 	host.appendChild(svg);
 

@@ -348,7 +348,7 @@
 	let portOverlay: HTMLDivElement;
 </script>
 
-<div class="relative h-full w-full cytoscape-canvas-bg" style="min-height: 400px">
+<div class="relative h-full w-full overflow-hidden cytoscape-canvas-bg" style="min-height: 400px">
 	<div bind:this={container} class="h-full w-full"></div>
 	<!-- Port overlay for edge creation — 8 dots around hovered node -->
 	<div
