@@ -190,7 +190,12 @@ func handleScanRun(c *client.Client, args map[string]any) (any, error) {
 		maxFiles = int(v)
 	}
 
-	result, err := scan.Run(scan.ScanOptions{Path: path, MaxFiles: maxFiles})
+	language := str(args, "language")
+	if language == "auto" {
+		language = ""
+	}
+
+	result, err := scan.Run(scan.ScanOptions{Path: path, MaxFiles: maxFiles, Language: language})
 	if err != nil {
 		return nil, err
 	}

@@ -124,11 +124,12 @@ func AllTools() []ToolDef {
 		},
 		{
 			Name:        "thask.scan.run",
-			Description: "Scan a Go project's internal dependencies and import them as graph nodes/edges",
+			Description: "Scan a project's internal dependencies (Go and TypeScript/JavaScript supported) and import them as graph nodes/edges",
 			InputSchema: objectSchema(map[string]any{
 				"projectId": prop("string", "Target project ID"),
-				"path":      prop("string", "Path to Go project root"),
+				"path":      prop("string", "Path to project root (go.mod for Go, package.json for TS/JS)"),
 				"maxFiles":  prop("number", "Max files to scan (default 500)"),
+				"language":  propEnum("string", "Force scanner language (default auto)", []string{"auto", "go", "ts"}),
 			}, []string{"projectId", "path"}),
 		},
 		{
