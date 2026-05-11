@@ -12,6 +12,17 @@
 		<meta name="description" content="Visualize product flows, tasks, and bugs as a linked node graph. Built for QA risk management and change impact analysis." />
 		<meta name="author" content="Thask Contributors" />
 		<title>Thask</title>
+		<script>
+			// Apply persisted theme before first paint to prevent FOUC.
+			(function () {
+				try {
+					var t = localStorage.getItem('thask-theme') || 'dark';
+					document.documentElement.setAttribute('data-theme', t);
+				} catch (e) {
+					document.documentElement.setAttribute('data-theme', 'dark');
+				}
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

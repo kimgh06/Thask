@@ -3,10 +3,18 @@ import type { User } from '$lib/types';
 
 class AuthStore {
 	user = $state<User | null>(null);
-	loading = $state(true);
+	loading = $state(false);
+	private seeded = false;
 
 	get isAuthenticated() {
 		return this.user !== null;
+	}
+
+	seed(user: User | null) {
+		if (this.seeded) return;
+		this.seeded = true;
+		this.user = user;
+		this.loading = false;
 	}
 
 	async fetchUser() {

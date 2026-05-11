@@ -1,13 +1,11 @@
 <script lang="ts">
 	import '../app.css';
 	import { authStore } from '$lib/stores/auth.svelte';
-	import { onMount } from 'svelte';
+	import type { LayoutData } from './$types';
 
-	let { children } = $props();
+	let { children, data }: { children: any; data: LayoutData } = $props();
 
-	onMount(() => {
-		authStore.fetchUser();
-	});
+	authStore.seed(data.user);
 </script>
 
 {@render children()}

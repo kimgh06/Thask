@@ -21,8 +21,6 @@
 		if (err) {
 			error = err;
 			submitting = false;
-		} else {
-			goto('/dashboard');
 		}
 	}
 </script>
