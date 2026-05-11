@@ -5,17 +5,22 @@ Command-line interface and MCP server for Thask.
 ## Quick Start
 
 ```bash
-# Build
-go build -o thask ./cmd/thask
+# Install
+npm i -g @thask-org/cli
 
-# Configure
-./thask config set url http://localhost:7244
-./thask config set token <your-api-key>
+# Configure (interactive — also patches Claude Code / Cursor / Codex configs)
+thask init
 
 # Use
-./thask node list --pretty
-./thask impact --node <nodeId>
-./thask mcp serve  # Start MCP server for Claude Code
+thask node list --pretty
+thask impact --node <nodeId>
+thask mcp serve  # Start MCP server for Claude Code / Cursor / Codex
+```
+
+Build from source instead:
+
+```bash
+go build -o thask ./cmd/thask
 ```
 
 ## Documentation
