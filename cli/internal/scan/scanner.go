@@ -37,9 +37,49 @@ type ScanResult struct {
 type ScanOptions struct {
 	Path     string
 	MaxFiles int
+	// Language selects the scanner. "" = auto-detect, "go", "ts"/"js"/"tsx"/"typescript"/"javascript".
+	Language string
 }
 
+// LanguageScanner is implemented by per-language dependency scanners.
+type LanguageScanner interface {
+	Name() string
+	Scan(opts ScanOptions) (*ScanResult, error)
+}
+
+// goScanner scans Go projects for inter-package dependencies via go.mod + AST imports.
+type goScanner struct{}
+
+func (goScanner) Name() string { return "go" }
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+// detectScanner picks a language scanner based on opts.Language or by sniffing the project root.
+func detectScanner(opts ScanOptions) LanguageScanner {
+	switch strings.ToLower(opts.Language) {
+	case "go":
+		return &goScanner{}
+	case "ts", "js", "tsx", "jsx", "javascript", "typescript":
+		return &tsScanner{}
+	}
+	if fileExists(filepath.Join(opts.Path, "go.mod")) {
+		return &goScanner{}
+	}
+	if fileExists(filepath.Join(opts.Path, "package.json")) {
+		return &tsScanner{}
+	}
+	return &goScanner{}
+}
+
+// Run dispatches to the appropriate language scanner.
 func Run(opts ScanOptions) (*ScanResult, error) {
+	return detectScanner(opts).Scan(opts)
+}
+
+func (goScanner) Scan(opts ScanOptions) (*ScanResult, error) {
 	if opts.MaxFiles <= 0 {
 		opts.MaxFiles = 500
 	}
