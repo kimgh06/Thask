@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.8] - 2026-05-11
+
+### Added
+- **TypeScript/JavaScript scanner**: `thask scan run --language ts` walks `.ts/.tsx/.js/.jsx/.mjs/.cjs`, parses imports (including multi-line and dynamic `import()`), and emits directory-granular nodes with `depends_on` edges. Auto-detects via `package.json` when `--language` is omitted.
+- **Alias resolution**: tsconfig.json / jsconfig.json `compilerOptions.paths`, plus SvelteKit `$lib` auto-detection (`$app`, `$env`, `$service-worker` silently ignored as runtime modules). Resolved paths that escape the scan root are dropped.
+- **MCP `language` param**: `thask.scan.run` now accepts `language: "auto" | "go" | "ts"`.
+- **`LanguageScanner` interface** in `cli/internal/scan/`: clean extension point for future languages without touching the Go scanner path.
+
+### Improved
+- **Landing page**: repositioned as "AI agent context layer" — Before/After block, Works With Claude Code/Cursor/Codex, `thask init` + `/plugin marketplace add` snippets surfaced.
+- **Dashboard flicker eliminated**: `+layout.server.ts` seeds the user on first paint (no more "Loading..." flash); inline `<head>` script applies persisted theme before hydration (no light/dark FOUC); login submit no longer races `goto()` against a reactive `$effect`.
+- **Edge bridge overlay**: canvas + SVG overlay now clip overflow so bridge arcs stay inside the viewport; same-direction diagonals are correctly skipped while opposite-slope diagonals get a soft-bypass.
+
+### Internal
+- `backend/internal/service/layout.go` split from one 8.5k-line file into ten focused files (geometry, crossmin, edge routing, top-level, group, child, slots, lines, boundary) — zero behavior change, all tests pass.
+
 ## [0.5.6] - 2026-04-26
 
 ### Added
