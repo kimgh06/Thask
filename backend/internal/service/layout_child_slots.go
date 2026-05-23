@@ -652,52 +652,28 @@ func bestRectangularSlotAssignmentWithCost(
 	slots []rectSlot,
 	metrics map[string]childRectMetric,
 ) (map[string]rectSlot, float64) {
-	type state struct {
-		index int
-		mask  int
-	}
-
-	memo := make(map[state]float64)
-	choice := make(map[state]int)
-	var solve func(index, mask int) float64
-	solve = func(index, mask int) float64 {
-		if index == len(kids) {
-			return 0
-		}
-		key := state{index: index, mask: mask}
-		if val, ok := memo[key]; ok {
-			return val
-		}
-
-		best := math.MaxFloat64
+	assigned := make(map[string]rectSlot, len(kids))
+	used := make([]bool, len(slots))
+	total := 0.0
+	for _, id := range kids {
+		bestCost := math.MaxFloat64
 		bestSlot := -1
-		for slotIdx := 0; slotIdx < len(slots); slotIdx++ {
-			if mask&(1<<slotIdx) != 0 {
+		for slotIdx, slot := range slots {
+			if used[slotIdx] {
 				continue
 			}
-			cost := scoreRectSlotAssignment(kids[index], slots[slotIdx], metrics, len(kids)) + solve(index+1, mask|(1<<slotIdx))
-			if cost < best {
-				best = cost
+			cost := scoreRectSlotAssignment(id, slot, metrics, len(kids))
+			if cost < bestCost {
+				bestCost = cost
 				bestSlot = slotIdx
 			}
 		}
-
-		memo[key] = best
-		choice[key] = bestSlot
-		return best
-	}
-
-	total := solve(0, 0)
-	assigned := make(map[string]rectSlot, len(kids))
-	mask := 0
-	for index, id := range kids {
-		key := state{index: index, mask: mask}
-		slotIdx := choice[key]
-		if slotIdx < 0 {
+		if bestSlot < 0 {
 			continue
 		}
-		assigned[id] = slots[slotIdx]
-		mask |= 1 << slotIdx
+		used[bestSlot] = true
+		assigned[id] = slots[bestSlot]
+		total += bestCost
 	}
 	return assigned, total
 }
@@ -1042,7 +1018,7 @@ func refineChildSlotAssignment(
 	current := cloneAssignedSlots(assigned)
 	bestCost := childSlotAssignmentCost(kids, current, slotScoreFn, extraCostFn)
 
-	for iter := 0; iter < 24; iter++ {
+	for iter := 0; iter < 6; iter++ {
 		improved := false
 
 		phaseBest := bestCost

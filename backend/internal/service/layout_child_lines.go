@@ -671,7 +671,7 @@ func bestCustomSlotAssignmentWithCost(
 	assigned := make(map[string]rectSlot, len(kids))
 	mask := 0
 	for index, id := range kids {
-		key := state{index: index, mask: mask}
+		key := state{index, mask}
 		slotIdx := choice[key]
 		if slotIdx < 0 {
 			continue

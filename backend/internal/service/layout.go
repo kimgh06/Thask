@@ -474,12 +474,6 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 	}
 	topLevel = filteredTop
 
-	// Let top-level nodes/groups move by one adjacent layer before we freeze the
-	// column structure. This is the first place where the placement itself can
-	// react to predicted route crossings rather than only reordering inside a
-	// fixed layer.
-	refineTopLevelLayersByPredictedRoutes(topLevel, layers, outEdges, edges, nodeMap, childRelPos, groupSizes)
-
 	layerNodes, maxLayer := buildTopLevelLayerNodes(topLevel, layers)
 
 	layerX := computeLayerXPositions(layerNodes, maxLayer, groupSizes)
@@ -640,16 +634,6 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 	// This makes the node placement itself respect likely edge paths.
 	repackLayersAgainstEdgeCorridors(layerNodes, maxLayer, layerX, yCoords, groupSizes, layers, fullAdj, longSpans, anchoredBandTargets)
 
-	// The earlier sifting pass only sees abstract adjacency crossings.
-	// Run one more local search against the actual predicted top-level routes so
-	// unrelated edges stop piling into the same crossing hotspot.
-	refineLayerOrderByPredictedRoutes(layerNodes, maxLayer, layerX, yCoords, groupSizes, edges, nodeMap, childRelPos)
-
-	// After the ordering is settled, refine each node/group center within its
-	// layer against the predicted routes themselves so placement chooses gaps
-	// that avoid crossing-heavy corridors instead of only reacting afterwards.
-	refineLayerCentersByPredictedRoutes(layerNodes, maxLayer, layerX, yCoords, groupSizes, edges, nodeMap, childRelPos, bandTargets)
-
 	// Re-enforce minimum spacing after corridor repacking, which may have
 	// shifted nodes into their neighbours' space.
 	for l := 0; l <= maxLayer; l++ {
@@ -789,10 +773,6 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 	// along their smallest overlap axis before the general route cleanup.
 	resolveTopLevelOverlaps(positions, groupSizes)
 
-	// Final hard cleanup: if the predicted route between top-level elements still
-	// crosses unrelated group/node boxes, locally move the offending boxes.
-	cleanupRouteBoxIntersections(positions, edges, nodeMap, childRelPos, groupSizes)
-
 	// Re-run child layout finalization with the FINAL top-level positions so
 	// children within groups align toward their actual external connections
 	// (the first run used coarse positions which may differ significantly).
@@ -800,10 +780,6 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 
 	// Micro-adjust children to steer cross-group routes through gaps.
 	adjustChildrenToAvoidRouteCrossings(positions, edges, nodeMap, childRelPos, groupSizes)
-
-	// Second cleanup pass: the child adjustments may have fixed most
-	// route-box intersections; mop up any remaining violations.
-	cleanupRouteBoxIntersections(positions, edges, nodeMap, childRelPos, groupSizes)
 
 	result := make([]LayoutPosition, 0, len(nodes))
 	for _, n := range nodes {

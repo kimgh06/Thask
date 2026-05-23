@@ -400,18 +400,18 @@ export function attachEdgeBridgeOverlay(cy: cytoscape.Core): () => void {
 	}
 
 	resizeObserver.observe(host);
-	cy.on('render', scheduleRender);
 	cy.on('layoutstop', scheduleRender);
 	cy.on('position', 'node', scheduleRender);
 	cy.on('add remove data', scheduleRender);
+	cy.on('pan zoom', scheduleRender);
 
 	scheduleRender();
 
 	return () => {
-		cy.off('render', scheduleRender);
 		cy.off('layoutstop', scheduleRender);
 		cy.off('position', 'node', scheduleRender);
 		cy.off('add remove data', scheduleRender);
+		cy.off('pan zoom', scheduleRender);
 		resizeObserver.disconnect();
 		if (rafId !== null) cancelAnimationFrame(rafId);
 		svg.remove();

@@ -1,4 +1,5 @@
 import type cytoscape from 'cytoscape';
+import { routeGrid8 } from './gridRouter';
 
 export interface Point { x: number; y: number }
 
@@ -21,6 +22,8 @@ export interface RoutedEdgePath {
 const ROUTE_SCRATCH_KEY = '_thaskRoute';
 const NODE_AVOIDANCE_MARGIN = 18;
 const MAX_AVOIDANCE_PASSES = 80;
+const DIRECTION_EPS = 0.75;
+const ROUTING_GRID_SIZE = 24;
 
 interface Rect {
 	x1: number;
@@ -43,6 +46,14 @@ function compute8DirWaypoints(src: Point, tgt: Point): Point[] {
 
 	const MIN_BEND = 36; // half node width
 
+	if (
+		absDx < DIRECTION_EPS ||
+		absDy < DIRECTION_EPS ||
+		Math.abs(absDx - absDy) < DIRECTION_EPS
+	) {
+		return [];
+	}
+
 	// Nearly vertical: Z-path (vertical → horizontal → vertical)
 	if (absDx < MIN_BEND && absDy >= MIN_BEND) {
 		const midY = (src.y + tgt.y) / 2;
@@ -61,11 +72,6 @@ function compute8DirWaypoints(src: Point, tgt: Point): Point[] {
 		];
 	}
 
-	// Nearly diagonal or very close: straight line
-	if (Math.abs(absDx - absDy) < MIN_BEND) {
-		return [];
-	}
-
 	// Normal 8-direction: single diagonal-first waypoint
 	if (absDx >= absDy) {
 		return [{ x: src.x + Math.sign(dx) * absDy, y: tgt.y }];
@@ -76,10 +82,9 @@ function compute8DirWaypoints(src: Point, tgt: Point): Point[] {
 function classifyAxis(from: Point, to: Point): RouteAxis {
 	const dx = Math.abs(to.x - from.x);
 	const dy = Math.abs(to.y - from.y);
-	const EPS = 0.75;
 
-	if (dx <= EPS) return 'vertical';
-	if (dy <= EPS) return 'horizontal';
+	if (dx <= DIRECTION_EPS) return 'vertical';
+	if (dy <= DIRECTION_EPS) return 'horizontal';
 	return 'diagonal';
 }
 
@@ -185,16 +190,23 @@ function nodeObstacle(node: cytoscape.NodeSingular): Rect {
 	};
 }
 
+function buildObstacleIndex(cy: cytoscape.Core): Rect[] {
+	const obstacles: Rect[] = [];
+	cy.nodes().forEach((node) => {
+		if (!node.data('nodeType')) return;
+		const isGroup = node.data('nodeType') === 'GROUP';
+		if (isGroup && !node.hasClass('group-collapsed')) return;
+		obstacles.push(nodeObstacle(node));
+	});
+	return obstacles;
+}
+
 function buildObstacles(
-	cy: cytoscape.Core,
+	obstacleIndex: Rect[],
 	source: cytoscape.NodeSingular,
 	target: cytoscape.NodeSingular,
 ): Rect[] {
-	const obstacles: Rect[] = [];
-	cy.nodes().forEach((node) => {
-		if (shouldAvoidNode(node, source, target)) obstacles.push(nodeObstacle(node));
-	});
-	return obstacles;
+	return obstacleIndex.filter((rect) => rect.nodeId !== source.id() && rect.nodeId !== target.id());
 }
 
 function detourCandidates(from: Point, to: Point, rect: Rect): Point[][] {
@@ -267,6 +279,84 @@ function removeConsecutiveDuplicates(points: Point[]): Point[] {
 		const prev = points[index - 1];
 		return Math.abs(point.x - prev.x) > 0.5 || Math.abs(point.y - prev.y) > 0.5;
 	});
+}
+
+function snapPolylineTo8Dir(points: Point[]): Point[] {
+	const anchors = removeConsecutiveDuplicates(points);
+	if (anchors.length < 2) return anchors;
+
+	const snapped: Point[] = [anchors[0]];
+	for (let i = 0; i < anchors.length - 1; i += 1) {
+		const from = anchors[i];
+		const to = anchors[i + 1];
+		const waypoints = compute8DirWaypoints(from, to);
+		snapped.push(...waypoints, to);
+	}
+
+	return removeConsecutiveDuplicates(snapped);
+}
+
+function isDiagonalSegment(from: Point, to: Point): boolean {
+	const dx = Math.abs(to.x - from.x);
+	const dy = Math.abs(to.y - from.y);
+	return dx > DIRECTION_EPS && dy > DIRECTION_EPS && Math.abs(dx - dy) <= DIRECTION_EPS;
+}
+
+function smoothDiagonalDoglegs(points: Point[]): Point[] {
+	let routed = removeConsecutiveDuplicates(points);
+
+	for (let pass = 0; pass < 4; pass += 1) {
+		let changed = false;
+		const next: Point[] = [routed[0]];
+
+		for (let i = 1; i < routed.length - 2; i += 1) {
+			const prev = routed[i - 1];
+			const bend = routed[i];
+			const lane = routed[i + 1];
+			const after = routed[i + 2];
+
+			if (!isDiagonalSegment(prev, bend)) {
+				next.push(bend);
+				continue;
+			}
+
+			const horizontalDogleg =
+				Math.abs(bend.y - lane.y) <= DIRECTION_EPS &&
+				Math.abs(lane.x - after.x) <= DIRECTION_EPS;
+			if (horizontalDogleg) {
+				const signY = Math.sign(bend.y - prev.y) || 1;
+				const moved = {
+					x: lane.x,
+					y: prev.y + signY * Math.abs(lane.x - prev.x),
+				};
+				next.push(moved);
+				changed = true;
+				continue;
+			}
+
+			const verticalDogleg =
+				Math.abs(bend.x - lane.x) <= DIRECTION_EPS &&
+				Math.abs(lane.y - after.y) <= DIRECTION_EPS;
+			if (verticalDogleg) {
+				const signX = Math.sign(bend.x - prev.x) || 1;
+				const moved = {
+					x: prev.x + signX * Math.abs(lane.y - prev.y),
+					y: lane.y,
+				};
+				next.push(moved);
+				changed = true;
+				continue;
+			}
+
+			next.push(bend);
+		}
+
+		next.push(...routed.slice(Math.max(1, routed.length - 2)));
+		routed = snapPolylineTo8Dir(next);
+		if (!changed) break;
+	}
+
+	return routed;
 }
 
 function avoidNodeObstacles(points: Point[], obstacles: Rect[]): Point[] {
@@ -353,6 +443,97 @@ function storeRoute(edge: cytoscape.EdgeSingular, points: Point[]): void {
 	} satisfies RoutedEdgePath);
 }
 
+function nearlyEqual(a: number, b: number): boolean {
+	return Math.abs(a - b) <= 0.001;
+}
+
+function sameNumberArray(left: unknown, right: number[]): boolean {
+	if (!Array.isArray(left) || left.length !== right.length) return false;
+	return left.every((value, index) => typeof value === 'number' && nearlyEqual(value, right[index]));
+}
+
+function samePoints(left: Point[], right: Point[]): boolean {
+	if (left.length !== right.length) return false;
+	return left.every((point, index) => nearlyEqual(point.x, right[index].x) && nearlyEqual(point.y, right[index].y));
+}
+
+function storeRouteIfChanged(edge: cytoscape.EdgeSingular, points: Point[]): void {
+	const previous = getStoredRoute(edge);
+	if (previous && samePoints(previous.points, points)) return;
+	storeRoute(edge, points);
+}
+
+function applyEdgeDataIfChanged(
+	edge: cytoscape.EdgeSingular,
+	data: {
+		curveStyle: string;
+		segmentDistances: number[];
+		segmentWeights: number[];
+		sourceEndpoint: string;
+		targetEndpoint: string;
+	},
+): void {
+	if (
+		edge.data('curveStyle') === data.curveStyle &&
+		edge.data('sourceEndpoint') === data.sourceEndpoint &&
+		edge.data('targetEndpoint') === data.targetEndpoint &&
+		sameNumberArray(edge.data('segmentDistances'), data.segmentDistances) &&
+		sameNumberArray(edge.data('segmentWeights'), data.segmentWeights)
+	) {
+		return;
+	}
+	edge.data(data);
+}
+
+interface Endpoint {
+	point: Point;
+	value: string;
+}
+
+function endpointOffset(node: cytoscape.NodeSingular, from: Point, to: Point): Endpoint {
+	const dx = to.x - from.x;
+	const dy = to.y - from.y;
+	const sx = Math.sign(dx);
+	const sy = Math.sign(dy);
+	const halfW = node.outerWidth() / 2;
+	const halfH = node.outerHeight() / 2;
+	let offset: Point;
+
+	if (Math.abs(dx) <= DIRECTION_EPS) {
+		offset = { x: 0, y: sy * halfH };
+	} else if (Math.abs(dy) <= DIRECTION_EPS) {
+		offset = { x: sx * halfW, y: 0 };
+	} else {
+		const d = Math.min(halfW, halfH);
+		offset = { x: sx * d, y: sy * d };
+	}
+
+	const center = node.position();
+	return {
+		point: { x: center.x + offset.x, y: center.y + offset.y },
+		value: `${offset.x}px ${offset.y}px`,
+	};
+}
+
+function routeEndpoints(edge: cytoscape.EdgeSingular, points: Point[]): {
+	sourceEndpoint: Endpoint;
+	targetEndpoint: Endpoint;
+} {
+	if (points.length < 2) {
+		const sourcePosition = edge.source().position();
+		const targetPosition = edge.target().position();
+		return {
+			sourceEndpoint: { point: sourcePosition, value: 'outside-to-node' },
+			targetEndpoint: { point: targetPosition, value: 'outside-to-node' },
+		};
+	}
+
+	return {
+		sourceEndpoint: endpointOffset(edge.source(), points[0], points[1]),
+		targetEndpoint: endpointOffset(edge.target(), points[points.length - 1], points[points.length - 2]),
+	};
+}
+
 export function getStoredRoute(edge: cytoscape.EdgeSingular): RoutedEdgePath | null {
 	const value = edge.scratch(ROUTE_SCRATCH_KEY) as RoutedEdgePath | undefined;
 	if (!value || value.points.length < 2) return null;
@@ -388,34 +569,49 @@ function waypointsToSegments(
 		const wy = wp.y - src.y;
 		const weight = (wx * dx + wy * dy) / (len * len);
 		const dist = wx * nx + wy * ny;
-		weights.push(Math.max(0.01, Math.min(0.99, isFinite(weight) ? weight : 0.5)));
+		weights.push(isFinite(weight) ? weight : 0.5);
 		distances.push(isFinite(dist) ? dist : 0);
 	}
 
 	return { distances, weights };
 }
 
+interface DynamicRoutingOptions {
+	useGrid?: boolean;
+	edgeIds?: Set<string>;
+}
+
 /**
  * Recompute 8-direction edge routing for all edges based on current node positions.
  */
-export function applyDynamicRouting(cy: cytoscape.Core): void {
+export function applyDynamicRouting(cy: cytoscape.Core, options: DynamicRoutingOptions = {}): void {
+	const useGrid = options.useGrid ?? true;
+	const obstacleIndex = useGrid ? buildObstacleIndex(cy) : [];
+
 	// Count parallel edges per node pair for offset calculation
 	const pairCount = new Map<string, number>();
+	const pairSeen = new Map<string, number>();
 	const pairIndex = new Map<string, number>();
 	cy.edges().forEach((edge) => {
 		const srcId = edge.source().id();
 		const tgtId = edge.target().id();
 		const key = srcId < tgtId ? `${srcId}|${tgtId}` : `${tgtId}|${srcId}`;
-		pairCount.set(key, (pairCount.get(key) || 0) + 1);
+		const idx = pairSeen.get(key) || 0;
+		pairSeen.set(key, idx + 1);
+		pairCount.set(key, idx + 1);
+		pairIndex.set(edge.id(), idx);
 	});
 
-	cy.edges().forEach((edge) => {
+	const edgesToRoute = options.edgeIds
+		? cy.edges().filter((edge) => options.edgeIds?.has(edge.id()) ?? false)
+		: cy.edges();
+
+	cy.batch(() => edgesToRoute.forEach((edge) => {
 		const srcId = edge.source().id();
 		const tgtId = edge.target().id();
 		const key = srcId < tgtId ? `${srcId}|${tgtId}` : `${tgtId}|${srcId}`;
 		const total = pairCount.get(key) || 1;
-		const idx = pairIndex.get(key) || 0;
-		pairIndex.set(key, idx + 1);
+		const idx = pairIndex.get(edge.id()) || 0;
 
 		const src = edge.source().position();
 		const tgt = edge.target().position();
@@ -423,28 +619,53 @@ export function applyDynamicRouting(cy: cytoscape.Core): void {
 
 		// Parallel edge offset: spread overlapping edges apart
 		const offset = total > 1 ? (idx - (total - 1) / 2) * 12 : 0;
-		const shiftedRoutePoints = buildShiftedRoutePoints(src, tgt, wps, offset);
-		const obstacles = buildObstacles(cy, edge.source(), edge.target());
-		const routePoints = avoidNodeObstacles(shiftedRoutePoints, obstacles);
-		const routedWaypoints = routePoints.slice(1, -1);
-		storeRoute(edge, routePoints);
+		const shiftedRoutePoints = snapPolylineTo8Dir(buildShiftedRoutePoints(src, tgt, wps, offset));
+		const obstacles = useGrid ? buildObstacles(obstacleIndex, edge.source(), edge.target()) : [];
+		const roughRoutePoints = shiftedRoutePoints;
+		const { sourceEndpoint, targetEndpoint } = routeEndpoints(edge, roughRoutePoints);
+		const gridRoutePoints = useGrid
+			? routeGrid8(sourceEndpoint.point, targetEndpoint.point, obstacles, {
+					gridSize: ROUTING_GRID_SIZE,
+				})
+			: null;
+		const fallbackRoutePoints = gridRoutePoints
+			? null
+			: useGrid
+				? smoothDiagonalDoglegs(snapPolylineTo8Dir(avoidNodeObstacles(shiftedRoutePoints, obstacles)))
+				: roughRoutePoints;
+		const innerRoutePoints = gridRoutePoints ?? fallbackRoutePoints ?? roughRoutePoints;
+		const visibleRoutePoints = snapPolylineTo8Dir([
+			sourceEndpoint.point,
+			...innerRoutePoints.slice(1, -1),
+			targetEndpoint.point,
+		]);
+		const routedWaypoints = visibleRoutePoints.slice(1, -1);
+		storeRouteIfChanged(edge, visibleRoutePoints);
 
 		if (routedWaypoints.length > 0) {
-			const { distances, weights } = waypointsToSegments(src, tgt, routedWaypoints);
-			edge.data({
+			const { distances, weights } = waypointsToSegments(
+				sourceEndpoint.point,
+				targetEndpoint.point,
+				routedWaypoints,
+			);
+			applyEdgeDataIfChanged(edge, {
 				curveStyle: 'segments',
 				segmentDistances: distances,
 				segmentWeights: weights,
+				sourceEndpoint: sourceEndpoint.value,
+				targetEndpoint: targetEndpoint.value,
 			});
 		} else {
 			// Straight line with parallel offset
-			edge.data({
+			applyEdgeDataIfChanged(edge, {
 				curveStyle: 'segments',
 				segmentDistances: [offset || 0.1],
 				segmentWeights: [0.5],
+				sourceEndpoint: sourceEndpoint.value,
+				targetEndpoint: targetEndpoint.value,
 			});
 		}
-	});
+	}));
 }
 
 /**
@@ -453,28 +674,132 @@ export function applyDynamicRouting(cy: cytoscape.Core): void {
  */
 export function attachDynamicRouting(cy: cytoscape.Core): () => void {
 	let rafId: number | null = null;
+	let chunkHandle: number | null = null;
+	let chunkHandleType: 'idle' | 'timeout' | null = null;
+	let settleTimeout: ReturnType<typeof setTimeout> | null = null;
+	let pendingFastEdgeIds = new Set<string>();
+	let pendingSettledEdgeIds = new Set<string>();
+	const GRID_CHUNK_SIZE = 2;
+	const requestIdle = (callback: () => void): { type: 'idle' | 'timeout'; id: number } => {
+		const win = window as Window & {
+			requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number;
+		};
+		if (win.requestIdleCallback) {
+			return { type: 'idle', id: win.requestIdleCallback(callback, { timeout: 800 }) };
+		}
+		return { type: 'timeout', id: window.setTimeout(callback, 16) };
+	};
 
-	function scheduleRouting() {
+	function cancelChunkRouting() {
+		if (chunkHandle !== null) {
+			const win = window as Window & { cancelIdleCallback?: (id: number) => void };
+			if (chunkHandleType === 'idle' && win.cancelIdleCallback) {
+				win.cancelIdleCallback(chunkHandle);
+			} else {
+				clearTimeout(chunkHandle);
+			}
+			chunkHandle = null;
+			chunkHandleType = null;
+		}
+	}
+
+	function scheduleGridChunks(edgeIds?: Set<string>) {
+		cancelChunkRouting();
+		const ids = edgeIds ? [...edgeIds] : cy.edges().map((edge) => edge.id());
+		let index = 0;
+
+		function step() {
+			const chunk = new Set(ids.slice(index, index + GRID_CHUNK_SIZE));
+			index += GRID_CHUNK_SIZE;
+			if (chunk.size > 0) applyDynamicRouting(cy, { useGrid: true, edgeIds: chunk });
+			if (index < ids.length) {
+				const handle = requestIdle(step);
+				chunkHandle = handle.id;
+				chunkHandleType = handle.type;
+			} else {
+				chunkHandle = null;
+				chunkHandleType = null;
+			}
+		}
+
+		const handle = requestIdle(step);
+		chunkHandle = handle.id;
+		chunkHandleType = handle.type;
+	}
+
+	function scheduleRouting(useGrid: boolean) {
 		if (rafId !== null) return;
 		rafId = requestAnimationFrame(() => {
 			rafId = null;
-			applyDynamicRouting(cy);
+			const edgeIds = useGrid ? undefined : new Set(pendingFastEdgeIds);
+			if (!useGrid) pendingFastEdgeIds.clear();
+			if (useGrid) {
+				scheduleGridChunks(edgeIds);
+			} else {
+				applyDynamicRouting(cy, { useGrid, edgeIds });
+			}
 		});
 	}
 
-	cy.on('position', 'node', scheduleRouting);
-	cy.on('layoutstop', scheduleRouting);
-	cy.on('add', 'edge', scheduleRouting);
-	cy.on('data', 'node', scheduleRouting); // re-route when node data (size) changes
+	function scheduleFastRouting(evt: cytoscape.EventObject) {
+		cancelChunkRouting();
+		if (settleTimeout !== null) {
+			clearTimeout(settleTimeout);
+			settleTimeout = null;
+		}
+		const node = evt.target as cytoscape.NodeSingular;
+		node.connectedEdges().forEach((edge) => {
+			pendingFastEdgeIds.add(edge.id());
+			pendingSettledEdgeIds.add(edge.id());
+		});
+		scheduleRouting(false);
+	}
 
-	// Initial application
-	applyDynamicRouting(cy);
+	function scheduleDirtySettledRouting(evt?: cytoscape.EventObject) {
+		if (evt?.target?.isNode?.()) {
+			const node = evt.target as cytoscape.NodeSingular;
+			node.connectedEdges().forEach((edge) => {
+				pendingSettledEdgeIds.add(edge.id());
+			});
+		}
+		if (settleTimeout !== null) clearTimeout(settleTimeout);
+		settleTimeout = setTimeout(() => {
+			settleTimeout = null;
+			const edgeIds = new Set(pendingSettledEdgeIds);
+			pendingSettledEdgeIds.clear();
+			if (edgeIds.size === 0) return;
+			scheduleGridChunks(edgeIds);
+		}, 80);
+	}
+
+	function scheduleFullSettledRouting() {
+		pendingFastEdgeIds.clear();
+		pendingSettledEdgeIds.clear();
+		if (settleTimeout !== null) clearTimeout(settleTimeout);
+		settleTimeout = setTimeout(() => {
+			settleTimeout = null;
+			scheduleGridChunks();
+		}, 500);
+	}
+
+	cy.on('position', 'node', scheduleFastRouting);
+	cy.on('dragfree', 'node', scheduleDirtySettledRouting);
+	cy.on('layoutstop', scheduleFullSettledRouting);
+	cy.on('add', 'edge', scheduleFullSettledRouting);
+	cy.on('data', 'node', scheduleFullSettledRouting); // re-route when node data (size) changes
+
+	// Initial application: draw immediately, then refine shortest paths incrementally.
+	applyDynamicRouting(cy, { useGrid: false });
+	scheduleFullSettledRouting();
 
 	return () => {
-		cy.off('position', 'node', scheduleRouting);
-		cy.off('layoutstop', scheduleRouting);
-		cy.off('add', 'edge', scheduleRouting);
-		cy.off('data', 'node', scheduleRouting);
+		cy.off('position', 'node', scheduleFastRouting);
+		cy.off('dragfree', 'node', scheduleDirtySettledRouting);
+		cy.off('layoutstop', scheduleFullSettledRouting);
+		cy.off('add', 'edge', scheduleFullSettledRouting);
+		cy.off('data', 'node', scheduleFullSettledRouting);
 		if (rafId !== null) cancelAnimationFrame(rafId);
+		cancelChunkRouting();
+		if (settleTimeout !== null) clearTimeout(settleTimeout);
 	};
 }

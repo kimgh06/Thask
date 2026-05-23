@@ -37,88 +37,39 @@ func finalizeGroupLayoutsWithExternalPulls(
 			externalLinks = buildChildExternalLinks(n.ID, groupPos, kids, edges, nodeMap, groupPositions)
 		}
 		childEdges := childInternalEdges(kids, edges)
-		metrics := computeChildRectMetrics(kids, edges, pullMap)
 
 		if preferBestTemplate {
-			type layoutCandidate struct {
-				pos  map[string][2]float64
-				w    float64
-				h    float64
-				cost float64
-			}
-			var best *layoutCandidate
-			tryCandidate := func(build func(map[string][2]float64) (float64, float64, bool)) {
-				trial := make(map[string][2]float64, len(kids))
-				for _, kid := range kids {
-					trial[kid] = childRelPos[kid]
-				}
-				w, h, ok := build(trial)
-				if !ok {
-					return
-				}
-				cost := childLayoutCost(kids, childEdges, externalLinks, trial) +
-					scoreChildPlacementAffinity(kids, trial, metrics, boundaryDemands)
-				if len(kids) <= 8 {
-					cost += renderedChildLayoutCost(groupPos, kids, edges, nodeMap, groupPositions, trial, childRelPos)
-				}
-				if best == nil || cost < best.cost {
-					best = &layoutCandidate{
-						pos:  trial,
-						w:    w,
-						h:    h,
-						cost: cost,
-					}
-				}
+			// The final group pass runs with the real top-level positions. Keep it
+			// deterministic and linear-ish: pick the first shape whose predicate
+			// matches instead of scoring every template and every rendered route
+			// permutation again.
+			if w, h, ok := layoutChildrenPassThroughCorridor(kids, edges, childRelPos, pullMap, boundaryDemands, childEdges, externalLinks); ok {
+				groupSizes[n.ID] = [2]float64{w, h}
+				continue
 			}
 
-			tryCandidate(func(rel map[string][2]float64) (float64, float64, bool) {
-				return layoutChildrenPassThroughCorridor(kids, edges, rel, pullMap, boundaryDemands, childEdges, externalLinks)
-			})
-			tryCandidate(func(rel map[string][2]float64) (float64, float64, bool) {
-				return layoutChildrenTwoColumnFlow(kids, edges, rel, pullMap, boundaryDemands, childEdges, externalLinks)
-			})
-			tryCandidate(func(rel map[string][2]float64) (float64, float64, bool) {
-				return layoutChildrenVerticalLine(kids, edges, rel, pullMap, boundaryDemands, childEdges, externalLinks)
-			})
-			tryCandidate(func(rel map[string][2]float64) (float64, float64, bool) {
-				return layoutChildrenHorizontalLine(kids, edges, rel, pullMap, boundaryDemands, childEdges, externalLinks)
-			})
-			tryCandidate(func(rel map[string][2]float64) (float64, float64, bool) {
-				return layoutChildrenExternalPullBoundary(kids, edges, rel, pullMap, boundaryDemands, childEdges, externalLinks)
-			})
-			tryCandidate(func(rel map[string][2]float64) (float64, float64, bool) {
-				return layoutChildrenRectangular(kids, edges, rel, pullMap, boundaryDemands, externalLinks)
-			})
+			if w, h, ok := layoutChildrenTwoColumnFlow(kids, edges, childRelPos, pullMap, boundaryDemands, childEdges, externalLinks); ok {
+				groupSizes[n.ID] = [2]float64{w, h}
+				continue
+			}
 
-			if best != nil {
-				for _, kid := range kids {
-					childRelPos[kid] = best.pos[kid]
-				}
-				optimizeChildAssignmentsForRenderedRoutes(
-					groupPos,
-					kids,
-					edges,
-					nodeMap,
-					groupPositions,
-					childRelPos,
-					childRelPos,
-					childEdges,
-					externalLinks,
-					metrics,
-					boundaryDemands,
-				)
-				groupW, groupH, _ := compactChildLayoutTightestClear(
-					kids,
-					childEdges,
-					externalLinks,
-					childRelPos,
-					groupPos,
-					edges,
-					nodeMap,
-					groupPositions,
-					childRelPos,
-				)
-				groupSizes[n.ID] = [2]float64{groupW, groupH}
+			if w, h, ok := layoutChildrenVerticalLine(kids, edges, childRelPos, pullMap, boundaryDemands, childEdges, externalLinks); ok {
+				groupSizes[n.ID] = [2]float64{w, h}
+				continue
+			}
+
+			if w, h, ok := layoutChildrenHorizontalLine(kids, edges, childRelPos, pullMap, boundaryDemands, childEdges, externalLinks); ok {
+				groupSizes[n.ID] = [2]float64{w, h}
+				continue
+			}
+
+			if w, h, ok := layoutChildrenExternalPullBoundary(kids, edges, childRelPos, pullMap, boundaryDemands, childEdges, externalLinks); ok {
+				groupSizes[n.ID] = [2]float64{w, h}
+				continue
+			}
+
+			if w, h, ok := layoutChildrenRectangular(kids, edges, childRelPos, pullMap, boundaryDemands, externalLinks); ok {
+				groupSizes[n.ID] = [2]float64{w, h}
 				continue
 			}
 		} else {
@@ -251,30 +202,6 @@ func finalizeGroupLayoutsWithExternalPulls(
 		}
 
 		groupW, groupH := expandChildLayoutUntilClear(kids, childEdges, externalLinks, childRelPos)
-		optimizeChildAssignmentsForRenderedRoutes(
-			groupPos,
-			kids,
-			edges,
-			nodeMap,
-			groupPositions,
-			childRelPos,
-			childRelPos,
-			childEdges,
-			externalLinks,
-			metrics,
-			boundaryDemands,
-		)
-		groupW, groupH, _ = compactChildLayoutTightestClear(
-			kids,
-			childEdges,
-			externalLinks,
-			childRelPos,
-			groupPos,
-			edges,
-			nodeMap,
-			groupPositions,
-			childRelPos,
-		)
 		groupSizes[n.ID] = [2]float64{groupW, groupH}
 	}
 }

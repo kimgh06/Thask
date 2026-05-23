@@ -283,9 +283,11 @@ export function getGraphStyles(theme: 'dark' | 'light' = 'dark'): StylesheetStyl
       selector: 'edge[curveStyle="segments"]',
       style: {
         'curve-style': 'segments',
+        'source-endpoint': 'data(sourceEndpoint)',
+        'target-endpoint': 'data(targetEndpoint)',
         'segment-distances': 'data(segmentDistances)',
         'segment-weights': 'data(segmentWeights)',
-        'edge-distances': 'node-position',
+        'edge-distances': 'endpoints',
       } as Record<string, any>,
     },
 

@@ -14,7 +14,7 @@ func siftingCrossMin(layerNodes map[int][]string, maxLayer int, adj map[string]m
 	}
 
 	// Multiple sweeps for convergence (forward + backward)
-	for sweep := 0; sweep < 12; sweep++ {
+	for sweep := 0; sweep < 4; sweep++ {
 		startL, endL, stepL := 0, maxLayer, 1
 		if sweep%2 == 1 {
 			startL, endL, stepL = maxLayer, 0, -1

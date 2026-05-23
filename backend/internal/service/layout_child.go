@@ -473,68 +473,9 @@ func optimizeChildAssignmentsForRenderedRoutes(
 			crossingCost
 	}
 
-	if len(kids) <= 8 {
-		slots := make([][2]float64, len(kids))
-		for i, id := range kids {
-			slots[i] = localRelPos[id]
-		}
-
-		original := make(map[string][2]float64, len(kids))
-		for _, id := range kids {
-			original[id] = localRelPos[id]
-		}
-
-		bestCost := layoutCost()
-		bestLayout := make(map[string][2]float64, len(kids))
-		for _, id := range kids {
-			bestLayout[id] = localRelPos[id]
-		}
-
-		used := make([]bool, len(slots))
-		var dfs func(int)
-		dfs = func(index int) {
-			if index == len(kids) {
-				cost := layoutCost()
-				if cost+1e-6 < bestCost {
-					bestCost = cost
-					for _, id := range kids {
-						bestLayout[id] = localRelPos[id]
-					}
-				}
-				return
-			}
-
-			id := kids[index]
-			for slotIdx, slot := range slots {
-				if used[slotIdx] {
-					continue
-				}
-				used[slotIdx] = true
-				localRelPos[id] = slot
-				dfs(index + 1)
-				used[slotIdx] = false
-			}
-		}
-
-		dfs(0)
-		improved := false
-		for _, id := range kids {
-			if localRelPos[id] != bestLayout[id] {
-				improved = true
-			}
-			localRelPos[id] = bestLayout[id]
-		}
-		if improved {
-			return true
-		}
-		for _, id := range kids {
-			localRelPos[id] = original[id]
-		}
-	}
-
 	bestCost := layoutCost()
 	improved := false
-	for pass := 0; pass < 6; pass++ {
+	for pass := 0; pass < 3; pass++ {
 		passImproved := false
 		for i := 0; i < len(kids); i++ {
 			for j := i + 1; j < len(kids); j++ {
@@ -1431,7 +1372,7 @@ func expandChildLayoutUntilClear(
 	}
 
 	if childLayoutViolationsClear(measureChildLayoutViolations(childIDs, childEdges, externalLinks, relPos)) {
-		for pass := 0; pass < 4; pass++ {
+		for pass := 0; pass < 2; pass++ {
 			improvedUniform := compactChildLayoutUniform(childIDs, childEdges, externalLinks, relPos)
 			improvedX := compactChildLayoutAxis(childIDs, childEdges, externalLinks, relPos, 'x')
 			improvedY := compactChildLayoutAxis(childIDs, childEdges, externalLinks, relPos, 'y')
