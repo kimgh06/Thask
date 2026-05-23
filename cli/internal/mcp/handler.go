@@ -31,6 +31,12 @@ var handlers = map[string]ToolHandler{
 	"thask.graph.analyze":     handleGraphAnalyze,
 	"thask.mistake.record":    handleMistakeRecord,
 	"thask.guide":             handleGuide,
+
+	// Provenance / human-in-the-loop tools (suggestion queue + verify).
+	"thask.node.suggest_update": handleNodeSuggestUpdate,
+	"thask.suggestions.list":    handleSuggestionsList,
+	"thask.suggestions.decide":  handleSuggestionsDecide,
+	"thask.node.verify":         handleNodeVerify,
 }
 
 func HandleToolCall(c *client.Client, name string, args json.RawMessage) (any, error) {
@@ -312,4 +318,53 @@ func findOrCreateMistakeGroup(c *client.Client, pid string) (string, error) {
 		return "", fmt.Errorf("failed to parse created group: %w", err)
 	}
 	return created.ID, nil
+}
+
+// handleNodeSuggestUpdate posts to the suggestion queue rather than writing
+// the node directly. Agent keys must use this path for description changes.
+func handleNodeSuggestUpdate(c *client.Client, args map[string]any) (any, error) {
+	pid := str(args, "projectId")
+	nid := str(args, "nodeId")
+	body := map[string]any{
+		"proposedValue": str(args, "proposedValue"),
+	}
+	if v := str(args, "fieldName"); v != "" {
+		body["fieldName"] = v
+	}
+	if v := str(args, "rationale"); v != "" {
+		body["rationale"] = v
+	}
+	if v, ok := args["evidence"]; ok {
+		body["evidence"] = v
+	}
+	return c.Post("/api/projects/"+pid+"/nodes/"+nid+"/suggestions", body)
+}
+
+func handleSuggestionsList(c *client.Client, args map[string]any) (any, error) {
+	pid := str(args, "projectId")
+	path := "/api/projects/" + pid + "/suggestions"
+	if l, ok := args["limit"]; ok {
+		path += fmt.Sprintf("?limit=%v", l)
+	}
+	return c.Get(path)
+}
+
+func handleSuggestionsDecide(c *client.Client, args map[string]any) (any, error) {
+	pid := str(args, "projectId")
+	sid := str(args, "suggestionId")
+	body := map[string]any{"status": str(args, "status")}
+	if v := str(args, "reason"); v != "" {
+		body["reason"] = v
+	}
+	return c.Patch("/api/projects/"+pid+"/suggestions/"+sid, body)
+}
+
+func handleNodeVerify(c *client.Client, args map[string]any) (any, error) {
+	pid := str(args, "projectId")
+	nid := str(args, "nodeId")
+	body := map[string]any{}
+	if v := str(args, "commit"); v != "" {
+		body["commit"] = v
+	}
+	return c.Post("/api/projects/"+pid+"/nodes/"+nid+"/verify", body)
 }

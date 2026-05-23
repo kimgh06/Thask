@@ -3,7 +3,7 @@ package mcp
 import "testing"
 
 func TestHandleRequestSkipsInitializedNotification(t *testing.T) {
-	resp, ok := handleRequest(nil, "", Request{
+	resp, ok := handleRequest(nil, "", "", Request{
 		JSONRPC: "2.0",
 		Method:  "notifications/initialized",
 	})
@@ -14,7 +14,7 @@ func TestHandleRequestSkipsInitializedNotification(t *testing.T) {
 }
 
 func TestHandleRequestSkipsUnknownNotification(t *testing.T) {
-	resp, ok := handleRequest(nil, "", Request{
+	resp, ok := handleRequest(nil, "", "", Request{
 		JSONRPC: "2.0",
 		Method:  "notifications/cancelled",
 	})
@@ -25,7 +25,7 @@ func TestHandleRequestSkipsUnknownNotification(t *testing.T) {
 }
 
 func TestHandleRequestReturnsErrorForUnknownRequest(t *testing.T) {
-	resp, ok := handleRequest(nil, "", Request{
+	resp, ok := handleRequest(nil, "", "", Request{
 		JSONRPC: "2.0",
 		ID:      7,
 		Method:  "unknown/method",

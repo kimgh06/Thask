@@ -102,10 +102,24 @@ export interface TeamMember {
 	user: User;
 }
 
+export type APIKeyKind = 'user_interactive' | 'agent' | 'service';
+
+export interface APIKeyPermissions {
+	read: boolean;
+	write_structural: boolean;
+	write_semantic: boolean;
+	write_meta: boolean;
+	verify: boolean;
+	delete: boolean;
+	suggest: boolean;
+}
+
 export interface APIKey {
 	id: string;
 	name: string;
 	keyPrefix: string;
+	kind: APIKeyKind;
+	permissions: APIKeyPermissions;
 	lastUsedAt: string | null;
 	expiresAt: string | null;
 	createdAt: string;

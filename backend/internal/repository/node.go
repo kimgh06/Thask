@@ -27,9 +27,9 @@ func (r *NodeRepo) Create(ctx context.Context, n *model.Node) (*model.Node, erro
 	err := r.pool.QueryRow(ctx,
 		`INSERT INTO nodes (project_id, type, title, description, status, assignee_id, tags, parent_id, position_x, position_y, width, height)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		 RETURNING id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at`,
+		 RETURNING id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance`,
 		n.ProjectID, n.Type, n.Title, n.Description, n.Status, n.AssigneeID, n.Tags, n.ParentID, n.PositionX, n.PositionY, n.Width, n.Height,
-	).Scan(&node.ID, &node.ProjectID, &node.Type, &node.Title, &node.Description, &node.Status, &node.AssigneeID, &node.Tags, &node.Metadata, &node.ParentID, &node.PositionX, &node.PositionY, &node.Width, &node.Height, &node.CreatedAt, &node.UpdatedAt)
+	).Scan(&node.ID, &node.ProjectID, &node.Type, &node.Title, &node.Description, &node.Status, &node.AssigneeID, &node.Tags, &node.Metadata, &node.ParentID, &node.PositionX, &node.PositionY, &node.Width, &node.Height, &node.CreatedAt, &node.UpdatedAt, &node.DescriptionSource, &node.DescriptionAuthoredBy, &node.DescriptionAuthoredAt, &node.DescriptionAgentModel, &node.LastVerifiedAt, &node.LastVerifiedBy, &node.LastVerifiedCommit, &node.FieldProvenance)
 	if err != nil {
 		return nil, err
 	}
@@ -39,10 +39,10 @@ func (r *NodeRepo) Create(ctx context.Context, n *model.Node) (*model.Node, erro
 func (r *NodeRepo) FindByID(ctx context.Context, id, projectID string) (*model.Node, error) {
 	var n model.Node
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at
+		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance
 		 FROM nodes WHERE id = $1 AND project_id = $2`,
 		id, projectID,
-	).Scan(&n.ID, &n.ProjectID, &n.Type, &n.Title, &n.Description, &n.Status, &n.AssigneeID, &n.Tags, &n.Metadata, &n.ParentID, &n.PositionX, &n.PositionY, &n.Width, &n.Height, &n.CreatedAt, &n.UpdatedAt)
+	).Scan(&n.ID, &n.ProjectID, &n.Type, &n.Title, &n.Description, &n.Status, &n.AssigneeID, &n.Tags, &n.Metadata, &n.ParentID, &n.PositionX, &n.PositionY, &n.Width, &n.Height, &n.CreatedAt, &n.UpdatedAt, &n.DescriptionSource, &n.DescriptionAuthoredBy, &n.DescriptionAuthoredAt, &n.DescriptionAgentModel, &n.LastVerifiedAt, &n.LastVerifiedBy, &n.LastVerifiedCommit, &n.FieldProvenance)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +50,7 @@ func (r *NodeRepo) FindByID(ctx context.Context, id, projectID string) (*model.N
 }
 
 func (r *NodeRepo) FindByProjectID(ctx context.Context, projectID string, nodeType, status *string) ([]model.Node, error) {
-	query := `SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at
+	query := `SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance
 		 FROM nodes WHERE project_id = $1`
 	args := []any{projectID}
 	idx := 2
@@ -88,17 +88,63 @@ func (r *NodeRepo) Update(ctx context.Context, id string, fields map[string]any)
 	args = append(args, id)
 	query := fmt.Sprintf(
 		`UPDATE nodes SET %s WHERE id = $%d
-		 RETURNING id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at`,
+		 RETURNING id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance`,
 		strings.Join(setClauses, ", "), idx,
 	)
 	var n model.Node
 	err := r.pool.QueryRow(ctx, query, args...).Scan(
-		&n.ID, &n.ProjectID, &n.Type, &n.Title, &n.Description, &n.Status, &n.AssigneeID, &n.Tags, &n.Metadata, &n.ParentID, &n.PositionX, &n.PositionY, &n.Width, &n.Height, &n.CreatedAt, &n.UpdatedAt,
+		&n.ID, &n.ProjectID, &n.Type, &n.Title, &n.Description, &n.Status, &n.AssigneeID, &n.Tags, &n.Metadata, &n.ParentID, &n.PositionX, &n.PositionY, &n.Width, &n.Height, &n.CreatedAt, &n.UpdatedAt, &n.DescriptionSource, &n.DescriptionAuthoredBy, &n.DescriptionAuthoredAt, &n.DescriptionAgentModel, &n.LastVerifiedAt, &n.LastVerifiedBy, &n.LastVerifiedCommit, &n.FieldProvenance,
 	)
 	if err != nil {
 		return nil, err
 	}
 	return &n, nil
+}
+
+// MarkVerified stamps last_verified_at / last_verified_by / last_verified_commit
+// on a node so reviewers know when a human last said "still correct". Commit
+// may be empty (callers running outside a git repo). Returns an error when the
+// node does not exist in the given project so the handler can surface 404.
+func (r *NodeRepo) MarkVerified(ctx context.Context, nodeID, projectID, userID, commit string) error {
+	var commitPtr *string
+	if commit != "" {
+		commitPtr = &commit
+	}
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE nodes
+		 SET last_verified_at = now(),
+		     last_verified_by = $1,
+		     last_verified_commit = $2,
+		     updated_at = now()
+		 WHERE id = $3 AND project_id = $4`,
+		userID, commitPtr, nodeID, projectID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("node not found")
+	}
+	return nil
+}
+
+// UpdateDescriptionProvenance refreshes the description_source / authored_by /
+// authored_at / agent_model snapshot columns on a node. Called after a
+// description write so future readers can answer "who wrote this and when".
+// agentModel is the empty string for human writes.
+func (r *NodeRepo) UpdateDescriptionProvenance(ctx context.Context, nodeID, authoredBy, source, agentModel string) error {
+	var agentPtr *string
+	if agentModel != "" {
+		agentPtr = &agentModel
+	}
+	_, err := r.pool.Exec(ctx,
+		`UPDATE nodes
+		 SET description_source = $1,
+		     description_authored_by = $2,
+		     description_authored_at = now(),
+		     description_agent_model = $3
+		 WHERE id = $4`,
+		source, authoredBy, agentPtr, nodeID)
+	return err
 }
 
 func (r *NodeRepo) Delete(ctx context.Context, id, projectID string) error {
@@ -143,7 +189,7 @@ func (r *NodeRepo) BatchUpdatePositions(ctx context.Context, projectID string, p
 
 func (r *NodeRepo) FindChangedSince(ctx context.Context, projectID string, since time.Time) ([]model.Node, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at
+		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance
 		 FROM nodes WHERE project_id = $1 AND updated_at >= $2`, projectID, since)
 	if err != nil {
 		return nil, err
@@ -154,7 +200,7 @@ func (r *NodeRepo) FindChangedSince(ctx context.Context, projectID string, since
 
 func (r *NodeRepo) FindFailOrBug(ctx context.Context, projectID string) ([]model.Node, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at
+		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance
 		 FROM nodes WHERE project_id = $1 AND (status = 'FAIL' OR type = 'BUG')`, projectID)
 	if err != nil {
 		return nil, err
@@ -168,7 +214,7 @@ func (r *NodeRepo) FindByIDs(ctx context.Context, ids []string) ([]model.Node, e
 		return nil, nil
 	}
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at
+		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance
 		 FROM nodes WHERE id = ANY($1)`, ids)
 	if err != nil {
 		return nil, err
@@ -231,7 +277,7 @@ func (r *NodeRepo) FindByProjectIDPaginated(ctx context.Context, projectID strin
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at FROM nodes %s ORDER BY created_at ASC, id ASC LIMIT $%d`,
+		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance FROM nodes %s ORDER BY created_at ASC, id ASC LIMIT $%d`,
 		where, argIdx,
 	)
 	args = append(args, limit+1)
@@ -259,7 +305,7 @@ func scanNodes(rows interface{ Next() bool; Scan(dest ...any) error }) ([]model.
 	var nodes []model.Node
 	for rows.Next() {
 		var n model.Node
-		if err := rows.Scan(&n.ID, &n.ProjectID, &n.Type, &n.Title, &n.Description, &n.Status, &n.AssigneeID, &n.Tags, &n.Metadata, &n.ParentID, &n.PositionX, &n.PositionY, &n.Width, &n.Height, &n.CreatedAt, &n.UpdatedAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.ProjectID, &n.Type, &n.Title, &n.Description, &n.Status, &n.AssigneeID, &n.Tags, &n.Metadata, &n.ParentID, &n.PositionX, &n.PositionY, &n.Width, &n.Height, &n.CreatedAt, &n.UpdatedAt, &n.DescriptionSource, &n.DescriptionAuthoredBy, &n.DescriptionAuthoredAt, &n.DescriptionAgentModel, &n.LastVerifiedAt, &n.LastVerifiedBy, &n.LastVerifiedCommit, &n.FieldProvenance); err != nil {
 			return nil, err
 		}
 		nodes = append(nodes, n)

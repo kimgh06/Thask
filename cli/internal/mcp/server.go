@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,6 +18,13 @@ var Version = "dev"
 // clients (Cursor, Codex CLI) get the same auto-injected context that
 // Claude Code's SessionStart hook provides via `thask guide`.
 func Serve(c *client.Client, projectID string) error {
+	// Session UUID is generated once per MCP server lifetime; the audit_log
+	// uses it to correlate writes made by the same agent conversation.
+	sessionID := newSessionID()
+	// Default header until clientInfo arrives via initialize. Always set so
+	// backend can distinguish MCP from CLI even if init never lands.
+	c.ClientHeader = fmt.Sprintf("thask-mcp/%s session=%s", Version, sessionID)
+
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 0, 1024*1024), 10*1024*1024) // 10MB max
 	encoder := json.NewEncoder(os.Stdout)
@@ -32,7 +41,7 @@ func Serve(c *client.Client, projectID string) error {
 			continue
 		}
 
-		resp, ok := handleRequest(c, projectID, req)
+		resp, ok := handleRequest(c, projectID, sessionID, req)
 		if ok {
 			encoder.Encode(resp)
 		}
@@ -41,9 +50,24 @@ func Serve(c *client.Client, projectID string) error {
 	return scanner.Err()
 }
 
-func handleRequest(c *client.Client, projectID string, req Request) (Response, bool) {
+func newSessionID() string {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+func handleRequest(c *client.Client, projectID, sessionID string, req Request) (Response, bool) {
 	switch req.Method {
 	case "initialize":
+		// Parse clientInfo so the X-Thask-Client header can carry the agent
+		// model into audit_log. Failure here is non-fatal — the default
+		// header set in Serve() remains.
+		var p InitializeParams
+		if len(req.Params) > 0 {
+			_ = json.Unmarshal(req.Params, &p)
+		}
+		c.ClientHeader = buildMCPClientHeader(sessionID, p.ClientInfo)
+
 		return SuccessResponse(req.ID, InitializeResult{
 			ProtocolVersion: "2024-11-05",
 			Capabilities:    Capabilities{Tools: &ToolsCapability{}},
@@ -94,4 +118,20 @@ func handleRequest(c *client.Client, projectID string, req Request) (Response, b
 		}
 		return ErrorResponse(req.ID, -32601, "Method not found: "+req.Method), true
 	}
+}
+
+// buildMCPClientHeader formats X-Thask-Client with the model/session info that
+// the backend's audit_log indexes by. Falls back to "thask-mcp/<ver>" when
+// clientInfo is missing.
+func buildMCPClientHeader(sessionID string, info *InitializeClientInfo) string {
+	if info == nil || info.Name == "" {
+		return fmt.Sprintf("thask-mcp/%s session=%s", Version, sessionID)
+	}
+	// Encode the upstream agent identity (e.g. "claude-code/0.1.0") in the
+	// model= param so the same MCP layer surfaces who is calling.
+	model := info.Name
+	if info.Version != "" {
+		model = info.Name + "/" + info.Version
+	}
+	return fmt.Sprintf("thask-mcp/%s model=%s session=%s", Version, model, sessionID)
 }

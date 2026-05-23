@@ -231,8 +231,74 @@ Then use the simpler `mcp.json`:
 
 ---
 
+## Provenance Tools (v0.5.9)
+
+To prevent agents from silently writing hallucinated descriptions into the graph,
+v0.5.9 adds four MCP tools and gates writes by per-key permissions.
+
+| Tool | Purpose | Required permission |
+|---|---|---|
+| `thask.node.suggest_update` | Queue a description change for human review | `suggest` |
+| `thask.suggestions.list` | List pending proposals for a project | `read` |
+| `thask.suggestions.decide` | Accept/reject a proposal | `write_semantic` (when accepting) |
+| `thask.node.verify` | Stamp "still correct as of now" on a node | `verify` |
+
+### Agent workflow
+
+The recommended flow for an agent that wants to revise a node:
+
+```
+1. thask.graph.get → read existing description + provenance
+2. Re-derive from code: open the files the node covers
+3. If description should change:
+   thask.node.suggest_update {
+     projectId, nodeId,
+     proposedValue: "...",
+     rationale: "src/auth.ts:42 added refreshToken() — quote the line",
+     evidence: { codeCommit: "abc1234", sourcePaths: ["src/auth.ts"], confidence: "high" }
+   }
+4. Human reviews via the UI or `thask.suggestions.list / decide`
+```
+
+Agent keys are blocked from `thask.node.update {description: ...}` and
+`thask.node.verify` by default. The CLI/MCP backend returns a 403 with
+guidance pointing at the suggest_update path.
+
+### Provenance in read responses
+
+Every node returned by `thask.node.get`, `thask.node.list`, `thask.graph.get`,
+and `thask.impact.analyze` includes:
+
+```json
+{
+  "id": "...",
+  "title": "...",
+  "description": "...",
+  "descriptionSource": "agent",
+  "descriptionAuthoredBy": "<user_id>",
+  "descriptionAuthoredAt": "2026-05-23T...",
+  "descriptionAgentModel": "claude-opus-4-7",
+  "lastVerifiedAt": null,
+  "lastVerifiedBy": null,
+  "lastVerifiedCommit": null
+}
+```
+
+When reading another agent's content, treat `descriptionSource: "agent"` with
+`lastVerifiedAt: null` as **hint, not ground truth** — verify against code
+before acting on it.
+
+### X-Thask-Client header
+
+The MCP server automatically sets `X-Thask-Client: thask-mcp/<ver> model=<client> session=<uuid>`
+on every outbound request. `model` comes from MCP `clientInfo` (e.g.
+`claude-code/0.1.0`), `session` is a per-server-instance UUID.
+
+---
+
 ## See Also
 
-- [API Reference](./API.md) — Full REST API documentation
+- [API Reference](./API.md) — Full REST API documentation, suggestion endpoints
+- [Database Schema](./DATABASE.md) — `audit_log`, `node_suggestions`, provenance columns
 - [Graph Model](./GRAPH.md) — Node types, edge types, and semantics
 - [Architecture](./ARCHITECTURE.md) — How Thask is structured

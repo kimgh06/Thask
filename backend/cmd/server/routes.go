@@ -24,6 +24,7 @@ type Handlers struct {
 	APIKey        *handler.APIKeyHandler
 	Event         *handler.EventHandler
 	Activity      *handler.ActivityHandler
+	Suggestion    *handler.SuggestionHandler
 }
 
 func RegisterRoutes(e *echo.Echo, h Handlers, sessionRepo *repository.SessionRepo, apiKeyRepo *repository.APIKeyRepo, teamRepo *repository.TeamRepo, projectRepo *repository.ProjectRepo, pmRepo *repository.ProjectMemberRepo) {
@@ -116,6 +117,13 @@ func RegisterRoutes(e *echo.Echo, h Handlers, sessionRepo *repository.SessionRep
 	projectWrite.POST("/edges", h.Edge.Create)
 	projectWrite.PATCH("/edges/:edgeId", h.Edge.Update)
 	projectWrite.DELETE("/edges/:edgeId", h.Edge.Delete)
+
+	// Provenance & suggestion queue (migration 009). Agents propose to the
+	// queue; humans approve / verify. permissions JSONB gates each path.
+	projectWrite.POST("/nodes/:nodeId/suggestions", h.Suggestion.Suggest)
+	projectWrite.POST("/nodes/:nodeId/verify", h.Suggestion.Verify)
+	projectGroup.GET("/suggestions", h.Suggestion.List)
+	projectWrite.PATCH("/suggestions/:suggestionId", h.Suggestion.Decide)
 
 	// Summary
 	authed.GET("/api/projects/summary", h.Summary.Get)

@@ -65,6 +65,7 @@ var rootCmd = &cobra.Command{
 		}
 
 		apiClient = client.New(cfg.URL, cfg.Token)
+		apiClient.ClientHeader = "thask-cli/" + Version
 		return nil
 	},
 	SilenceUsage:  true,

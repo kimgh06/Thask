@@ -140,6 +140,45 @@ func AllTools() []ToolDef {
 			}, []string{"projectId"}),
 		},
 		{
+			Name:        "thask.node.suggest_update",
+			Description: "Propose a description change for human review instead of writing directly. Use this when your API key lacks write_semantic permission (agent keys block direct description writes by default — see thask.guide). Always quote the code/file that motivated the change in 'rationale' so the reviewer can verify.",
+			InputSchema: objectSchema(map[string]any{
+				"projectId":     prop("string", "Project UUID"),
+				"nodeId":        prop("string", "Node UUID to propose changes for"),
+				"fieldName":     propEnum("string", "Which field to update (default 'description')", []string{"description", "title", "tags"}),
+				"proposedValue": prop("string", "The new value you want the human to consider"),
+				"rationale":     prop("string", "Why the change is needed. MUST quote the code/file/commit that triggered it — reviewers reject suggestions without provenance."),
+				"evidence":      prop("object", "Optional structured evidence: { codeCommit, sourcePaths[], confidence }"),
+			}, []string{"projectId", "nodeId", "proposedValue"}),
+		},
+		{
+			Name:        "thask.suggestions.list",
+			Description: "List pending agent-proposed updates awaiting human review for a project.",
+			InputSchema: objectSchema(map[string]any{
+				"projectId": prop("string", "Project UUID"),
+				"limit":     prop("integer", "Max rows (default 50, max 200)"),
+			}, []string{"projectId"}),
+		},
+		{
+			Name:        "thask.suggestions.decide",
+			Description: "Accept or reject a pending suggestion. Accepting copies the proposed value into the target node and credits the deciding human as the author. Reserved for user_interactive keys.",
+			InputSchema: objectSchema(map[string]any{
+				"projectId":    prop("string", "Project UUID"),
+				"suggestionId": prop("string", "Suggestion UUID returned by suggestions.list"),
+				"status":       propEnum("string", "Decision", []string{"accepted", "rejected"}),
+				"reason":       prop("string", "Optional rationale for the decision"),
+			}, []string{"projectId", "suggestionId", "status"}),
+		},
+		{
+			Name:        "thask.node.verify",
+			Description: "Stamp 'still correct as of now' on a node — sets last_verified_at / by / commit. Requires permissions.verify. Use sparingly; verifying agent-authored content without re-reading the code defeats the safety guarantee.",
+			InputSchema: objectSchema(map[string]any{
+				"projectId": prop("string", "Project UUID"),
+				"nodeId":    prop("string", "Node UUID to mark verified"),
+				"commit":    prop("string", "Optional git commit SHA you verified against"),
+			}, []string{"projectId", "nodeId"}),
+		},
+		{
 			Name:        "thask.mistake.record",
 			Description: "Record an agent mistake as a BUG node under the project's '실수 기록' GROUP (auto-created if missing). Use whenever the user corrects you, you get a tool/command wrong, or you repeat a prior error. The recorded mistake will be surfaced by thask.guide in future sessions to prevent recurrence.",
 			InputSchema: objectSchema(map[string]any{

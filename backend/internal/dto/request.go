@@ -126,8 +126,10 @@ type LayoutRequest struct {
 }
 
 type CreateAPIKeyRequest struct {
-	Name      string `json:"name" validate:"required,min=1,max=100"`
-	ExpiresIn *int   `json:"expiresIn" validate:"omitempty,min=1,max=365"`
+	Name        string                       `json:"name" validate:"required,min=1,max=100"`
+	Kind        string                       `json:"kind" validate:"omitempty,oneof=user_interactive agent service"`
+	Permissions *map[string]bool             `json:"permissions"`
+	ExpiresIn   *int                         `json:"expiresIn" validate:"omitempty,min=1,max=365"`
 }
 
 type ImportGraphRequest struct {
@@ -155,4 +157,25 @@ type ImportEdgeItem struct {
 	TargetID string  `json:"targetId" validate:"required"`
 	EdgeType string  `json:"edgeType" validate:"omitempty,oneof=depends_on blocks related parent_child triggers"`
 	Label    *string `json:"label"`
+}
+
+// SuggestNodeUpdateRequest is the body for POST /api/projects/:pid/nodes/:nid/suggestions.
+// Agents call this instead of mutating description directly.
+type SuggestNodeUpdateRequest struct {
+	FieldName     string `json:"fieldName" validate:"omitempty,oneof=description title tags"`
+	ProposedValue string `json:"proposedValue" validate:"required"`
+	Rationale     string `json:"rationale" validate:"omitempty,max=2000"`
+	Evidence      any    `json:"evidence"` // { codeCommit, sourcePaths[], confidence }
+}
+
+// DecideSuggestionRequest is the body for PATCH /api/projects/:pid/suggestions/:sid.
+type DecideSuggestionRequest struct {
+	Status string `json:"status" validate:"required,oneof=accepted rejected"`
+	Reason string `json:"reason" validate:"omitempty,max=2000"`
+}
+
+// VerifyNodeRequest is the body for POST /api/projects/:pid/nodes/:nid/verify.
+// commit is optional but recommended — the CLI/MCP fills it from git.
+type VerifyNodeRequest struct {
+	Commit string `json:"commit" validate:"omitempty,max=64"`
 }

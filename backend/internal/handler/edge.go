@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/thask/backend/internal/audit"
 	"github.com/thask/backend/internal/dto"
 	mw "github.com/thask/backend/internal/middleware"
 	"github.com/thask/backend/internal/model"
@@ -16,10 +17,11 @@ import (
 type EdgeHandler struct {
 	edgeRepo *repository.EdgeRepo
 	hub      *service.Hub
+	audit    *audit.Logger
 }
 
-func NewEdgeHandler(edgeRepo *repository.EdgeRepo, hub *service.Hub) *EdgeHandler {
-	return &EdgeHandler{edgeRepo: edgeRepo, hub: hub}
+func NewEdgeHandler(edgeRepo *repository.EdgeRepo, hub *service.Hub, auditLogger *audit.Logger) *EdgeHandler {
+	return &EdgeHandler{edgeRepo: edgeRepo, hub: hub, audit: auditLogger}
 }
 
 func (h *EdgeHandler) List(c echo.Context) error {
@@ -89,6 +91,13 @@ func (h *EdgeHandler) Create(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, dto.Err("Self-referencing edges are not allowed"))
 	}
 
+	// Edges are structural — they describe graph topology, not claims.
+	if err := h.audit.RequirePermission(c, audit.MutationStructural, "write", audit.Event{
+		ProjectID: projectID, EntityType: "edge", Action: audit.ActionCreated,
+	}); err != nil {
+		return err
+	}
+
 	edgeType := model.EdgeType(req.EdgeType)
 	if edgeType == "" {
 		edgeType = model.EdgeTypeRelated
@@ -105,6 +114,11 @@ func (h *EdgeHandler) Create(c echo.Context) error {
 		return c.JSON(http.StatusConflict, dto.Err("Edge already exists or invalid"))
 	}
 
+	h.audit.Log(c, audit.Event{
+		ProjectID: projectID, EntityType: "edge", EntityID: edge.ID,
+		Action: audit.ActionCreated, MutationKind: audit.MutationStructural,
+		NewValue: req.SourceID + "→" + req.TargetID + " (" + string(edgeType) + ")",
+	})
 	h.hub.Publish(service.Event{Type: service.EventEdgeCreated, ProjectID: projectID, Data: edge, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusCreated, dto.OK(edge))
 }
@@ -122,6 +136,13 @@ func (h *EdgeHandler) Update(c echo.Context) error {
 	// Verify edge belongs to this project
 	if err := h.edgeRepo.VerifyProject(ctx, edgeID, projectID); err != nil {
 		return c.JSON(http.StatusNotFound, dto.Err("Edge not found"))
+	}
+
+	// Routing / label / type are all structural concerns for the graph.
+	if err := h.audit.RequirePermission(c, audit.MutationStructural, "write", audit.Event{
+		ProjectID: projectID, EntityType: "edge", EntityID: edgeID, Action: audit.ActionUpdated,
+	}); err != nil {
+		return err
 	}
 
 	var edgeType *model.EdgeType
@@ -143,6 +164,10 @@ func (h *EdgeHandler) Update(c echo.Context) error {
 		}
 	}
 
+	h.audit.Log(c, audit.Event{
+		ProjectID: edge.ProjectID, EntityType: "edge", EntityID: edge.ID,
+		Action: audit.ActionUpdated, MutationKind: audit.MutationStructural,
+	})
 	h.hub.Publish(service.Event{Type: service.EventEdgeUpdated, ProjectID: edge.ProjectID, Data: edge, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusOK, dto.OK(edge))
 }
@@ -152,10 +177,20 @@ func (h *EdgeHandler) Delete(c echo.Context) error {
 	projectID := mw.ResolveProjectID(c)
 	edgeID := c.Param("edgeId")
 
+	if err := h.audit.RequirePermission(c, audit.MutationStructural, "delete", audit.Event{
+		ProjectID: projectID, EntityType: "edge", EntityID: edgeID, Action: audit.ActionDeleted,
+	}); err != nil {
+		return err
+	}
+
 	if err := h.edgeRepo.DeleteScoped(ctx, edgeID, projectID); err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to delete edge"))
 	}
 
+	h.audit.Log(c, audit.Event{
+		ProjectID: projectID, EntityType: "edge", EntityID: edgeID,
+		Action: audit.ActionDeleted, MutationKind: audit.MutationStructural,
+	})
 	h.hub.Publish(service.Event{Type: service.EventEdgeDeleted, ProjectID: projectID, Data: edgeID, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
 }

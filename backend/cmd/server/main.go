@@ -11,6 +11,7 @@ import (
 	"github.com/labstack/echo/v4"
 	echoMw "github.com/labstack/echo/v4/middleware"
 
+	"github.com/thask/backend/internal/audit"
 	"github.com/thask/backend/internal/config"
 	"github.com/thask/backend/internal/handler"
 	"github.com/thask/backend/internal/migrate"
@@ -47,6 +48,9 @@ func main() {
 	apiKeyRepo := repository.NewAPIKeyRepo(pool)
 	pmRepo := repository.NewProjectMemberRepo(pool)
 	idempotencyRepo := repository.NewIdempotencyRepo(pool)
+	auditRepo := repository.NewAuditRepo(pool)
+	auditLogger := audit.NewLogger(auditRepo)
+	suggestionRepo := repository.NewSuggestionRepo(pool)
 
 	// Event Hub
 	hub := service.NewHub()
@@ -77,14 +81,15 @@ func main() {
 		Auth:          handler.NewAuthHandler(userRepo, sessionRepo),
 		Team:          handler.NewTeamHandler(teamRepo, projectRepo, userRepo),
 		Project:       handler.NewProjectHandler(projectRepo, teamRepo, pmRepo, userRepo),
-		Node:          handler.NewNodeHandler(nodeRepo, edgeRepo, historyRepo, hub, cfg.CaptureURL, cfg.CaptureInternalSecret, time.Duration(cfg.CaptureTimeoutSeconds)*time.Second),
-		Edge:          handler.NewEdgeHandler(edgeRepo, hub),
+		Node:          handler.NewNodeHandler(nodeRepo, edgeRepo, historyRepo, auditLogger, hub, cfg.CaptureURL, cfg.CaptureInternalSecret, time.Duration(cfg.CaptureTimeoutSeconds)*time.Second),
+		Edge:          handler.NewEdgeHandler(edgeRepo, hub, auditLogger),
 		Impact:        handler.NewImpactHandler(nodeRepo, edgeRepo),
 		GraphAnalysis: handler.NewGraphAnalysisHandler(edgeRepo),
 		Summary:       handler.NewSummaryHandler(teamRepo, projectRepo),
 		APIKey:        handler.NewAPIKeyHandler(apiKeyRepo),
 		Event:         handler.NewEventHandler(hub),
 		Activity:      handler.NewActivityHandler(historyRepo),
+		Suggestion:    handler.NewSuggestionHandler(suggestionRepo, nodeRepo, auditLogger),
 	}
 
 	// Echo

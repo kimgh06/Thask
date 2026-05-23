@@ -1,15 +1,34 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { APIKey, APIKeyCreated } from '$lib/types';
+	import type { APIKey, APIKeyCreated, APIKeyKind, APIKeyPermissions } from '$lib/types';
 	import { Key, Trash2, Copy, Check, ArrowLeft } from 'lucide-svelte';
 
 	let keys = $state<APIKey[]>([]);
 	let loading = $state(true);
 	let keyName = $state('');
+	let keyKind = $state<APIKeyKind>('user_interactive');
 	let expiresIn = $state<string>('');
 	let createError = $state('');
 	let createdKey = $state<string | null>(null);
+	let createdKeyKind = $state<APIKeyKind | null>(null);
 	let copied = $state(false);
+	let showAdvanced = $state(false);
+
+	// Permission presets per kind. Mirrors backend model.DefaultPermissions —
+	// agent keys block semantic writes + verify by default so a hallucinated
+	// description can't silently land in the graph.
+	const presets: Record<APIKeyKind, APIKeyPermissions> = {
+		user_interactive: { read: true, write_structural: true, write_semantic: true, write_meta: true, verify: true, delete: true, suggest: true },
+		agent:            { read: true, write_structural: true, write_semantic: false, write_meta: true, verify: false, delete: true, suggest: true },
+		service:          { read: true, write_structural: true, write_semantic: true, write_meta: true, verify: false, delete: true, suggest: true },
+	};
+
+	let perms = $state<APIKeyPermissions>({ ...presets.user_interactive });
+
+	function applyPreset(kind: APIKeyKind) {
+		keyKind = kind;
+		perms = { ...presets[kind] };
+	}
 
 	$effect(() => {
 		loadKeys();
@@ -27,7 +46,11 @@
 		createError = '';
 		createdKey = null;
 
-		const body: { name: string; expiresIn?: number } = { name: keyName };
+		const body: { name: string; kind: APIKeyKind; permissions: APIKeyPermissions; expiresIn?: number } = {
+			name: keyName,
+			kind: keyKind,
+			permissions: perms,
+		};
 		if (expiresIn) {
 			const parsed = parseInt(expiresIn, 10);
 			if (!isNaN(parsed)) body.expiresIn = parsed;
@@ -40,8 +63,11 @@
 		}
 		if (res.data) {
 			createdKey = res.data.key;
+			createdKeyKind = res.data.kind;
 			keyName = '';
 			expiresIn = '';
+			applyPreset('user_interactive');
+			showAdvanced = false;
 			await loadKeys();
 		}
 	}
@@ -111,6 +137,8 @@
 		<!-- Create Key Form -->
 		<form onsubmit={handleCreate} class="mb-6 p-4 rounded-xl" style="background: var(--color-surface); border: 1px solid var(--color-border);">
 			<h2 class="text-sm font-semibold mb-3" style="color: var(--color-text);">Create API Key</h2>
+
+			<!-- Row 1: name + expiry + submit -->
 			<div class="flex gap-3">
 				<input
 					bind:value={keyName}
@@ -139,6 +167,66 @@
 					Create
 				</button>
 			</div>
+
+			<!-- Row 2: kind radio -->
+			<div class="mt-3 flex flex-wrap gap-2">
+				{#each [
+					{ value: 'user_interactive', label: '직접 사용', hint: 'Browser / CLI you run' },
+					{ value: 'agent', label: 'Claude Code용', hint: 'MCP-driven agent (description writes blocked by default)' },
+					{ value: 'service', label: '자동화', hint: 'CI / scheduled jobs' },
+				] as opt}
+					<label
+						class="flex-1 px-3 py-2 rounded-lg text-xs cursor-pointer"
+						style="background: {keyKind === opt.value ? 'var(--color-primary-bg)' : 'var(--color-bg)'}; border: 1px solid {keyKind === opt.value ? 'var(--color-primary)' : 'var(--color-border)'};"
+					>
+						<input
+							type="radio"
+							name="kind"
+							value={opt.value}
+							checked={keyKind === opt.value}
+							onchange={() => applyPreset(opt.value as APIKeyKind)}
+							class="sr-only"
+						/>
+						<div class="font-medium" style="color: var(--color-text);">{opt.label}</div>
+						<div class="text-xs mt-0.5" style="color: var(--color-text-muted);">{opt.hint}</div>
+					</label>
+				{/each}
+			</div>
+
+			<!-- Row 3: advanced (permissions checkboxes) -->
+			<div class="mt-3">
+				<button
+					type="button"
+					onclick={() => (showAdvanced = !showAdvanced)}
+					class="text-xs underline"
+					style="color: var(--color-text-muted);"
+				>
+					{showAdvanced ? '▾ 권한 숨기기' : '▸ 권한 (고급)'}
+				</button>
+				{#if showAdvanced}
+					<div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 p-3 rounded-lg" style="background: var(--color-bg); border: 1px solid var(--color-border);">
+						{#each [
+							{ key: 'read', label: 'read — 조회' },
+							{ key: 'write_structural', label: 'write_structural — 노드/엣지 추가' },
+							{ key: 'write_semantic', label: 'write_semantic — description 작성' },
+							{ key: 'write_meta', label: 'write_meta — status/position/tags' },
+							{ key: 'verify', label: 'verify — "확인됨" 마킹' },
+							{ key: 'delete', label: 'delete — 노드/엣지 삭제' },
+							{ key: 'suggest', label: 'suggest — 큐에 제안 적재' },
+						] as f}
+							<label class="flex items-center gap-2 text-xs" style="color: var(--color-text);">
+								<input
+									type="checkbox"
+									checked={perms[f.key as keyof APIKeyPermissions]}
+									onchange={(e) => (perms = { ...perms, [f.key]: (e.target as HTMLInputElement).checked })}
+								/>
+								<span>{f.label}</span>
+							</label>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
 			{#if createError}
 				<p class="mt-2 text-sm" style="color: var(--color-danger);">{createError}</p>
 			{/if}
@@ -167,7 +255,18 @@
 					>
 						<Key size={14} style="color: var(--color-text-muted); flex-shrink: 0;" />
 						<div class="flex-1 min-w-0">
-							<p class="text-sm font-medium truncate" style="color: var(--color-text);">{key.name}</p>
+							<div class="flex items-center gap-2">
+								<p class="text-sm font-medium truncate" style="color: var(--color-text);">{key.name}</p>
+								{#if key.kind}
+									<span
+										class="text-[10px] px-1.5 py-0.5 rounded font-mono"
+										style="background: {key.kind === 'agent' ? 'rgba(245,158,11,0.15)' : key.kind === 'service' ? 'rgba(94,168,122,0.15)' : 'var(--color-bg)'}; color: var(--color-text-muted); border: 1px solid var(--color-border);"
+										title="API key kind"
+									>
+										{key.kind}
+									</span>
+								{/if}
+							</div>
 							<p class="text-xs" style="color: var(--color-text-muted);">
 								{key.keyPrefix}... · Created {formatDate(key.createdAt)}
 								{#if key.lastUsedAt} · Last used {formatDate(key.lastUsedAt)}{/if}

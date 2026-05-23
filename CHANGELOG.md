@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.9] - 2026-05-23
+
+### Added
+- **Audit log with 6-dimension provenance**: every write now records `actor_kind` (user_interactive/agent/service/scanner/system), `client_type` + `client_version` (parsed from `X-Thask-Client` header), `agent_model` + `agent_session_id`, `mutation_kind` (structural/semantic/meta), `trigger`, `batch_id`, optional evidence (`code_commit`, `source_path`, `confidence`). Single `audit_log` table replaces `node_history` over a deprecation window — historical rows backfilled in place via migration 010.
+- **Node provenance snapshot**: `description_source` (human/agent/scanner/import/unknown), `description_authored_by`, `description_authored_at`, `description_agent_model`, `last_verified_at`, `last_verified_by`, `last_verified_commit`, `field_provenance` JSONB columns on the `nodes` table. Read responses surface these so downstream agents can tell "another agent wrote this, not verified" from "human-authored".
+- **Per-API-key permissions**: `api_keys.kind` (`user_interactive` / `agent` / `service`) + `permissions` JSONB with seven flags (`read`, `write_structural`, `write_semantic`, `write_meta`, `verify`, `delete`, `suggest`). Agent-kind keys default to `write_semantic=false`, `verify=false` — they cannot write descriptions or mark nodes verified without an explicit opt-in. Settings UI offers a kind preset selector plus a collapsible per-flag checkbox panel.
+- **Suggestion queue**: agents proposing description changes go through `node_suggestions` instead of mutating directly. Pending suggestions are visible to human reviewers; accepting copies the proposed value into the node and credits the deciding human as the author (the agent is only mentioned in audit metadata). Duplicates on the same node+field auto-supersede.
+- **`thask.node.suggest_update` / `thask.suggestions.list` / `thask.suggestions.decide` / `thask.node.verify` MCP tools** — the human-in-the-loop pipeline surfaced to AI agents.
+- **`X-Thask-Client` header**: CLI sends `thask-cli/<ver>`; MCP sends `thask-mcp/<ver> model=<client> session=<uuid>` (model parsed from MCP `clientInfo`, session is a per-server-instance UUID). Backend parses into audit_log channel fields.
+- **Permission denial response format**: `403` with the missing permission flag name and (where relevant) the alternative tool to use, e.g. *"This API key lacks the 'write_semantic' permission. Use thask.node.suggest_update to propose this change for human review."* Denials are themselves recorded in `audit_log` with `action='write_denied'` so key owners can audit attempted writes.
+- **Audit coverage extended to all writes**: previously only node create/update/batch_status logged. v0.5.9 covers node delete, node import (with `batch_id`), edge create/update/delete, graph layout, batch deletes, batch positions, batch status — closing the gaps surfaced during the pre-implementation audit.
+
+### Changed
+- **`audit.RequirePermission` gates write paths**: every node/edge handler now classifies the operation (structural/semantic/meta) and checks the caller's per-key flag before mutating. Field-level for `node.update` (description → semantic, type/parent_id → structural, status/position/tags → meta).
+- **`api_keys` Create signature**: now requires `kind` and `permissions` parameters. Existing keys are migrated to `kind='user_interactive'` with all-true permissions to preserve current behavior.
+
+### Internal
+- New `internal/audit` package — lives outside `service` to avoid an import cycle with `middleware`. `Logger.Log()` extracts actor/channel from echo context; `RequirePermission()` returns a 403 echo response and records the denial.
+- New `repository/audit.go`, `repository/suggestion.go`, `handler/suggestion.go`, `dto.SuggestNodeUpdateRequest` / `DecideSuggestionRequest` / `VerifyNodeRequest`.
+- `NodeRepo.UpdateDescriptionProvenance()` and `NodeRepo.MarkVerified()` stamp the snapshot columns; both are called by handlers after a successful mutation.
+- Migrations 006–010 added; `audit_log` indexed on `(project_id, created_at DESC)`, `(entity_type, entity_id)`, `(actor_kind, agent_model)`, and a partial `(batch_id) WHERE batch_id IS NOT NULL`.
+- Tests pass: `go test ./...` clean on backend + CLI, `svelte-check` 0 errors on frontend.
+
+### Docs
+- `docs/DATABASE.md` — new "Provenance & Audit" section covering `audit_log`, `node_suggestions`, the node provenance columns, the `api_keys.kind/permissions` extension, and the backfill migration.
+- `docs/API.md` — `X-Thask-Client` header spec, suggestion queue endpoints, `verify` endpoint, permission denial response shape, extended `Create API Key` body.
+- `docs/MCP.md` — four new tools with required permissions, the recommended agent workflow ("read → re-derive from code → suggest_update"), provenance fields in read responses, and a note that agent keys are blocked from `thask.node.update {description}` and `thask.node.verify` by default.
+
+### Improved
+- **Edge routing rewrite**: new client-side A\* grid pathfinder (`frontend/src/lib/cytoscape/gridRouter.ts`) routes edges around node and group obstacles with configurable bend / backtrack penalties. `edgeRouter.ts` delegates obstacle avoidance to the grid router and short-circuits the 8-direction waypoint helper for nearly-axis-aligned or 45°-diagonal pairs to avoid degenerate routes.
+- **Backend layout simplification**: removed three predict-and-refine passes that probed candidate routes during placement (`refineTopLevelLayersByPredictedRoutes`, `refineLayerOrderByPredictedRoutes`, `refineLayerCentersByPredictedRoutes`) along with the related cleanup. The new client-side grid router handles obstacle avoidance, so the server stops paying the cost of guessing routes that the client will recompute anyway. Net −250 lines across `layout.go`, `layout_child.go`, `layout_child_slots.go`, `layout_group.go`.
+
 ## [0.5.8] - 2026-05-11
 
 ### Added

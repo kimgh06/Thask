@@ -55,19 +55,56 @@ func (h *APIKeyHandler) Create(c echo.Context) error {
 		expiresAt = &t
 	}
 
-	apiKey, err := h.apiKeyRepo.Create(ctx, userID, req.Name, keyPrefix, keyHash, expiresAt)
+	kind := model.APIKeyKind(req.Kind)
+	if kind == "" {
+		kind = model.APIKeyKindUserInteractive
+	}
+	perms := model.DefaultPermissions(kind)
+	if req.Permissions != nil {
+		applyPermissionOverrides(&perms, *req.Permissions)
+	}
+
+	apiKey, err := h.apiKeyRepo.Create(ctx, userID, req.Name, keyPrefix, keyHash, kind, perms, expiresAt)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to create API key"))
 	}
 
 	return c.JSON(http.StatusCreated, dto.OK(map[string]any{
-		"id":        apiKey.ID,
-		"name":      apiKey.Name,
-		"keyPrefix": apiKey.KeyPrefix,
-		"key":       plainKey, // one-time display
-		"expiresAt": apiKey.ExpiresAt,
-		"createdAt": apiKey.CreatedAt,
+		"id":          apiKey.ID,
+		"name":        apiKey.Name,
+		"keyPrefix":   apiKey.KeyPrefix,
+		"kind":        apiKey.Kind,
+		"permissions": apiKey.Permissions,
+		"key":         plainKey, // one-time display
+		"expiresAt":   apiKey.ExpiresAt,
+		"createdAt":   apiKey.CreatedAt,
 	}))
+}
+
+// applyPermissionOverrides mutates perms in place, applying any boolean
+// fields present in the override map. Missing keys leave the preset intact.
+func applyPermissionOverrides(perms *model.APIKeyPermissions, override map[string]bool) {
+	if v, ok := override["read"]; ok {
+		perms.Read = v
+	}
+	if v, ok := override["write_structural"]; ok {
+		perms.WriteStructural = v
+	}
+	if v, ok := override["write_semantic"]; ok {
+		perms.WriteSemantic = v
+	}
+	if v, ok := override["write_meta"]; ok {
+		perms.WriteMeta = v
+	}
+	if v, ok := override["verify"]; ok {
+		perms.Verify = v
+	}
+	if v, ok := override["delete"]; ok {
+		perms.Delete = v
+	}
+	if v, ok := override["suggest"]; ok {
+		perms.Suggest = v
+	}
 }
 
 func (h *APIKeyHandler) List(c echo.Context) error {

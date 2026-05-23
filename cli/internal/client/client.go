@@ -13,6 +13,10 @@ type Client struct {
 	BaseURL    string
 	Token      string
 	HTTPClient *http.Client
+	// ClientHeader is sent as X-Thask-Client on every outbound request so the
+	// backend can record provenance (cli vs mcp vs web) in audit_log.
+	// Format: "thask-cli/<ver>" or "thask-mcp/<ver> model=... session=...".
+	ClientHeader string
 }
 
 type APIResponse struct {
@@ -47,6 +51,9 @@ func (c *Client) do(method, path string, body any) (json.RawMessage, error) {
 
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set("Content-Type", "application/json")
+	if c.ClientHeader != "" {
+		req.Header.Set("X-Thask-Client", c.ClientHeader)
+	}
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
@@ -105,6 +112,9 @@ func (c *Client) GetRaw(path, accept string) ([]byte, string, error) {
 	}
 
 	req.Header.Set("Authorization", "Bearer "+c.Token)
+	if c.ClientHeader != "" {
+		req.Header.Set("X-Thask-Client", c.ClientHeader)
+	}
 	if accept != "" {
 		req.Header.Set("Accept", accept)
 	}

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	cryptoRand "crypto/rand"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/thask/backend/internal/audit"
 	"github.com/thask/backend/internal/dto"
 	mw "github.com/thask/backend/internal/middleware"
 	"github.com/thask/backend/internal/model"
@@ -20,18 +22,19 @@ type NodeHandler struct {
 	nodeRepo       *repository.NodeRepo
 	edgeRepo       *repository.EdgeRepo
 	historyRepo    *repository.HistoryRepo
+	audit          *audit.Logger
 	hub            *service.Hub
 	captureURL     string
 	captureSecret  string
 	captureTimeout time.Duration
 }
 
-func NewNodeHandler(nodeRepo *repository.NodeRepo, edgeRepo *repository.EdgeRepo, historyRepo *repository.HistoryRepo, hub *service.Hub, captureURL, captureSecret string, captureTimeout time.Duration) *NodeHandler {
+func NewNodeHandler(nodeRepo *repository.NodeRepo, edgeRepo *repository.EdgeRepo, historyRepo *repository.HistoryRepo, auditLogger *audit.Logger, hub *service.Hub, captureURL, captureSecret string, captureTimeout time.Duration) *NodeHandler {
 	if captureTimeout <= 0 {
 		captureTimeout = 30 * time.Second
 	}
 	return &NodeHandler{
-		nodeRepo: nodeRepo, edgeRepo: edgeRepo, historyRepo: historyRepo, hub: hub,
+		nodeRepo: nodeRepo, edgeRepo: edgeRepo, historyRepo: historyRepo, audit: auditLogger, hub: hub,
 		captureURL: captureURL, captureSecret: captureSecret, captureTimeout: captureTimeout,
 	}
 }
@@ -177,9 +180,22 @@ func (h *NodeHandler) Layout(c echo.Context) error {
 		}{lp.ID, lp.X, lp.Y, lp.Width, lp.Height}
 	}
 
+	if err := h.audit.RequirePermission(c, audit.MutationMeta, "write", audit.Event{
+		ProjectID: projectID, EntityType: "graph", Action: audit.ActionLayoutComputed,
+	}); err != nil {
+		return err
+	}
+
 	if err := h.nodeRepo.BatchUpdatePositions(ctx, projectID, positions); err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to save layout"))
 	}
+
+	h.audit.Log(c, audit.Event{
+		ProjectID: projectID, EntityType: "graph",
+		Action: audit.ActionLayoutComputed, MutationKind: audit.MutationMeta,
+		Trigger: "layout",
+		Metadata: map[string]any{"algorithm": algorithm, "count": len(positions)},
+	})
 
 	nodes, _ = h.nodeRepo.FindByProjectID(ctx, projectID, nil, nil)
 	if nodes == nil {
@@ -208,6 +224,21 @@ func (h *NodeHandler) Import(c echo.Context) error {
 
 	ctx := c.Request().Context()
 	projectID := mw.ResolveProjectID(c)
+
+	// Classify the import: any node with a description means the payload
+	// carries semantic claims, so it must clear write_semantic.
+	importKind := audit.MutationStructural
+	for _, item := range req.Nodes {
+		if item.Description != nil && *item.Description != "" {
+			importKind = audit.MutationSemantic
+			break
+		}
+	}
+	if err := h.audit.RequirePermission(c, importKind, "write", audit.Event{
+		ProjectID: projectID, EntityType: "graph", Action: audit.ActionImported,
+	}); err != nil {
+		return err
+	}
 
 	tx, err := h.nodeRepo.Pool().Begin(ctx)
 	if err != nil {
@@ -306,6 +337,21 @@ func (h *NodeHandler) Import(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to commit import"))
 	}
 
+	// One batch event for the import — per-node rows would explode audit_log
+	// without adding much investigative value. The batch_id ties any future
+	// "what did this import do" queries together.
+	batchID := newBatchID()
+	h.audit.Log(c, audit.Event{
+		ProjectID: projectID, EntityType: "graph",
+		Action: audit.ActionImported, MutationKind: importKind,
+		BatchID: batchID, Trigger: "import",
+		Metadata: map[string]any{
+			"mode":  req.Mode,
+			"nodes": len(createdNodes),
+			"edges": len(createdEdges),
+		},
+	})
+
 	// For replace mode, return only imported data
 	// For merge mode, return full graph
 	if req.Mode == "merge" {
@@ -380,6 +426,19 @@ func (h *NodeHandler) Create(c echo.Context) error {
 	projectID := mw.ResolveProjectID(c)
 	userID := mw.GetUserID(c)
 
+	// Permission gate: a Create that carries a description is a semantic write
+	// (the description is the new claim about reality); a bare structural
+	// node is fine for agents. Reject upfront so the request never mutates.
+	mutationKind := audit.MutationStructural
+	if req.Description != nil && *req.Description != "" {
+		mutationKind = audit.MutationSemantic
+	}
+	if err := h.audit.RequirePermission(c, mutationKind, "write", audit.Event{
+		ProjectID: projectID, EntityType: "node", Action: audit.ActionCreated,
+	}); err != nil {
+		return err
+	}
+
 	status := model.NodeStatus(req.Status)
 	if status == "" {
 		status = model.NodeStatusInProgress
@@ -413,6 +472,12 @@ func (h *NodeHandler) Create(c echo.Context) error {
 		title := created.Title
 		_ = h.historyRepo.Create(ctx, created.ID, projectID, userID, model.HistoryActionCreated, strPtr("title"), nil, &title)
 	}
+
+	h.audit.Log(c, audit.Event{
+		ProjectID: projectID, EntityType: "node", EntityID: created.ID,
+		Action: audit.ActionCreated, MutationKind: mutationKind,
+		FieldName: "title", NewValue: created.Title,
+	})
 
 	h.hub.Publish(service.Event{Type: service.EventNodeCreated, ProjectID: projectID, Data: created, UserID: userID})
 	return c.JSON(http.StatusCreated, dto.OK(created))
@@ -486,23 +551,57 @@ func (h *NodeHandler) Update(c echo.Context) error {
 		return c.JSON(http.StatusOK, dto.OK(map[string]any{"node": existing, "propagated": []service.StatusChange{}}))
 	}
 
+	// Permission gate: classify every field being touched and reject the whole
+	// update if the key lacks permission for any one of them. Rejection is
+	// per-field so the response message points at the actual blocked flag.
+	for field := range fields {
+		mk := mutationKindForNodeField(field)
+		if err := h.audit.RequirePermission(c, mk, "write", audit.Event{
+			ProjectID: projectID, EntityType: "node", EntityID: nodeID,
+			Action: audit.ActionUpdated, FieldName: field, MutationKind: mk,
+		}); err != nil {
+			return err
+		}
+	}
+
 	updated, err := h.nodeRepo.Update(ctx, nodeID, fields)
 	if err != nil {
 		slog.Error("nodeRepo.Update failed", "nodeId", nodeID, "error", err, "fields", fields)
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update node"))
 	}
 
-	// Record history (skip for anonymous shared access)
-	if userID != mw.AnonymousUserID {
-		for field, val := range fields {
+	// Record history (skip for anonymous shared access) + parallel audit_log row.
+	for field, val := range fields {
+		oldVal := getOldValue(existing, field)
+		newVal := fmt.Sprintf("%v", val)
+		mk := mutationKindForNodeField(field)
+
+		if userID != mw.AnonymousUserID {
 			action := model.HistoryActionUpdated
 			if field == "status" {
 				action = model.HistoryActionStatusChanged
 			}
-			oldVal := getOldValue(existing, field)
-			newVal := fmt.Sprintf("%v", val)
 			_ = h.historyRepo.Create(ctx, nodeID, projectID, userID, action, &field, oldVal, &newVal)
 		}
+
+		auditAction := audit.ActionUpdated
+		if field == "status" {
+			auditAction = audit.ActionStatusChanged
+		}
+		evt := audit.Event{
+			ProjectID: projectID, EntityType: "node", EntityID: nodeID,
+			Action: auditAction, FieldName: field, MutationKind: mk, NewValue: newVal,
+		}
+		if oldVal != nil {
+			evt.OldValue = *oldVal
+		}
+		h.audit.Log(c, evt)
+	}
+
+	// If description was changed by a non-anonymous user, refresh the snapshot
+	// provenance columns on the node so future readers can see who wrote it.
+	if _, ok := fields["description"]; ok && userID != mw.AnonymousUserID {
+		_ = h.nodeRepo.UpdateDescriptionProvenance(ctx, nodeID, userID, descriptionSourceForActor(c), mw.GetAgentModel(c))
 	}
 
 	// Waterfall propagation
@@ -520,11 +619,28 @@ func (h *NodeHandler) Delete(c echo.Context) error {
 	projectID := mw.ResolveProjectID(c)
 	nodeID := c.Param("nodeId")
 
+	if err := h.audit.RequirePermission(c, audit.MutationStructural, "delete", audit.Event{
+		ProjectID: projectID, EntityType: "node", EntityID: nodeID, Action: audit.ActionDeleted,
+	}); err != nil {
+		return err
+	}
+
+	// Snapshot the title before deletion so audit_log has a human-readable trace.
+	existingTitle := ""
+	if existing, ferr := h.nodeRepo.FindByID(ctx, nodeID, projectID); ferr == nil && existing != nil {
+		existingTitle = existing.Title
+	}
+
 	if err := h.nodeRepo.Delete(ctx, nodeID, projectID); err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to delete node"))
 	}
 
 	userID := mw.GetUserID(c)
+	h.audit.Log(c, audit.Event{
+		ProjectID: projectID, EntityType: "node", EntityID: nodeID,
+		Action: audit.ActionDeleted, MutationKind: audit.MutationStructural,
+		FieldName: "title", OldValue: existingTitle,
+	})
 	h.hub.Publish(service.Event{Type: service.EventNodeDeleted, ProjectID: projectID, Data: nodeID, UserID: userID})
 	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
 }
@@ -556,10 +672,23 @@ func (h *NodeHandler) BatchUpdatePositions(c echo.Context) error {
 		}{p.ID, p.X, p.Y, p.Width, p.Height}
 	}
 
+	if err := h.audit.RequirePermission(c, audit.MutationMeta, "write", audit.Event{
+		ProjectID: projectID, EntityType: "graph", Action: audit.ActionLayoutComputed,
+	}); err != nil {
+		return err
+	}
+
 	if err := h.nodeRepo.BatchUpdatePositions(ctx, projectID, positions); err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update positions"))
 	}
 
+	// One batch event for the whole drag/layout pass — emitting N rows per
+	// position update would flood audit_log with low-value churn.
+	h.audit.Log(c, audit.Event{
+		ProjectID: projectID, EntityType: "graph",
+		Action: audit.ActionLayoutComputed, MutationKind: audit.MutationMeta,
+		Trigger: "layout", Metadata: map[string]any{"count": len(positions)},
+	})
 	h.hub.Publish(service.Event{Type: service.EventNodeUpdated, ProjectID: projectID, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
 }
@@ -576,10 +705,22 @@ func (h *NodeHandler) BatchDelete(c echo.Context) error {
 	ctx := c.Request().Context()
 	projectID := mw.ResolveProjectID(c)
 
+	if err := h.audit.RequirePermission(c, audit.MutationStructural, "delete", audit.Event{
+		ProjectID: projectID, EntityType: "node", Action: audit.ActionDeleted,
+	}); err != nil {
+		return err
+	}
+
 	if err := h.nodeRepo.BatchDelete(ctx, projectID, req.IDs); err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to delete nodes"))
 	}
 
+	for _, id := range req.IDs {
+		h.audit.Log(c, audit.Event{
+			ProjectID: projectID, EntityType: "node", EntityID: id,
+			Action: audit.ActionDeleted, MutationKind: audit.MutationStructural, Trigger: "batch",
+		})
+	}
 	h.hub.Publish(service.Event{Type: service.EventNodeDeleted, ProjectID: projectID, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
 }
@@ -596,10 +737,23 @@ func (h *NodeHandler) BatchUpdateStatus(c echo.Context) error {
 	ctx := c.Request().Context()
 	projectID := mw.ResolveProjectID(c)
 
+	if err := h.audit.RequirePermission(c, audit.MutationMeta, "write", audit.Event{
+		ProjectID: projectID, EntityType: "node", Action: audit.ActionStatusChanged, FieldName: "status",
+	}); err != nil {
+		return err
+	}
+
 	if err := h.nodeRepo.BatchUpdateStatus(ctx, projectID, req.IDs, model.NodeStatus(req.Status)); err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update status"))
 	}
 
+	for _, id := range req.IDs {
+		h.audit.Log(c, audit.Event{
+			ProjectID: projectID, EntityType: "node", EntityID: id,
+			Action: audit.ActionStatusChanged, MutationKind: audit.MutationMeta,
+			FieldName: "status", NewValue: req.Status, Trigger: "batch",
+		})
+	}
 	h.hub.Publish(service.Event{Type: service.EventNodeUpdated, ProjectID: projectID, UserID: mw.GetUserID(c)})
 	return c.JSON(http.StatusOK, dto.OK(dto.SuccessResponse{Success: true}))
 }
@@ -690,4 +844,56 @@ func getOldValue(n *model.Node, field string) *string {
 		return nil
 	}
 	return &v
+}
+
+// mutationKindForNodeField maps a node field to the permission class that
+// gates writes to it. Keep in sync with audit.MutationKind constants.
+//
+//	semantic    — claims about reality (description, "why" content)
+//	structural  — graph topology / typing (type, parent_id)
+//	meta        — operational state (status, position, tags, assignee)
+func mutationKindForNodeField(field string) string {
+	switch field {
+	case "description":
+		return audit.MutationSemantic
+	case "type", "parent_id":
+		return audit.MutationStructural
+	default:
+		return audit.MutationMeta
+	}
+}
+
+// newBatchID returns a UUID-format string suitable for audit_log.batch_id. We
+// avoid adding a new dependency by composing 16 random bytes into the standard
+// 8-4-4-4-12 format. Collision risk is negligible for batch grouping.
+func newBatchID() string {
+	var b [16]byte
+	if _, err := cryptoRand.Read(b[:]); err != nil {
+		// Extremely unlikely; the worst-case is duplicate batch IDs, not an
+		// auth/security issue, so we silently fall back to a static value.
+		return "00000000-0000-0000-0000-000000000000"
+	}
+	// RFC 4122 variant + version 4
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// descriptionSourceForActor maps the caller's actor_kind to the description_source
+// enum stored on nodes (migration 007). Falls back to "unknown" when the kind
+// is missing or unrecognised.
+func descriptionSourceForActor(c echo.Context) string {
+	switch mw.GetActorKind(c) {
+	case "user_interactive":
+		return "human"
+	case "agent":
+		return "agent"
+	case "scanner":
+		return "scanner"
+	case "service":
+		return "import"
+	default:
+		return "unknown"
+	}
 }

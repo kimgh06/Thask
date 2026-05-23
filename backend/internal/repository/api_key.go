@@ -17,14 +17,14 @@ func NewAPIKeyRepo(pool *pgxpool.Pool) *APIKeyRepo {
 	return &APIKeyRepo{pool: pool}
 }
 
-func (r *APIKeyRepo) Create(ctx context.Context, userID, name, keyPrefix, keyHash string, expiresAt *time.Time) (*model.APIKey, error) {
+func (r *APIKeyRepo) Create(ctx context.Context, userID, name, keyPrefix, keyHash string, kind model.APIKeyKind, perms model.APIKeyPermissions, expiresAt *time.Time) (*model.APIKey, error) {
 	var k model.APIKey
 	err := r.pool.QueryRow(ctx,
-		`INSERT INTO api_keys (user_id, name, key_prefix, key_hash, expires_at)
-		 VALUES ($1, $2, $3, $4, $5)
-		 RETURNING id, user_id, name, key_prefix, last_used_at, expires_at, created_at`,
-		userID, name, keyPrefix, keyHash, expiresAt,
-	).Scan(&k.ID, &k.UserID, &k.Name, &k.KeyPrefix, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt)
+		`INSERT INTO api_keys (user_id, name, key_prefix, key_hash, kind, permissions, expires_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 RETURNING id, user_id, name, key_prefix, kind, permissions, last_used_at, expires_at, created_at`,
+		userID, name, keyPrefix, keyHash, string(kind), perms, expiresAt,
+	).Scan(&k.ID, &k.UserID, &k.Name, &k.KeyPrefix, &k.Kind, &k.Permissions, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +35,7 @@ func (r *APIKeyRepo) FindByKeyHash(ctx context.Context, keyHash string) (*model.
 	var k model.APIKey
 	var u model.User
 	err := r.pool.QueryRow(ctx,
-		`SELECT ak.id, ak.user_id, ak.name, ak.key_prefix, ak.last_used_at, ak.expires_at, ak.created_at,
+		`SELECT ak.id, ak.user_id, ak.name, ak.key_prefix, ak.kind, ak.permissions, ak.last_used_at, ak.expires_at, ak.created_at,
 		        u.id, u.email, u.display_name, u.created_at, u.updated_at
 		 FROM api_keys ak
 		 INNER JOIN users u ON ak.user_id = u.id
@@ -43,7 +43,7 @@ func (r *APIKeyRepo) FindByKeyHash(ctx context.Context, keyHash string) (*model.
 		   AND (ak.expires_at IS NULL OR ak.expires_at > now())`,
 		keyHash,
 	).Scan(
-		&k.ID, &k.UserID, &k.Name, &k.KeyPrefix, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt,
+		&k.ID, &k.UserID, &k.Name, &k.KeyPrefix, &k.Kind, &k.Permissions, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt,
 		&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
@@ -54,7 +54,7 @@ func (r *APIKeyRepo) FindByKeyHash(ctx context.Context, keyHash string) (*model.
 
 func (r *APIKeyRepo) FindByUserID(ctx context.Context, userID string) ([]model.APIKey, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, user_id, name, key_prefix, last_used_at, expires_at, created_at
+		`SELECT id, user_id, name, key_prefix, kind, permissions, last_used_at, expires_at, created_at
 		 FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC`,
 		userID,
 	)
@@ -66,7 +66,7 @@ func (r *APIKeyRepo) FindByUserID(ctx context.Context, userID string) ([]model.A
 	var keys []model.APIKey
 	for rows.Next() {
 		var k model.APIKey
-		if err := rows.Scan(&k.ID, &k.UserID, &k.Name, &k.KeyPrefix, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.UserID, &k.Name, &k.KeyPrefix, &k.Kind, &k.Permissions, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt); err != nil {
 			return nil, err
 		}
 		keys = append(keys, k)

@@ -23,6 +23,20 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// InitializeParams is what the client sends in the initial handshake.
+// We capture clientInfo so the audit_log can attribute writes to the right
+// agent (Claude Code, Cursor, Codex, etc).
+type InitializeParams struct {
+	ProtocolVersion string                 `json:"protocolVersion"`
+	ClientInfo      *InitializeClientInfo  `json:"clientInfo,omitempty"`
+	Capabilities    map[string]any         `json:"capabilities,omitempty"`
+}
+
+type InitializeClientInfo struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
 type InitializeResult struct {
 	ProtocolVersion string       `json:"protocolVersion"`
 	Capabilities    Capabilities `json:"capabilities"`

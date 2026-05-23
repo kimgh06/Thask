@@ -32,6 +32,10 @@ const (
 func SharedAccess(projectRepo *repository.ProjectRepo) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			injectClient(c)
+			c.Set(ContextActorKind, string(model.APIKeyKindUserInteractive))
+			c.Set(ContextPermissions, allPermissions)
+
 			token := c.Param("shareToken")
 			if token == "" {
 				return c.JSON(http.StatusNotFound, dto.Err("Not found"))

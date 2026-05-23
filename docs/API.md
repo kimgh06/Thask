@@ -807,3 +807,96 @@ All inputs are validated with Go struct tags (`validate`):
 | Batch Positions | positions array with id, x, y required |
 | Create Edge | sourceId (required), targetId (required) |
 | Update Edge | edgeType and label optional |
+| Create API Key | name (required), kind (`user_interactive`/`agent`/`service`, optional) |
+| Suggest Update | proposedValue (required) |
+| Decide Suggestion | status (`accepted`/`rejected`) |
+
+---
+
+## Provenance & Suggestion Queue (v0.5.9)
+
+Every write attaches the caller's identity, channel, and operation class to
+`audit_log`. Agent-kind API keys cannot write semantic fields (descriptions)
+or verify nodes by default — they must go through the suggestion queue and
+let a human approve.
+
+### `X-Thask-Client` header
+
+All clients should set this so audit_log records the channel:
+
+```
+X-Thask-Client: thask-cli/0.5.9
+X-Thask-Client: thask-mcp/0.5.9 model=claude-code/0.1.0 session=ab12cd34ef56
+X-Thask-Client: thask-web/abc123
+```
+
+The CLI and MCP server set this automatically. Web requests should set it too
+(currently optional — falls back to "unknown" when absent).
+
+### Suggestion queue
+
+| Method | Path | Required perm | Purpose |
+|---|---|---|---|
+| `POST` | `/api/projects/:projectId/nodes/:nodeId/suggestions` | `suggest` | Queue an agent-proposed change |
+| `GET` | `/api/projects/:projectId/suggestions?limit=N` | `read` | List pending suggestions |
+| `PATCH` | `/api/projects/:projectId/suggestions/:suggestionId` | `write_semantic` (when accepting) | Accept/reject |
+
+**Suggest body:**
+```json
+{
+  "fieldName": "description",
+  "proposedValue": "Auth flow now supports OAuth2 refresh tokens",
+  "rationale": "src/auth/oauth.ts:42 added refreshToken() in commit abc1234",
+  "evidence": { "codeCommit": "abc1234", "sourcePaths": ["src/auth/oauth.ts"], "confidence": "high" }
+}
+```
+
+**Decide body:**
+```json
+{ "status": "accepted", "reason": "verified against commit abc1234" }
+```
+
+Accepting copies `proposedValue` into the node and stamps
+`description_authored_by = <decider user_id>`. The original agent is credited
+in `audit_log.metadata` but not as the field author.
+
+### Verify
+
+| Method | Path | Required perm | Purpose |
+|---|---|---|---|
+| `POST` | `/api/projects/:projectId/nodes/:nodeId/verify` | `verify` | Stamp "still correct" |
+
+```json
+{ "commit": "abc1234" }
+```
+
+Sets `last_verified_at = now()`, `last_verified_by = <caller>`, `last_verified_commit = <commit>`.
+Default-blocked for agent keys.
+
+### Permission denials
+
+When a key lacks the required permission, the server returns `403` with the
+missing flag name and (when applicable) an alternative tool to use:
+
+```json
+{
+  "error": "This API key lacks the 'write_semantic' permission. Use thask.node.suggest_update to propose this change for human review."
+}
+```
+
+The denial itself is recorded in `audit_log` with `action='write_denied'` so
+key owners can audit who tried what.
+
+### Create API key body (v0.5.9 extension)
+
+```json
+{
+  "name": "Claude Agent",
+  "kind": "agent",
+  "permissions": { "write_semantic": false, "verify": false },
+  "expiresIn": 90
+}
+```
+
+`kind` defaults to `user_interactive`. `permissions` overrides individual flags
+on top of the kind-preset; omitted flags inherit preset defaults.
