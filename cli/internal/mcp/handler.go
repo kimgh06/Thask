@@ -37,6 +37,11 @@ var handlers = map[string]ToolHandler{
 	"thask.suggestions.list":    handleSuggestionsList,
 	"thask.suggestions.decide":  handleSuggestionsDecide,
 	"thask.node.verify":         handleNodeVerify,
+
+	// Bulk operations (v0.5.10).
+	"thask.node.batch_update": handleNodeBatchUpdate,
+	"thask.edge.batch_create": handleEdgeBatchCreate,
+	"thask.edge.batch_delete": handleEdgeBatchDelete,
 }
 
 func HandleToolCall(c *client.Client, name string, args json.RawMessage) (any, error) {
@@ -113,6 +118,14 @@ func handleNodeUpdate(c *client.Client, args map[string]any) (any, error) {
 	}
 	if v, ok := args["tags"]; ok {
 		body["tags"] = v
+	}
+	// parentId/assigneeId are pointer-typed on the backend so "" means
+	// unparent/unassign while omission means "leave as-is". Pass through
+	// only when the agent included the key.
+	for _, k := range []string{"parentId", "assigneeId"} {
+		if v, ok := args[k]; ok {
+			body[k] = v
+		}
 	}
 	return c.Patch("/api/projects/"+pid+"/nodes/"+nid, body)
 }
@@ -367,4 +380,25 @@ func handleNodeVerify(c *client.Client, args map[string]any) (any, error) {
 		body["commit"] = v
 	}
 	return c.Post("/api/projects/"+pid+"/nodes/"+nid+"/verify", body)
+}
+
+func handleNodeBatchUpdate(c *client.Client, args map[string]any) (any, error) {
+	pid := str(args, "projectId")
+	return c.Patch("/api/projects/"+pid+"/nodes/batch-update", map[string]any{
+		"updates": args["updates"],
+	})
+}
+
+func handleEdgeBatchCreate(c *client.Client, args map[string]any) (any, error) {
+	pid := str(args, "projectId")
+	return c.Post("/api/projects/"+pid+"/edges/batch-create", map[string]any{
+		"edges": args["edges"],
+	})
+}
+
+func handleEdgeBatchDelete(c *client.Client, args map[string]any) (any, error) {
+	pid := str(args, "projectId")
+	return c.Post("/api/projects/"+pid+"/edges/batch-delete", map[string]any{
+		"edgeIds": args["edgeIds"],
+	})
 }

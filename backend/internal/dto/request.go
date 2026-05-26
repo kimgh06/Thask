@@ -179,3 +179,47 @@ type DecideSuggestionRequest struct {
 type VerifyNodeRequest struct {
 	Commit string `json:"commit" validate:"omitempty,max=64"`
 }
+
+// BatchNodeUpdateRequest is the body for PATCH /api/projects/:pid/nodes/batch-update.
+// Each item carries the target node id plus any subset of fields to change.
+// Use this instead of looping node.update — it cuts agent context overhead and
+// runs the whole batch under one transaction so cycle / permission failures
+// roll back atomically.
+type BatchNodeUpdateRequest struct {
+	Updates []BatchNodeUpdateItem `json:"updates" validate:"required,min=1,max=200,dive"`
+}
+
+type BatchNodeUpdateItem struct {
+	NodeID      string   `json:"nodeId"      validate:"required,uuid"`
+	Type        *string  `json:"type,omitempty"        validate:"omitempty,oneof=FLOW BRANCH TASK BUG API UI GROUP"`
+	Title       *string  `json:"title,omitempty"`
+	Description *string  `json:"description,omitempty"`
+	Status      *string  `json:"status,omitempty"      validate:"omitempty,oneof=PASS FAIL IN_PROGRESS BLOCKED"`
+	Tags        []string `json:"tags,omitempty"`
+	AssigneeID  *string  `json:"assigneeId,omitempty"`
+	ParentID    *string  `json:"parentId,omitempty"`
+}
+
+// BatchEdgeCreateRequest is the body for POST /api/projects/:pid/edges/batch-create.
+// Use this instead of looping edge.create. Self-references, duplicates, and
+// edges referencing missing nodes are skipped with reasons; permission errors
+// reject the whole batch.
+type BatchEdgeCreateRequest struct {
+	Edges []BatchEdgeCreateItem `json:"edges" validate:"required,min=1,max=500,dive"`
+}
+
+type BatchEdgeCreateItem struct {
+	SourceID   string   `json:"sourceId" validate:"required,uuid"`
+	TargetID   string   `json:"targetId" validate:"required,uuid"`
+	EdgeType   string   `json:"edgeType" validate:"omitempty,oneof=depends_on blocks related parent_child triggers"`
+	Label      *string  `json:"label"`
+	SourcePort string   `json:"sourcePort"`
+	TargetPort string   `json:"targetPort"`
+	Waypoints  any      `json:"waypoints"`
+}
+
+// BatchEdgeDeleteRequest is the body for POST /api/projects/:pid/edges/batch-delete.
+// Missing edge ids are skipped (returned in skipped[]), permission errors reject the batch.
+type BatchEdgeDeleteRequest struct {
+	EdgeIDs []string `json:"edgeIds" validate:"required,min=1,max=500,dive,uuid"`
+}

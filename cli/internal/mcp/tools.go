@@ -35,15 +35,17 @@ func AllTools() []ToolDef {
 		},
 		{
 			Name:        "thask.node.update",
-			Description: "Update node fields (title, status, type, description, tags).",
+			Description: "Update node fields. Pass only the fields you want to change — all are optional except projectId+nodeId. Empty string on parentId/assigneeId unparents / unassigns. For >1 node at once, prefer thask.node.batch_update (saves agent context, atomic on cycle/permission).",
 			InputSchema: objectSchema(map[string]any{
 				"projectId":   prop("string", "Project UUID"),
 				"nodeId":      prop("string", "Node UUID"),
 				"title":       prop("string", "New title"),
 				"status":      propEnum("string", "New status", []string{"PASS", "FAIL", "IN_PROGRESS", "BLOCKED"}),
 				"type":        propEnum("string", "New type", []string{"FLOW", "BRANCH", "TASK", "BUG", "API", "UI", "GROUP"}),
-				"description": prop("string", "New description (supports markdown)"),
+				"description": prop("string", "New description (supports markdown). Blocked by default on agent keys — use thask.node.suggest_update."),
 				"tags":        propArray("string", "New tags"),
+				"parentId":    prop("string", "Re-parent the node. UUID = set parent, empty string = unparent. Server rejects self-parent / cycles."),
+				"assigneeId":  prop("string", "Assignee user UUID, or empty string to unassign."),
 			}, []string{"projectId", "nodeId"}),
 		},
 		{
@@ -98,13 +100,37 @@ func AllTools() []ToolDef {
 		},
 		{
 			Name:        "thask.graph.import",
-			Description: "Import a graph from JSON data. Mode 'replace' overwrites ALL existing data — use 'merge' by default. Always call thask.graph.get first to check existing state. Call thask.graph.layout(dagre) after import.",
+			Description: "Import nodes/edges as NEW entities (every node gets a fresh UUID). 'replace' deletes all existing data first; 'merge' appends to existing. This is for migrations / external→Thask transfers — it does NOT patch existing nodes by id. To partial-update existing nodes use thask.node.update (single) or thask.node.batch_update (many). To add only edges between existing nodes use thask.edge.batch_create. Each item requires type + title. Always call thask.graph.layout(dagre) after import.",
 			InputSchema: objectSchema(map[string]any{
 				"projectId": prop("string", "Project UUID"),
-				"mode":      propEnum("string", "Import mode", []string{"replace", "merge"}),
-				"nodes":     propArray("object", "Array of node objects"),
-				"edges":     propArray("object", "Array of edge objects"),
+				"mode":      propEnum("string", "Import mode (creates new nodes either way)", []string{"replace", "merge"}),
+				"nodes":     propArray("object", "Array of node objects — each MUST include type and title"),
+				"edges":     propArray("object", "Array of edge objects referencing imported node ids"),
 			}, []string{"projectId", "mode", "nodes", "edges"}),
+		},
+		{
+			Name:        "thask.node.batch_update",
+			Description: "Partial-update up to 200 nodes in one call. Use INSTEAD of looping thask.node.update — saves agent context (1 call vs N) and writes one batch_id grouping the audit_log rows. Atomic on permission / cycle failure, best-effort on per-item not-found and no-change (returned in skipped[]). Server responds 207 Multi-Status when any items skip. Each update sends only the fields to change; empty string on parentId/assigneeId unparents / unassigns.",
+			InputSchema: objectSchema(map[string]any{
+				"projectId": prop("string", "Project UUID"),
+				"updates": propArray("object", "Array of { nodeId, ...fields }. Max 200. Fields: type, title, description, status, tags, parentId, assigneeId."),
+			}, []string{"projectId", "updates"}),
+		},
+		{
+			Name:        "thask.edge.batch_create",
+			Description: "Create up to 500 edges between existing nodes in one call. Atomic on permission failure, per-item skip for self-references / duplicates / invalid endpoints (returned in skipped[]). Server responds 207 when any items skip.",
+			InputSchema: objectSchema(map[string]any{
+				"projectId": prop("string", "Project UUID"),
+				"edges": propArray("object", "Array of { sourceId, targetId, edgeType?, label?, sourcePort?, targetPort?, waypoints? }. Max 500."),
+			}, []string{"projectId", "edges"}),
+		},
+		{
+			Name:        "thask.edge.batch_delete",
+			Description: "Delete up to 500 edges by id in one call. Missing ids are returned in skipped[] (not_found). Server responds 207 when any items skip.",
+			InputSchema: objectSchema(map[string]any{
+				"projectId": prop("string", "Project UUID"),
+				"edgeIds":   propArray("string", "Array of edge UUIDs. Max 500."),
+			}, []string{"projectId", "edgeIds"}),
 		},
 		{
 			Name:        "thask.impact.analyze",

@@ -118,6 +118,12 @@ func RegisterRoutes(e *echo.Echo, h Handlers, sessionRepo *repository.SessionRep
 	projectWrite.PATCH("/edges/:edgeId", h.Edge.Update)
 	projectWrite.DELETE("/edges/:edgeId", h.Edge.Delete)
 
+	// Bulk endpoints (v0.5.10). 207 Multi-Status when any items skip; atomic
+	// on permission/cycle/db failure. See docs/API.md > Bulk operations.
+	projectWrite.PATCH("/nodes/batch-update", h.Node.BatchUpdate)
+	projectWrite.POST("/edges/batch-create", h.Edge.BatchCreate)
+	projectWrite.POST("/edges/batch-delete", h.Edge.BatchDelete)
+
 	// Provenance & suggestion queue (migration 009). Agents propose to the
 	// queue; humans approve / verify. permissions JSONB gates each path.
 	projectWrite.POST("/nodes/:nodeId/suggestions", h.Suggestion.Suggest)

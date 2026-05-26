@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.10] - 2026-05-26
+
+### Added
+- **`thask.node.batch_update` MCP tool + `PATCH /api/projects/:pid/nodes/batch-update`**: partial-update up to 200 nodes in one call. Replaces "loop thask.node.update 67 times" — saves agent context (1 call vs N), writes audit_log rows under one shared `batch_id`, atomic on permission / cycle failure, best-effort per-item on not-found / no-change (returned in `skipped[]`). Server responds **HTTP 207 Multi-Status** when any items skip.
+- **`thask.edge.batch_create` + `POST /api/projects/:pid/edges/batch-create`**: insert up to 500 edges in one transaction. Self-references, duplicates (UNIQUE source/target/edgeType), and invalid endpoints land in `skipped[]` with reasons.
+- **`thask.edge.batch_delete` + `POST /api/projects/:pid/edges/batch-delete`**: delete up to 500 edges by id. Missing ids → `skipped[]` with `not_found` reason.
+- **Whole-project cycle detector** (`detectProjectCycleTx`) runs once at commit time when a batch touches any `parent_id`. O(N) walk over `(id, parent_id)` pairs; first node id in a cycle is reported and the batch rolls back.
+
+### Changed
+- **`thask.node.update` MCP schema** now exposes `parentId` and `assigneeId`. Empty string unparents / unassigns; omission leaves the field untouched. Backend already accepted these — only the MCP-side schema was missing.
+- **`thask.graph.import` description** rewritten to make the create-vs-patch distinction explicit: it creates NEW nodes (with new UUIDs) and does NOT patch existing nodes by id. Validation errors on missing `type`/`title` now point agents at `node.batch_update` (for partial node patches) or `edge.batch_create` (for adding edges between existing nodes).
+
+### Internal
+- `EdgeRepo.Pool()` accessor added for the same tx-from-handler pattern `NodeRepo` already uses.
+- All bulk endpoints share `newBatchID()` so audit_log rows from a single bulk request carry the same `batch_id`.
+
+### Known Limitations
+- Bulk endpoints live on `/api/projects/...` paths and **do not yet honor `Idempotency-Key`**. That middleware is currently wired only on the `/api/v1/...` surface. Idempotent bulk arrives when v1 gets these endpoints (planned v0.5.11+).
+- `graph.import mode: "patch"` (id-matched partial updates via the import payload) intentionally deferred — `node.batch_update` covers the same use case without the edge-patching ambiguity.
+
 ## [0.5.9] - 2026-05-23
 
 ### Added

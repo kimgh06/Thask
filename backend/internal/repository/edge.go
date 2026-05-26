@@ -19,6 +19,10 @@ func NewEdgeRepo(pool *pgxpool.Pool) *EdgeRepo {
 	return &EdgeRepo{pool: pool}
 }
 
+// Pool exposes the underlying pool so handlers can run batched work inside
+// their own transaction without bouncing every statement through the repo.
+func (r *EdgeRepo) Pool() *pgxpool.Pool { return r.pool }
+
 func scanEdge(row interface{ Scan(...any) error }) (*model.Edge, error) {
 	var e model.Edge
 	err := row.Scan(&e.ID, &e.ProjectID, &e.SourceID, &e.TargetID, &e.EdgeType, &e.Label, &e.SourcePort, &e.TargetPort, &e.Waypoints, &e.CreatedAt)

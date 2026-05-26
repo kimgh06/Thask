@@ -900,3 +900,94 @@ key owners can audit who tried what.
 
 `kind` defaults to `user_interactive`. `permissions` overrides individual flags
 on top of the kind-preset; omitted flags inherit preset defaults.
+
+---
+
+## Bulk Operations (v0.5.10)
+
+Three endpoints cut N round-trips down to one, with consistent atomicity and
+skip-reason semantics. All gated by per-key permissions and write to
+`audit_log` under a single shared `batch_id` for traceability.
+
+### Atomicity policy
+
+- **Permission denial / cycle / DB error** → batch rejected, no writes.
+- **Per-item domain error** (not found, duplicate, self-reference, no change)
+  → that item lands in `skipped[]` with a reason; other items still apply.
+- HTTP status: `200` when everything applied; **`207 Multi-Status`** when any
+  items were skipped; `400` on validation / cycle; `403` on permission denial;
+  `500` on tx failure.
+
+### `PATCH /api/projects/:projectId/nodes/batch-update`
+
+| Required perm | Max items |
+|---|---|
+| `write_structural` and/or `write_semantic` and/or `write_meta` per touched field | 200 |
+
+Body:
+```json
+{
+  "updates": [
+    { "nodeId": "uuid", "title": "...", "parentId": "uuid|" },
+    { "nodeId": "uuid", "description": "..." }
+  ]
+}
+```
+
+Each item ships only the fields to change. `parentId: ""` unparents; omission
+leaves the field untouched. Re-parenting triggers a project-wide cycle scan
+at commit time; any cycle rolls the whole batch back.
+
+Response:
+```json
+{
+  "data": {
+    "updated": [{ "nodeId": "uuid", "fieldsChanged": ["title", "parent_id"] }],
+    "skipped": [{ "nodeId": "uuid", "reason": "not_found" }],
+    "batchId": "uuid"
+  }
+}
+```
+
+Skip reasons: `not_found`, `no_change`.
+
+### `POST /api/projects/:projectId/edges/batch-create`
+
+| Required perm | Max items |
+|---|---|
+| `write_structural` | 500 |
+
+Body:
+```json
+{
+  "edges": [
+    { "sourceId": "uuid", "targetId": "uuid", "edgeType": "depends_on", "label": "optional" }
+  ]
+}
+```
+
+Returns `{ created: [{id, sourceId, targetId, edgeType}], skipped, batchId }`.
+Skip reasons: `self_reference`, `duplicate`, `invalid_endpoint` (source or
+target node not in the project).
+
+### `POST /api/projects/:projectId/edges/batch-delete`
+
+| Required perm | Max items |
+|---|---|
+| `delete` (structural) | 500 |
+
+Body:
+```json
+{ "edgeIds": ["uuid", "uuid", ...] }
+```
+
+Returns `{ deleted: ["uuid"], skipped: [{edgeId, reason: "not_found"}], batchId }`.
+
+### Known limitations
+
+- Bulk endpoints do not yet honor `Idempotency-Key` (only the `/api/v1/...`
+  surface does). Re-running the same batch produces duplicate audit_log rows.
+  Planned for v0.5.11+ when v1 grows bulk endpoints.
+- `graph.import mode: "patch"` (id-matched partial updates via import payload)
+  is intentionally not added — `node.batch_update` covers the use case without
+  the edge-patching ambiguity that an import-patch mode would introduce.
