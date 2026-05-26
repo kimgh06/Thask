@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`thask.edge.batch_create` + `POST /api/projects/:pid/edges/batch-create`**: insert up to 500 edges in one transaction. Self-references, duplicates (UNIQUE source/target/edgeType), and invalid endpoints land in `skipped[]` with reasons.
 - **`thask.edge.batch_delete` + `POST /api/projects/:pid/edges/batch-delete`**: delete up to 500 edges by id. Missing ids → `skipped[]` with `not_found` reason.
 - **Whole-project cycle detector** (`detectProjectCycleTx`) runs once at commit time when a batch touches any `parent_id`. O(N) walk over `(id, parent_id)` pairs; first node id in a cycle is reported and the batch rolls back.
+- **`thask self-update` CLI command**: fetches the latest published release from GitHub, downloads the platform tarball or `.exe`, extracts the binary, and atomically replaces the running thask binary in place via `os.Rename` within the same directory (POSIX-atomic — concurrent invocations never see a half-written binary). Flags: `--check` (exit non-zero if update available, install nothing), `--version X` (pin to a specific version). Downloads are size-capped at 200 MB.
 
 ### Changed
 - **`thask.node.update` MCP schema** now exposes `parentId` and `assigneeId`. Empty string unparents / unassigns; omission leaves the field untouched. Backend already accepted these — only the MCP-side schema was missing.
