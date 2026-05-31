@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/thask/cli/internal/client"
 	cfgpkg "github.com/thask/cli/internal/config"
@@ -28,7 +30,9 @@ var mcpServeCmd = &cobra.Command{
 		}
 
 		if err := c.Validate(); err != nil {
-			return err
+			// MCP runs from inside Claude Code / Cursor where pasting a token
+			// is awkward; point the user at the browser flow first.
+			return fmt.Errorf("%w — run `thask login` to authenticate, then restart your MCP client", err)
 		}
 
 		apiC := client.New(c.URL, c.Token)

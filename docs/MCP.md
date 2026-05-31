@@ -20,8 +20,19 @@ All without leaving the editor.
 ## Prerequisites
 
 1. **Thask server running** — locally via `docker compose up` or a remote instance
-2. **API token** — create via web UI (Settings > API Keys) or set via CLI config
-3. **Thask CLI installed** — `npm install -g @thask-org/cli` or build from source (`cd cli && go build -o thask ./cmd/thask`)
+2. **Thask CLI installed** — `npm install -g @thask-org/cli` or build from source (`cd cli && go build -o thask ./cmd/thask`)
+3. **API token** — easiest is:
+
+   ```bash
+   thask config set url <your-thask-url>
+   thask login   # opens browser, click Approve, token saved
+   ```
+
+   This writes the token to `~/.thask/config.json` and the MCP server below
+   reads it automatically — no need to put the key in `.claude/mcp.json`.
+   See [CLI Reference > login](./CLI.md#login) for details on the flow.
+   For SSH / headless setups, create a key in the web UI (Settings > API Keys)
+   and run `thask config set token <key>` instead.
 
 ---
 
@@ -29,7 +40,22 @@ All without leaving the editor.
 
 ### Claude Code
 
-Create or edit `.claude/mcp.json` in your project root:
+After `thask login` (see Prerequisites), the MCP server picks up your URL +
+token from `~/.thask/config.json`. Minimal `.claude/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "thask": {
+      "command": "thask",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+Override URL/token inline if you want a different identity for this MCP than
+your CLI default:
 
 ```json
 {
@@ -49,7 +75,7 @@ Or use npx (no global install needed):
   "mcpServers": {
     "thask": {
       "command": "npx",
-      "args": ["-y", "@thask-org/cli", "mcp", "serve", "--url", "http://localhost:7244", "--token", "YOUR_API_KEY"]
+      "args": ["-y", "@thask-org/cli", "mcp", "serve"]
     }
   }
 }

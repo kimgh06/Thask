@@ -5,7 +5,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+// NormalizeURL prepends "http://" when the input lacks a scheme so the Go
+// HTTP client doesn't reject "localhost:7243"-style entries with
+// "unsupported protocol scheme". Empty input is returned as-is.
+func NormalizeURL(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return v
+	}
+	if strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") {
+		return v
+	}
+	return "http://" + v
+}
 
 type Config struct {
 	URL     string `json:"url"`
@@ -42,6 +57,10 @@ func Load() *Config {
 		c.Project = v
 	}
 
+	// Heal any scheme-less URL coming from env or a hand-edited config file
+	// so the HTTP client never sees "localhost:7243" unprefixed.
+	c.URL = NormalizeURL(c.URL)
+
 	return c
 }
 
@@ -60,7 +79,7 @@ func (c *Config) Save() error {
 func (c *Config) Set(key, value string) error {
 	switch key {
 	case "url":
-		c.URL = value
+		c.URL = NormalizeURL(value)
 	case "token":
 		c.Token = value
 	case "team":

@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.11] - 2026-06-01
+
+### Added
+- **`thask login` browser-based authentication**: replaces the previous "open the web UI, generate a key, copy the 64-char string, paste it into the terminal" dance with a single command. `thask login` spawns a short-lived loopback HTTP server on a free port in `7400-7500`, opens `<your-thask>/cli/auth?callback_port=<port>&state=<csrf>` in the system browser, waits for the user to click Approve, captures the freshly-minted `user_interactive` API key from the redirect query, and writes it to `~/.thask/config.json`. CSRF protection via random `state`; loopback bound to `127.0.0.1` only (never LAN-reachable); 5-minute timeout; `--force` to replace an existing token; `--url` to override the persisted URL for this login.
+- **`/cli/auth` page** (`frontend/src/routes/cli/auth/+page.svelte`): the browser landing target. If the user isn't logged in, transparently redirects to `/login?next=/cli/auth?…` and back. Approve clicks `POST /api/auth/api-keys` (no new backend route — reuses the existing v0.5.9 endpoint) and hands the response to the CLI's loopback server.
+- **`/login` `?next=` support**: post-login navigation now honors a `?next=` query (same-origin only, open-redirect guarded) so deep-link flows like `thask login` return to where the user came from instead of always dumping into `/dashboard`.
+
+### Changed
+- **`thask mcp serve` missing-token error message** points at `thask login` instead of generically reporting "token not configured" — most MCP users hit this from inside Claude Code where pasting a 64-char string is awkward.
+- **URL auto-normalization**: `thask config set url localhost:7243` (and `THASK_URL=localhost:7243`, and `thask login --url localhost:7243`) now silently prepends `http://` so the Go HTTP client stops rejecting the request with `unsupported protocol scheme "localhost"`. Existing scheme-less URLs already stored in `~/.thask/config.json` self-heal on next load.
+
+### Internal
+- New CLI dependency: `github.com/pkg/browser` (small, well-tested cross-platform launcher; tarball size unchanged for users since they download platform binaries from GitHub Releases).
+
+### Known Limitations
+- **Device flow not implemented.** SSH / headless / CI sessions can't open a browser; they still use `thask config set token <key>` after manual web-UI key creation. A `--device` flag (GitHub-style code entry) is planned for v0.5.12+ if demand surfaces.
+- **`/cli/auth` always creates a `user_interactive` key** with the full default permission preset. Agent / service keys still need to go through the web settings UI where the kind picker and per-permission checkboxes live.
+
 ## [0.5.10] - 2026-05-26
 
 ### Added

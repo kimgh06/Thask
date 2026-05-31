@@ -12,6 +12,17 @@ npm install -g @thask-org/cli
 cd cli && go build -o thask ./cmd/thask && ./thask install
 ```
 
+**Quick start:**
+
+```bash
+thask config set url https://thask.kimgh06.com   # point at your instance
+thask login                                       # browser flow, no copy/paste
+thask auth whoami                                 # verify
+```
+
+See [`login`](#login) for details. Manual token entry via
+`thask config set token <key>` still works for headless / SSH / CI sessions.
+
 **Base config:** `~/.config/thask/config.json` (keys: `url`, `token`, `team`, `project`)
 
 ---
@@ -101,6 +112,41 @@ Output:
   "project": "550e8400..."
 }
 ```
+
+---
+
+## login
+
+Browser-based one-step authentication. Opens your configured Thask URL's
+`/cli/auth` page, lets you click Approve, and writes the freshly-minted API
+key into `~/.thask/config.json` — no copy/paste from the web UI required.
+
+```bash
+thask config set url https://thask.kimgh06.com   # one-time
+thask login                                       # browser flow
+```
+
+**Flags:**
+- `--url <url>` — Override the configured URL for this login (and persist it).
+- `--force` — Replace an existing token without prompting.
+
+**Behavior:**
+- Spawns a loopback HTTP server on `127.0.0.1` (port in `7400-7500`).
+- Generates a random `state` for CSRF protection.
+- Opens the browser to `<url>/cli/auth?callback_port=<port>&state=<state>` and
+  prints the URL on stderr so you can paste it manually if the browser doesn't
+  auto-open.
+- If you aren't logged into the web UI yet, you'll be sent through `/login`
+  first and back to the authorization page automatically.
+- The web page mints a new `user_interactive` API key (full default permissions)
+  via the existing `POST /api/auth/api-keys` endpoint and redirects to the
+  loopback server with the token in the query string.
+- Server validates `state`, writes the token to config, and exits.
+- Times out after 5 minutes if no callback arrives.
+
+**Not yet supported:** SSH / headless / CI sessions (no browser available) —
+fall back to the manual `thask config set token <key>` flow for those.
+A device-code flag (`--device`) is planned for v0.5.12+.
 
 ---
 
