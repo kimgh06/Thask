@@ -1,10 +1,22 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { authStore } from '$lib/stores/auth.svelte';
+
+	// `?next=<path>` lets flows like `thask login` deep-link through the
+	// login wall: we send them back to the original page after auth instead
+	// of dumping everyone into /dashboard. Only same-origin paths are
+	// honored to avoid open-redirect abuse.
+	function safeNext(): string {
+		const raw = $page.url.searchParams.get('next');
+		if (!raw) return '/dashboard';
+		if (!raw.startsWith('/') || raw.startsWith('//')) return '/dashboard';
+		return raw;
+	}
 
 	$effect(() => {
 		if (!authStore.loading && authStore.isAuthenticated) {
-			goto('/dashboard');
+			goto(safeNext());
 		}
 	});
 
@@ -21,7 +33,9 @@
 		if (err) {
 			error = err;
 			submitting = false;
+			return;
 		}
+		await goto(safeNext());
 	}
 </script>
 
