@@ -10,6 +10,61 @@ Backend: Go (Echo v4). Request validation via struct tags.
 
 ---
 
+## Health
+
+### GET /health  •  GET /api/health
+
+Public liveness + readiness probe. No authentication required. Both paths
+return the same payload; `/api/health` is preferred so reverse proxies that
+gate `/api/*` still reach it.
+
+```json
+// 200 OK — fully healthy
+{
+  "status": "ok",
+  "version": "0.5.12",
+  "db": "ok",
+  "migrationVersion": 10,
+  "migrationsApplied": 10,
+  "uptime": "2m30s"
+}
+
+// 503 Service Unavailable — DB ping failed
+{
+  "status": "down",
+  "version": "0.5.12",
+  "db": "error",
+  "dbError": "context deadline exceeded",
+  "migrationVersion": 0,
+  "migrationsApplied": 0,
+  "uptime": "5s"
+}
+
+// 200 OK — DB reachable but schema_migrations table missing
+{
+  "status": "degraded",
+  "version": "0.5.12",
+  "db": "ok",
+  "dbError": "schema_migrations unreadable: ...",
+  "uptime": "5s"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `status` | `ok` (fully healthy), `degraded` (DB up, migrations unreadable), `down` (DB ping failed) |
+| `version` | Backend build version (injected via `-ldflags "-X github.com/thask/backend/internal/handler.Version=…"`); `"dev"` for unstamped builds |
+| `db` | `ok` or `error` |
+| `dbError` | Populated when `db != "ok"` or `status="degraded"` |
+| `migrationVersion` | Highest applied row in `schema_migrations` |
+| `migrationsApplied` | Total rows in `schema_migrations` |
+| `uptime` | Process uptime, rounded to seconds (`time.Duration.String`) |
+
+Consumed by `thask doctor` and external uptime monitors to distinguish
+"server up, DB down" from "server up, migrations pending" from "fully healthy".
+
+---
+
 ## Authentication
 
 ### POST /api/auth/register
@@ -469,6 +524,23 @@ Updates a node. Records history for each changed field. Triggers **waterfall sta
   "parentId": "group-uuid | null"
 }
 ```
+
+**Field semantics:**
+- Omit a field to leave it untouched.
+- `parentId: ""` (empty string) **unparents** the node; `parentId: "<uuid>"` re-parents.
+- `assigneeId: ""` (empty string) **unassigns**; `assigneeId: "<uuid>"` assigns.
+- Cycles (self-parent or descendant-as-parent) are rejected with `400`.
+
+**Permission gate (v0.5.9+):** Each touched field is classified as
+`semantic` / `structural` / `meta` and checked against the calling key's
+permissions. An agent-kind key trying to change `description` will get
+`403` with a pointer at `thask.node.suggest_update`. See
+[Provenance & Suggestion Queue](#provenance--suggestion-queue-v059).
+
+> For modifying many nodes at once, prefer
+> [`PATCH /nodes/batch-update`](#bulk-operations-v0510) — same field
+> rules, single transaction, one audit `batch_id`, may respond `207
+> Multi-Status` when some items skip.
 
 ### DELETE /api/projects/:projectId/nodes/:nodeId
 

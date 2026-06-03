@@ -255,6 +255,74 @@ When multiple nodes are selected (box select or Ctrl+Click), the MultiSelectView
 
 ---
 
+## Provenance & Authoring (v0.5.9+)
+
+Every node carries a small set of "who wrote this" columns alongside its
+content. These don't change the visual graph model, but they shape who is
+*allowed* to change which fields and how downstream consumers interpret
+unfamiliar content.
+
+### Field classes
+
+Each field a write touches falls into one of three classes (`mutation_kind`
+in the audit log):
+
+| Class | Examples | Why it matters |
+|---|---|---|
+| **semantic** | `description`, "why", gotchas | Carries truth claims that don't fall out of code automatically — wrong values poison downstream agents |
+| **structural** | `type`, `parent_id`, edges, file mappings | Topology and typing — derivable from code, generally safe for automation |
+| **meta** | `status`, `position_x/y`, `tags`, `assignee_id` | Operational state — workflow and UI, low blast radius |
+
+### Description authorship
+
+Nodes track who authored the current description:
+
+- `description_source` — `human` / `agent` / `scanner` / `import` / `unknown`
+- `description_authored_by` — user id
+- `description_authored_at` — timestamp
+- `description_agent_model` — populated when an agent (e.g. `claude-opus-4-7`) wrote it
+- `last_verified_at` / `last_verified_by` / `last_verified_commit` — when a human last confirmed it still matches the code
+
+The detail panel surfaces these so a reader can tell **"some other agent
+wrote this last week, no human has verified it"** apart from **"a teammate
+wrote this with a referenced commit"** at a glance — important when an
+agent is about to base a refactor decision on the description.
+
+### Who can write what
+
+Writes go through a per-API-key permission gate (see
+[DATABASE.md](DATABASE.md#api-key-kind--per-key-permissions-migration-008)).
+Agent-kind keys default to **blocking semantic writes** — they can keep
+the graph's structural shape and operational state up to date, but they
+can't quietly land hallucinated `description` text.
+
+Instead of writing directly, an agent posts to the **suggestion queue**
+(`node_suggestions` table; `thask.node.suggest_update` MCP tool). A human
+later approves or rejects via the UI / `thask.suggestions.decide`. On
+approve, the human becomes the author of record — the agent is only
+credited in `audit_log.metadata`.
+
+### Verification
+
+`thask.node.verify` (or the verify button in the detail panel) stamps the
+`last_verified_*` columns. Default-blocked for agent keys: the whole point
+is that a human looked at the code and said "still true". Agents can be
+granted `permissions.verify=true` if you accept the trade-off.
+
+### Practical impact on graph editing
+
+- **Bulk node creation by agents stays fine** — `node.batch_update` and
+  `graph.import` continue to work for agent keys as long as they're not
+  setting `description` (structural fields only).
+- **Description edits become a two-step dance** in agent flows: propose,
+  then have a human approve. Most agent runs that *would* have edited a
+  description in v0.5.8 now suggest instead.
+- **The detail panel's history tab** surfaces both the `audit_log` (who
+  did what, when, via which client / MCP / agent model) and any pending
+  suggestions for the node.
+
+---
+
 ## File Map
 
 | File | Responsibility |

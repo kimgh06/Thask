@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **`thask doctor`** — single-command diagnostic that walks the full stack (binary version → config file → URL → server reachability → DB + migration version → token validity → token permissions → default team/project → MCP binary on PATH → Claude Code / Cursor / Codex MCP entries). Each check reports `✓` / `⚠` / `✗` with a remediation hint; exit code is `0` on all-pass, `1` when any check is critical. Replaces the previous workflow of correlating 401s, "tools not visible" and silent MCP failures across separate commands.
+- **`GET /api/health` enhanced response** (and `/health` alias): now returns `{status, version, db, migrationVersion, migrationsApplied, uptime}` instead of `{"status":"ok"}`. Returns `503` with `dbError` populated when the DB ping fails so monitors can distinguish "server up, DB down" from "fully healthy". `thask doctor` consumes this; external uptime monitors can too. Backend `Version` is overridable via `-ldflags "-X github.com/thask/backend/internal/handler.Version=X.Y.Z"`.
+- **`thask init` end-of-run hint** now points users at `thask doctor` for verification alongside the existing `thask guide` reference.
+
+### Docs
+- **End-to-end doc refresh for v0.5.9–v0.5.11.** README tagline / Quick Start / Features / Roadmap rewritten to reflect the AI-agent-context-layer positioning, v0.5.9 provenance + permissions, v0.5.10 bulk ops + self-update, and v0.5.11 `thask login`. `docs/ARCHITECTURE.md` now documents the new `internal/audit` package, `AuditRepo` / `SuggestionRepo`, `X-Thask-Client` header parsing, per-key permission gate, and the agent → suggestion-queue → human-approve data flow. `docs/CLI.md` gains `## login`, `## self-update`, an `Outbound Headers` subsection, and a Quick start block. `docs/MCP.md` tools table corrected from 16 → 24 across 7 categories with `parentId` / `assigneeId` on `node.update` and `edge.batch_create` / `edge.batch_delete`. `docs/API.md` clarifies `parentId` / `assigneeId` empty-string semantics on single PATCH + references the `207 Multi-Status` semantics. `docs/CLAUDE_CODE_PLUGIN.md` promotes `thask login` as the standard onboarding flow. `docs/GRAPH.md` gains a new "Provenance & Authoring (v0.5.9+)" section covering field classes, the suggestion queue, and verification.
+
+### Internal
+- **Release-gate rule recorded in `CLAUDE.md` + `AGENTS.md`**: docs must be fully up to date before `make release-cli` runs — treat it as a gate, not a follow-up. Pre-release sweep covers CHANGELOG, README, ARCHITECTURE, API.md, CLI.md, MCP.md, DATABASE.md, CLAUDE_CODE_PLUGIN.md, GRAPH.md. CHANGELOG alone is necessary but not sufficient.
+
 ## [0.5.11] - 2026-06-01
 
 ### Added

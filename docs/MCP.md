@@ -117,7 +117,7 @@ Restart Cursor after adding the configuration.
 
 ## Available Tools
 
-The MCP server exposes 16 tools organized into 5 categories.
+The MCP server exposes 24 tools organized into 7 categories.
 
 ### Node Tools
 
@@ -126,9 +126,16 @@ The MCP server exposes 16 tools organized into 5 categories.
 | `thask.node.list` | List nodes in a project | `projectId` | `type`, `status` |
 | `thask.node.create` | Create a new node | `projectId`, `type`, `title` | `description`, `status`, `tags`, `positionX`, `positionY` |
 | `thask.node.get` | Get node details, connected edges, and history | `projectId`, `nodeId` | — |
-| `thask.node.update` | Update node fields | `projectId`, `nodeId` | `title`, `status`, `type`, `description`, `tags` |
+| `thask.node.update` | Update node fields | `projectId`, `nodeId` | `title`, `status`, `type`, `description`, `tags`, `parentId`, `assigneeId` |
 | `thask.node.delete` | Delete a node | `projectId`, `nodeId` | — |
 | `thask.node.batch_status` | Batch update status for multiple nodes | `projectId`, `ids`, `status` | — |
+| `thask.node.batch_update` | Partial-update up to 200 nodes in one call (atomic on permission / cycle) | `projectId`, `updates[]` | — |
+| `thask.node.suggest_update` | Queue a description change for human review (agent-safe alternative to `update`) | `projectId`, `nodeId`, `proposedValue` | `fieldName`, `rationale`, `evidence` |
+| `thask.node.verify` | Stamp "still correct as of now" on a node | `projectId`, `nodeId` | `commit` |
+
+> `parentId` / `assigneeId` accept an empty string to unparent / unassign;
+> omit to leave untouched. Agent-kind keys are blocked from writing
+> `description` and `tags` via `update` by default — use `suggest_update`.
 
 ### Edge Tools
 
@@ -137,13 +144,15 @@ The MCP server exposes 16 tools organized into 5 categories.
 | `thask.edge.list` | List all edges in a project | `projectId` | — |
 | `thask.edge.create` | Create a relationship between nodes | `projectId`, `sourceId`, `targetId` | `edgeType`, `label` |
 | `thask.edge.delete` | Delete an edge | `projectId`, `edgeId` | — |
+| `thask.edge.batch_create` | Insert up to 500 edges in one call (skip reasons: self_reference, duplicate, invalid_endpoint) | `projectId`, `edges[]` | — |
+| `thask.edge.batch_delete` | Delete up to 500 edges by id (skip reason: not_found) | `projectId`, `edgeIds[]` | — |
 
 ### Graph Tools
 
 | Tool | Description | Required | Optional |
 |---|---|---|---|
 | `thask.graph.get` | Get full graph snapshot (all nodes and edges) | `projectId` | — |
-| `thask.graph.import` | Import graph from JSON (replace or merge) | `projectId`, `mode`, `nodes`, `edges` | — |
+| `thask.graph.import` | Import graph from JSON — **creates NEW node ids**, does NOT patch existing nodes by id (use `node.update` / `node.batch_update` for that) | `projectId`, `mode`, `nodes`, `edges` | — |
 | `thask.graph.layout` | Auto-layout the project graph. Repositions all nodes and auto-sizes GROUP nodes. | `projectId` | `algorithm` (dagre \| grid, default: dagre) |
 | `thask.graph.analyze` | Detect dependency cycles and find the critical path (longest dependency chain) | `projectId` | — |
 
@@ -157,13 +166,21 @@ The MCP server exposes 16 tools organized into 5 categories.
 
 | Tool | Description | Required | Optional |
 |---|---|---|---|
-| `thask.scan.run` | Scan a Go project's internal dependencies and import them as graph nodes/edges | `projectId`, `path` | `maxFiles` (default 500) |
+| `thask.scan.run` | Scan a project's internal dependencies and import them as graph nodes/edges. Auto-detects Go / TypeScript via `go.mod` / `package.json`. | `projectId`, `path` | `language` (`auto` \| `go` \| `ts`), `maxFiles` (default 500) |
 
-### Guide
+### Suggestions
 
 | Tool | Description | Required | Optional |
 |---|---|---|---|
-| `thask.guide` | Get the full AI agent guide for Thask. Call this before your first interaction with a Thask project. | — | — |
+| `thask.suggestions.list` | List pending agent-proposed updates awaiting human review | `projectId` | `limit` |
+| `thask.suggestions.decide` | Accept or reject a pending suggestion (server enforces `user_interactive` actor for `accepted`) | `projectId`, `suggestionId`, `status` | `reason` |
+
+### Meta
+
+| Tool | Description | Required | Optional |
+|---|---|---|---|
+| `thask.guide` | Get the full AI agent guide for Thask. Call this before your first interaction with a Thask project. | — | `projectId` |
+| `thask.mistake.record` | Record an agent mistake as a BUG node under the project's "실수 기록" GROUP (auto-created). Surfaced by `thask.guide` in future sessions. | `projectId`, `title`, `lesson` | `cause`, `fix` |
 
 ---
 
@@ -218,17 +235,23 @@ Claude Code:
 
 MCP server logs go to stderr. Check your editor's terminal or debug console for detailed error messages.
 
-For CLI troubleshooting:
+**First stop for any setup problem:** run `thask doctor`. It walks the full
+stack (binary, config, URL, server reachability, DB + migration version, token
+validity, token permissions, Claude / Cursor / Codex MCP entries) and prints
+`✓` / `⚠` / `✗` with a remediation hint per check. See
+[CLI.md#doctor](./CLI.md#doctor) for the full reference.
 
 ```bash
-# Test CLI connection
-thask node list --project <projectId>
+thask doctor
+```
 
-# Verify config
-thask config
+Manual probes (rarely needed once `doctor` exists):
 
-# Check token validity
-curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:7244/api/auth/me
+```bash
+thask node list --project <projectId>            # CLI connection
+thask config show                                # what is set
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+     http://localhost:7244/api/auth/me           # token validity
 ```
 
 ---

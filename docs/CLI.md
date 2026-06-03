@@ -78,6 +78,22 @@ To disable permanently:
 export THASK_NO_UPDATE_CHECK=1
 ```
 
+### Outbound Headers
+
+Every outbound request sets `X-Thask-Client` so the backend `audit_log`
+records which channel a write came from. Set automatically — no flag
+required:
+
+| Invocation | Header value |
+|---|---|
+| `thask <cmd>` (direct CLI) | `thask-cli/<version>` |
+| `thask mcp serve` | `thask-mcp/<version> model=<client> session=<uuid>` |
+
+`model` comes from MCP `clientInfo` (e.g. `claude-code/0.1.0`); `session`
+is a per-server-instance UUID. This populates the `client_type`,
+`agent_model`, and `agent_session_id` columns the backend uses to attribute
+writes — see [API.md > Provenance & Suggestion Queue](API.md#provenance--suggestion-queue-v059).
+
 ---
 
 ## config
@@ -147,6 +163,68 @@ thask login                                       # browser flow
 **Not yet supported:** SSH / headless / CI sessions (no browser available) —
 fall back to the manual `thask config set token <key>` flow for those.
 A device-code flag (`--device`) is planned for v0.5.12+.
+
+---
+
+## doctor
+
+Single-command diagnostic for the full CLI + MCP + backend stack. Use this
+when something is broken and you cannot tell whether the URL, token, server,
+migrations, or MCP wiring is at fault.
+
+```bash
+thask doctor
+```
+
+**Checks (in order):**
+
+| # | Check | Source |
+|---|---|---|
+| 1 | Binary version (`thask <ver> (<commit>)`) | linker `-ldflags` |
+| 2 | Config file (`~/.thask/config.json`) exists with `mode 600` | filesystem |
+| 3 | `url` is configured | config |
+| 4 | Server reachable + backend version + uptime | `GET /api/health` |
+| 5 | DB ping + applied migration count + latest migration version | `GET /api/health` |
+| 6 | `token` is configured | config |
+| 7 | Token valid (resolves to a user) | `GET /api/auth/me` |
+| 8 | Token kind + permission flags | `GET /api/auth/api-keys` |
+| 9 | Default `team` set (warn-only) | config |
+| 10 | Default `project` set (warn-only) | config |
+| 11 | `thask` binary on `PATH` (needed for MCP `command`) | `exec.LookPath` |
+| 12 | Claude Code MCP entry (`~/.claude.json`) | filesystem scan |
+| 13 | Cursor MCP entry (`~/.cursor/mcp.json`) | filesystem scan |
+| 14 | Codex MCP entry (`~/.codex/config.toml`) | filesystem scan |
+
+Each line prints `✓` / `⚠` / `✗` with a one-line hint when the check fails.
+
+**Exit codes:**
+- `0` — all critical checks passed (warnings OK)
+- `1` — one or more critical checks failed
+
+**Example output:**
+```
+  ✓ Binary version             thask 0.5.12 (a1b2c3d)
+  ✓ Config file                /Users/kim/.thask/config.json (mode 600)
+  ✓ URL                        http://localhost:7244
+  ✓ Server reachable           backend 0.5.12, uptime 2m30s
+  ✓ Server DB                  migrations applied: 10 (latest version 10)
+  ✓ Token                      thsk_c2fcb02...
+  ✓ Token valid                Kim <kkh061101@gmail.com>
+  ✓ Token permissions          kind=user_interactive, read,write_structural,write_semantic,write_meta,verify,delete,suggest
+  ✓ Default team               thask
+  ✓ Default project            a9116af4-d6d1-416f-8c40-de31be0f5f49
+  ✓ MCP binary on PATH         /Users/kim/.local/bin/thask
+  ✓ Claude Code MCP            /Users/kim/.claude.json
+  ⚠ Cursor MCP (global)        not configured
+       → Run `thask init` to patch it
+  ✓ Codex MCP                  /Users/kim/.codex/config.toml
+
+All critical checks passed. 1 warning(s).
+```
+
+The `Server reachable` and `Server DB` rows come from the `/api/health`
+endpoint enhanced in v0.5.12 — older backend instances that still respond with
+the legacy `{"status":"ok"}` body are accepted as `version=unknown, db=ok`.
 
 ---
 
@@ -873,6 +951,41 @@ Output:
 ```
 Thask v0.1.0 (commit: abc123def456)
 ```
+
+---
+
+## self-update
+
+Download the latest published release from GitHub and replace the running
+binary in place. Skips Homebrew / npm — direct binary swap. Useful when
+you installed via `curl | sh` or `go build` and just want to follow
+along with releases.
+
+```bash
+thask self-update                  # install latest
+thask self-update --check          # check only, exit 1 if update available
+thask self-update --version 0.5.10 # pin to a specific tag
+```
+
+**Flags:**
+- `--check` — Print whether an update is available, exit non-zero if so
+  (no install). Lets shell scripts gate on update availability.
+- `--version <X>` — Install a specific release tag instead of latest.
+
+**Mechanics:**
+- Resolves the running binary path via `os.Executable()`.
+- Picks the right asset for `runtime.GOOS / GOARCH` — tarballs on unix,
+  `.exe` on Windows.
+- Streams the download into a temp file **in the same directory as the
+  binary** so the eventual `os.Rename` is atomic — concurrent `thask`
+  invocations never see a half-written binary.
+- 200 MB ceiling on the download + tarball extraction so a hostile or
+  corrupted release can't fill the install directory.
+- Permission errors hint at `sudo` when the install dir is system-owned.
+
+**Not yet supported (planned for a future release):**
+- SHA256 / checksum verification of the downloaded asset. HTTPS + GitHub
+  ACLs are the only integrity checks today.
 
 ---
 

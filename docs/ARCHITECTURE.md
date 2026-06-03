@@ -92,7 +92,7 @@ cli/
 │   └── main.go                    # CLI entrypoint
 ├── internal/
 │   ├── cmd/                       # Cobra commands (node, edge, team, etc.)
-│   ├── mcp/                       # MCP server (stdio, 16 tools)
+│   ├── mcp/                       # MCP server (stdio, 24 tools incl. provenance + bulk)
 │   ├── client/                    # HTTP client for backend API
 │   ├── config/                    # Config file (~/.config/thask/)
 │   └── output/                    # Output formatting (JSON, table, quiet)
@@ -109,19 +109,23 @@ backend/
 │   ├── dto/
 │   │   ├── request.go             # Request validation structs (validate tags)
 │   │   └── response.go            # OK(data) / Err(message) helpers
+│   ├── audit/                     # Provenance & permission logger (v0.5.9)
+│   │   └── audit.go               # Logger.Log() + RequirePermission() — actor/channel extraction
 │   ├── handler/
 │   │   ├── auth.go                # Register, Login (session rotation), Me, Logout
 │   │   ├── team.go                # List, Create, GetBySlug, Delete, Members, Projects
-│   │   ├── node.go                # CRUD, BatchUpdatePositions, waterfall propagation
-│   │   ├── edge.go                # CRUD with self-reference check
+│   │   ├── node.go                # CRUD, BatchUpdate, Import, Layout, waterfall, cycle detector
+│   │   ├── edge.go                # CRUD + BatchCreate / BatchDelete with skip reasons
+│   │   ├── suggestion.go          # Suggest / List / Decide / Verify (v0.5.9 human-in-the-loop)
 │   │   ├── impact.go              # BFS-based impact analysis
 │   │   ├── summary.go             # Dashboard summary counts
-│   │   ├── api_key.go             # Create, List, Delete API keys
+│   │   ├── api_key.go             # Create (kind + permissions), List, Delete API keys
 │   │   └── validator.go           # Custom validator (slug regex)
 │   ├── middleware/
-│   │   ├── auth.go                # Cookie → session → user context injection
+│   │   ├── auth.go                # Cookie/Bearer → user context + actor_kind + permissions + X-Thask-Client parsing
 │   │   ├── role.go                # TeamAccess (slug resolution + membership), RequireRole (minimum role check)
 │   │   ├── project_access.go      # Team membership verification (centralized)
+│   │   ├── idempotency.go         # Idempotency-Key replay cache (v1 API only)
 │   │   └── shared_access.go       # SharedAccess: share token validation, 30-second cache, role mapping
 │   ├── model/
 │   │   ├── enums.go               # NodeType, NodeStatus, EdgeType, TeamRole constants
@@ -134,14 +138,25 @@ backend/
 │   │   ├── project.go             # CRUD, VerifyAccess (centralized)
 │   │   ├── node.go                # CRUD, BatchPositions, FindChangedSince, UpdateStatus
 │   │   ├── edge.go                # CRUD, FindConnected
-│   │   ├── history.go             # Create, FindByNodeID (with user join)
-│   │   └── api_key.go             # API key storage and validation
+│   │   ├── history.go             # Create, FindByNodeID (with user join) — being superseded by audit_log
+│   │   ├── api_key.go             # API key storage incl. kind + permissions (v0.5.9)
+│   │   ├── audit.go               # AuditRepo — insert/list audit_log rows (v0.5.9)
+│   │   └── suggestion.go          # SuggestionRepo — pending queue + decide + supersede (v0.5.9)
 │   └── service/
 │       ├── auth.go                # bcrypt (cost 12), token generation, session expiry
 │       ├── waterfall.go           # BFS status propagation (max depth 10)
 │       └── impact.go              # Bidirectional BFS impact analysis
 ├── migrations/
-│   └── 001_initial.sql            # Full schema: enums, tables, indexes, constraints
+│   ├── 001_initial.sql            # Full schema: enums, tables, indexes, constraints
+│   ├── 002_api_keys.sql           # API key storage (token hash + last_used_at)
+│   ├── 003_project_access.sql     # Per-project members + share token
+│   ├── 004_edge_routing.sql       # Edge waypoints / port persistence
+│   ├── 005_v1_api.sql             # Idempotency keys + pagination indexes
+│   ├── 006_audit_log.sql          # audit_log table (6-dimension provenance) — v0.5.9
+│   ├── 007_node_provenance.sql    # nodes: description_source, last_verified_*, field_provenance
+│   ├── 008_api_key_kind.sql       # api_keys: kind enum + permissions JSONB
+│   ├── 009_suggestions.sql        # node_suggestions queue
+│   └── 010_backfill_audit_from_history.sql  # one-time backfill
 ├── Dockerfile                     # Multi-stage build (golang:1.23 → alpine:3.20)
 ├── go.mod
 └── go.sum
@@ -204,19 +219,24 @@ frontend/
 | `TeamRepo` | Team CRUD, membership management |
 | `ProjectRepo` | Project CRUD, `VerifyAccess` (centralized auth check) |
 | `ProjectMemberRepo` | Per-project member CRUD, list with user join |
-| `NodeRepo` | Node CRUD, batch positions, filtered queries, status updates |
-| `EdgeRepo` | Edge CRUD, find connected edges |
-| `HistoryRepo` | Audit log creation and retrieval |
+| `NodeRepo` | Node CRUD, batch positions, filtered queries, status updates, provenance snapshot writes (`UpdateDescriptionProvenance`, `MarkVerified`) |
+| `EdgeRepo` | Edge CRUD, find connected edges, `Pool()` accessor for tx-from-handler batch writes |
+| `HistoryRepo` | Legacy node_history (read-only after v0.5.9; new writes go to `AuditRepo`) |
+| `APIKeyRepo` | API key storage incl. `kind` + `permissions` JSONB (v0.5.9) |
+| `AuditRepo` | `audit_log` insert + `ListByEntity` for the new 6-dimension provenance trail |
+| `SuggestionRepo` | `node_suggestions` queue: Create, ListPending, Decide, SupersedePendingForNode |
+| `IdempotencyRepo` | Replay cache for v1 API `Idempotency-Key` header |
 
-### Backend — Service Layer
+### Backend — Service / Cross-cutting Layer
 
-| Service | Responsibility |
+| Package | Responsibility |
 |---|---|
-| `auth` | Password hashing (bcrypt cost 12), token generation, session expiry |
-| `waterfall` | BFS status propagation across edges (max depth 10) |
-| `impact` | Bidirectional BFS from changed nodes with configurable depth |
-| `eventhub` | Pub/sub hub for SSE realtime events (node/edge CRUD, layout, import) |
-| `layout` | Server-side graph layout algorithms (dagre, grid) with GROUP auto-sizing |
+| `service/auth` | Password hashing (bcrypt cost 12), token generation, session expiry |
+| `service/waterfall` | BFS status propagation across edges (max depth 10) |
+| `service/impact` | Bidirectional BFS from changed nodes with configurable depth |
+| `service/eventhub` | Pub/sub hub for SSE realtime events (node/edge CRUD, layout, import) |
+| `service/layout` | Server-side graph layout algorithms (dagre, grid) with GROUP auto-sizing |
+| `audit` (own package) | `Logger.Log()` — write to `audit_log` with actor/channel pulled from echo context. `RequirePermission()` — gate handler by `permissions.write_semantic / write_structural / write_meta / verify / suggest / delete / read`. Lives outside `service` to avoid the `service ↔ repository ↔ middleware` import cycle. |
 
 ### Capture Worker (`capture/`)
 
@@ -253,26 +273,46 @@ PNG bytes ───────────────────────�
 
 ### Auth Flow
 
+Every request first goes through `Auth` middleware, which establishes
+**identity** (who) and **provenance** (how it got here). The provenance
+fields are what `audit_log` ultimately stores.
+
 ```
-Browser → SvelteKit route → api.ts (fetch w/ cookie)
-       → Go middleware: Auth → ValidateToken()
+Browser → SvelteKit route → api.ts (fetch w/ cookie + X-Thask-Client: thask-web/<sha>)
+       → Auth middleware: ValidateToken()
                               → sessions table (token lookup)
                               → users table (join)
-                              → inject user into Echo context
+                              → context: user_id, actor_kind="user_interactive",
+                                         client_type="thask-web", client_version
 
-CLI/MCP → Authorization header (Bearer <api_key>)
-        → Go middleware: Auth → ValidateAPIKey()
-                              → api_keys table (hash lookup)
+CLI → Authorization: Bearer <api_key> + X-Thask-Client: thask-cli/<ver>
+   → Auth middleware: ValidateAPIKey()
+                              → api_keys table (hash lookup) → kind + permissions
                               → users table (join)
-                              → inject user into Echo context
+                              → context: user_id, api_key_id,
+                                         actor_kind=<kind>, permissions=<JSONB>,
+                                         client_type="thask-cli", client_version
+
+MCP (Claude Code) → Bearer <api_key> + X-Thask-Client: thask-mcp/<ver> model=<client> session=<uuid>
+   → Same as CLI, plus context: agent_model + agent_session_id
 ```
 
+Pulled from echo context downstream:
+- **Handlers** call `audit.RequirePermission(c, mutationKind, action, evt)`
+  before mutating. Denial → 403 with the missing flag name + a pointer at
+  the right alternative tool (e.g. "use `thask.node.suggest_update`").
+- **Audit logger** writes one row per field change to `audit_log` with
+  every identity + provenance dimension populated. Failures are
+  best-effort (`context.Background()` detach + warn log) so audit issues
+  never roll back the user's primary write.
+
+Auth fundamentals (unchanged):
 - Session tokens: 32-byte hex, 7-day expiry
 - Storage: HttpOnly cookie (`thask_session`)
-- API keys: SHA256 hash, per-user, with optional expiration
+- API keys: SHA256 hash, per-user, optional expiration, **per-key `kind` + `permissions` JSONB** (v0.5.9)
 - Passwords: bcrypt with cost 12
 - Session rotation: all previous sessions deleted on login
-- Rate limiting: 20 req/s per client
+- Rate limiting: 20 req/s per client; v1 API additionally supports `Idempotency-Key` replay
 
 ### Access Control
 
@@ -284,6 +324,47 @@ Every API route verifies:
 1. Valid session or API key (`Auth` middleware)
 2. Team membership for the project (`ProjectAccess` middleware — centralized, not duplicated)
 3. Minimum role (if required) via `RequireRole` middleware (owner, admin, member, viewer)
+4. **(v0.5.9+)** Per-key `permissions` flag for the touched field's `mutation_kind`, via `audit.RequirePermission()` inside the handler
+
+### Permission gate & suggestion queue (v0.5.9+)
+
+Each field a write touches is classified as `semantic` / `structural` / `meta`
+(see [GRAPH.md > Provenance & Authoring](GRAPH.md#provenance--authoring-v059)).
+The calling key's `permissions` JSONB gates each class independently:
+
+```
+agent-kind key tries to update node.description
+   │
+   ▼
+audit.RequirePermission(c, "semantic", "write", evt)
+   │  permissions.write_semantic == false (default for agent kind)
+   ▼
+audit_log: action="write_denied", required="write_semantic"
+   │
+   ▼
+403 + "Use thask.node.suggest_update to propose this change for human review"
+```
+
+Approved-path data flow for agent-proposed semantic changes:
+
+```
+Agent → thask.node.suggest_update     (permissions.suggest required)
+      → POST /api/.../nodes/:id/suggestions
+      → SuggestionRepo.Create(status="pending")
+      → audit_log: action="suggested"
+
+Human  → /dashboard browse pending list
+       → thask.suggestions.decide {status:"accepted"}      ← actor_kind must be user_interactive
+       → SuggestionRepo.Decide(decided_by=<human user_id>)
+       → NodeRepo.Update(description=proposed_value)
+       → NodeRepo.UpdateDescriptionProvenance(authored_by=<human>, source="human", agent_model=<original>)
+       → audit_log: action="suggestion_decided" + later "updated"
+```
+
+The deciding human becomes the author of record on the node — the agent
+that originally proposed is credited only in `audit_log.metadata`. This
+is the design knob that prevents "agent writes → human rubber-stamps →
+graph fills with confidently-wrong content" loops.
 
 ---
 

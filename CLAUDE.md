@@ -23,6 +23,17 @@ Why: `thask.impact.analyze --node <release-id>` then answers "what areas did thi
 - CLI: `cd cli && go build ./... && go test ./...`
 - Release pipeline (needs npm OTP): `make release-cli CLI_VERSION=X.Y.Z THASKOTP=<6-digit>`
 
+## Release rules
+
+- **Docs must be fully up to date before `make release-cli` runs.** Treat
+  it as a gate, not a follow-up. Pre-release sweep covers:
+  CHANGELOG, README, ARCHITECTURE, API.md, CLI.md, MCP.md, DATABASE.md,
+  CLAUDE_CODE_PLUGIN.md, GRAPH.md. CHANGELOG alone is necessary but not
+  sufficient — README and ARCHITECTURE are the easy-to-forget ones.
+- If you're blocked on an external dependency mid-release (npm token,
+  OTP, gh auth), use the wait window to do the doc sweep rather than
+  skipping it.
+
 ## Commit rules
 
 - Never commit without an explicit per-task user request. Prior authorization does not carry over.

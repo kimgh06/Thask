@@ -6,9 +6,9 @@
 <td align="center" width="160"><img src="public/mascot.png" alt="Thask Mascot" width="140" /></td>
 </tr></table>
 
-**Map dependencies visually. Break nothing.**
+**The dependency graph layer for AI-assisted development.**
 <br />
-Dependency visualization for AI-assisted development teams.
+Map what depends on what, then let Claude Code / Cursor / Codex query it through MCP — with provenance guards so agents can't silently land hallucinated descriptions on your graph.
 
 <br />
 
@@ -85,7 +85,19 @@ Five edge types with distinct colors: `depends_on`, `blocks`, `related`, `parent
 
 ### CLI & MCP Integration
 
-Full CLI for terminal workflows (`npm install -g @thask-org/cli`). MCP server mode for AI agent integration — Claude Code and Cursor can query and modify your graph directly. [CLI Reference](docs/CLI.md) · [MCP Guide](docs/MCP.md)
+Full CLI for terminal workflows (`npm install -g @thask-org/cli`). 24 MCP tools for AI agent integration — Claude Code and Cursor can query and modify your graph directly. One-step browser login (`thask login`), in-place upgrades (`thask self-update`). [CLI Reference](docs/CLI.md) · [MCP Guide](docs/MCP.md)
+
+### Per-Key Permissions & Provenance (v0.5.9+)
+
+Every API key is classified as `user_interactive`, `agent`, or `service` with seven independent permission flags. Agent keys default to **blocking semantic writes** (description, "why" content) and node verification — so a hallucinated description can't silently land on your graph. Every write records 6-dimension provenance (actor, channel, agent model, mutation kind, trigger, evidence) to a single `audit_log` table. [DATABASE.md > Provenance](docs/DATABASE.md#provenance--audit-migrations-006010)
+
+### Suggestion Queue
+
+Agents wanting to revise a description post to `node_suggestions` and a human approves before the change lands. The deciding human becomes the author of record — the agent is credited only in audit metadata. Server-enforced: `accepted` decisions require a `user_interactive` actor regardless of permission flags.
+
+### Bulk Operations (v0.5.10+)
+
+Three endpoints cut N round-trips down to one — `node.batch_update` (up to 200), `edge.batch_create` / `edge.batch_delete` (up to 500). Atomic on permission / cycle failure; per-item skip reasons in `skipped[]`; HTTP `207 Multi-Status` when any item skips. Saves substantial agent context (1 call vs N).
 
 ### Go Dependency Scanner
 
@@ -140,28 +152,26 @@ The **server** runs your graph database and web UI. The **CLI** talks to the ser
 
 ## Quick Start for AI Agents
 
-Get Thask working with Claude Code in 3 minutes:
+Get Thask working with Claude Code in 2 minutes:
 
 1. **Start Thask** (if not running):
    ```bash
    make up
    ```
 
-2. **Create an API key** in the web UI at [http://localhost:7243](http://localhost:7243) → Settings → API Keys
-
-3. **Install the CLI:**
+2. **Install the CLI + log in via browser:**
    ```bash
    npm install -g @thask-org/cli
-   ```
-   Or build from source: `cd cli && go build -o thask ./cmd/thask && ./thask install`
-
-4. **Configure:**
-   ```bash
    thask config set url http://localhost:7244
-   thask config set token <your-api-key>
+   thask login   # opens browser, click Approve, token saved
    ```
+   `thask login` (v0.5.11+) replaces the old "make a key in Settings,
+   copy a 64-char string, paste it" dance. The MCP server reads the
+   same `~/.thask/config.json`, so this single login covers Claude Code
+   too. For headless / SSH sessions: create a key in the web UI and
+   run `thask config set token <key>` instead.
 
-5. **Add to Claude Code** (`.claude/mcp.json`):
+3. **Add to Claude Code** (`.claude/mcp.json`):
    ```json
    {
      "mcpServers": {
@@ -173,7 +183,11 @@ Get Thask working with Claude Code in 3 minutes:
    }
    ```
 
-Now Claude Code can read and modify your dependency graph. See [MCP Guide](docs/MCP.md) for details.
+Now Claude Code can read and modify your dependency graph — with v0.5.9+
+permission gates so agent keys can't silently land hallucinated
+descriptions. See [MCP Guide](docs/MCP.md) for details and the
+[official Claude Code plugin](docs/CLAUDE_CODE_PLUGIN.md) for a zero-setup
+install.
 
 ---
 
@@ -521,6 +535,11 @@ The full surface — `make` is the canonical entrypoint for dev, build, test, an
 - [x] Project templates (API Flow, Microservice Map, Sprint Board)
 - [x] Amber Precision design system fully applied
 - [x] Markdown description rendering (marked + DOMPurify)
+- [x] **v0.5.6** — Graph image capture (PNG/SVG via Playwright worker)
+- [x] **v0.5.8** — TypeScript/JavaScript dependency scanner (alias resolution, SvelteKit `$lib`)
+- [x] **v0.5.9** — Per-key permissions + suggestion queue + 6-dimension `audit_log` (anti-hallucination guards)
+- [x] **v0.5.10** — Bulk endpoints (`node.batch_update`, `edge.batch_*`) with HTTP 207 partial-success; `thask self-update`
+- [x] **v0.5.11** — `thask login` browser-based authentication; URL auto-normalization
 
 ### Future
 - [ ] Graph version snapshots & diffing

@@ -55,11 +55,20 @@ The plugin no-ops silently if the CLI is not configured. Before installation, ru
 ```bash
 npm install -g @thask-org/cli
 thask config set url <your-thask-url>
-thask config set token <your-api-key>
+thask login                         # browser flow, writes token to ~/.thask/config.json
 thask config set project <your-project-id>
 ```
 
-See [CLI.md](CLI.md) for full configuration reference.
+`thask login` (v0.5.11+) replaces the old "create a key in the web UI, copy
+the 64-char string, run `thask config set token <paste>`" dance. The MCP
+server reads the same `~/.thask/config.json`, so once `thask login`
+succeeds the plugin works without additional setup.
+
+For SSH / headless sessions where a browser isn't available, fall back to
+the manual path: create a key in the web UI (Settings > API Keys) and run
+`thask config set token <key>`.
+
+See [CLI.md](CLI.md) for the full configuration reference.
 
 ## What the plugin does
 
@@ -72,25 +81,32 @@ thask guide
 ```
 
 The output is prepended to the session as additional context, so the agent knows:
-- The 16 MCP tools and their parameters
+- The 24 MCP tools and their parameters (incl. v0.5.9 suggestion queue, v0.5.10 bulk endpoints, v0.5.11 login flow)
 - Node/edge type conventions (FLOW, BRANCH, TASK, BUG, API, UI, GROUP)
 - Status enum (PASS, FAIL, IN_PROGRESS, BLOCKED) — agents won't try invalid values like `TODO`
-- Recommended workflows (impact analysis, batch updates)
-- Known pitfalls
+- Recommended workflows (impact analysis, batch updates, suggest-then-verify)
+- Known pitfalls (incl. why agent-kind keys can't write descriptions directly)
 
 If the CLI isn't installed or configured, the hook exits cleanly with no output.
 
 ### MCP server registration
 
-`.mcp.json` registers `thask mcp serve` so Claude Code spawns the Thask MCP server automatically. This exposes 16 tools to the agent:
+`.mcp.json` registers `thask mcp serve` so Claude Code spawns the Thask MCP server automatically. This exposes 24 tools to the agent:
 
 | Category | Tools |
 |----------|-------|
-| Node | `list`, `create`, `get`, `update`, `delete`, `batch_status` |
-| Edge | `list`, `create`, `delete` |
+| Node | `list`, `create`, `get`, `update`, `delete`, `batch_status`, `batch_update`, `suggest_update`, `verify` |
+| Edge | `list`, `create`, `delete`, `batch_create`, `batch_delete` |
 | Graph | `get`, `import`, `layout`, `analyze` |
 | Analysis | `impact.analyze`, `scan.run` |
-| Meta | `guide` |
+| Suggestions | `list`, `decide` |
+| Meta | `guide`, `mistake.record` |
+
+`node.update` blocks writes to semantic fields (`description`, `tags`) for
+agent-kind API keys by default — agents must go through `node.suggest_update`
+and have a human run `suggestions.decide`. See
+[MCP.md > Provenance Tools](MCP.md#provenance-tools-v059) for the design
+rationale.
 
 See [MCP.md](MCP.md) for tool-level details.
 
@@ -110,10 +126,17 @@ This bumps `.claude-plugin/plugin.json` to match `git describe --tags`.
 After installing, in a new Claude Code session:
 
 1. The session context should contain a `## Thask project context` block at the top with the 138-line guide
-2. The tool list should include `mcp__thask__*` entries (16 tools)
+2. The tool list should include `mcp__thask__*` entries (24 tools)
 3. Asking the agent "what Thask projects do I have?" should produce a `thask.project.list`-style call
 
-If neither shows up, check:
+**One-shot check from the terminal:** `thask doctor` walks the full stack
+(binary, config, URL, server reachability + DB + migration version, token
+validity + permissions, MCP entries in `~/.claude.json`, `~/.cursor/mcp.json`,
+and `~/.codex/config.toml`) and prints `✓` / `⚠` / `✗` per check with a hint
+on every failure. Always the first command to run when the plugin "isn't
+working." Full reference: [CLI.md#doctor](./CLI.md#doctor).
+
+If `doctor` itself is missing some context, manual probes:
 - `thask config show` returns a configured URL/token
 - `thask guide` prints output on its own
 - The plugin is in the active plugin directory (`/plugin list`)
@@ -122,10 +145,10 @@ If neither shows up, check:
 
 The current plugin is v0.1 — it injects a static guide. Planned upgrades (tracked in the Thask `todo` project):
 
-- **Dynamic `thask.guide`** — include user's recent BUG nodes (mistakes), IN_PROGRESS tasks, and FAIL-status items
 - **PreToolUse hook** — warn before commands match a previously-recorded mistake pattern
 - **UserPromptSubmit hook** — auto-detect "그게 아니고", "왜 X 했냐" patterns to surface mistake-recording prompts
-- **`thask init` command** — single-command setup that installs the plugin, configures the CLI, and patches CLAUDE.md
+
+Shipped: dynamic `thask.guide` (v0.5.9, includes recent mistakes / IN_PROGRESS / blockers), `thask init` (v0.5.x, configures CLI + patches CLAUDE.md + Cursor/Codex MCP entries), `thask login` (v0.5.11, browser-based auth), `thask doctor` (v0.5.12, full-stack diagnostic).
 
 ## Related docs
 
