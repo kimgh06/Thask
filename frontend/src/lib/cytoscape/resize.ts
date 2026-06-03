@@ -17,6 +17,7 @@ const ZONE_CURSORS: Record<ResizeZone, string> = {
 interface ResizeOptions {
 	savePositions: () => void;
 	isEdgeDrawing: () => boolean;
+	isInteractionSuspended?: () => boolean;
 }
 
 export function attachResizeHandlers(
@@ -32,6 +33,7 @@ export function attachResizeHandlers(
 	let resizeStartBB = { x1: 0, y1: 0, x2: 0, y2: 0 };
 
 	function detectResizeZone(e: MouseEvent, node: cytoscape.NodeSingular): ResizeZone | null {
+		if (options.isInteractionSuspended?.()) return null;
 		if (node.hasClass('group-collapsed') || node.hasClass('filter-hidden')) return null;
 		const bb = node.renderedBoundingBox({});
 		const mx = e.offsetX;
@@ -59,7 +61,7 @@ export function attachResizeHandlers(
 	}
 
 	function onResizeMouseDown(e: MouseEvent) {
-		if (!resizeTarget || options.isEdgeDrawing()) return;
+		if (!resizeTarget || options.isEdgeDrawing() || options.isInteractionSuspended?.()) return;
 		const zone = detectResizeZone(e, resizeTarget);
 		if (!zone) return;
 
@@ -79,7 +81,15 @@ export function attachResizeHandlers(
 
 	function onResizeMouseMove(e: MouseEvent) {
 		if (!isResizing) {
-			if (options.isEdgeDrawing()) return;
+			if (options.isEdgeDrawing() || options.isInteractionSuspended?.()) {
+				resizeTarget = null;
+				container.style.cursor = '';
+				if (ungrabifiedForResize) {
+					ungrabifiedForResize.grabify();
+					ungrabifiedForResize = null;
+				}
+				return;
+			}
 			let foundTarget: cytoscape.NodeSingular | null = null;
 			let foundZone: ResizeZone | null = null;
 			let foundArea = Infinity;

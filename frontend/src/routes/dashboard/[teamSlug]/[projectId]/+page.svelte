@@ -24,6 +24,8 @@
 	let showShareDialog = $state(false);
 	let projectName = $state('');
 	let panelCollapsed = $state(false);
+	let panMode = $state(false);
+	let spacePanMode = $state(false);
 
 	const projectId = $derived(page.params.projectId ?? '');
 
@@ -40,6 +42,7 @@
 
 	// Zoom level for status bar
 	let zoomLevel = $state(1);
+	let moveDragActive = $derived(panMode || spacePanMode);
 
 	// Panel mode derived from selection state
 	let panelMode = $derived.by(() => {
@@ -234,7 +237,14 @@
 		}
 	}
 
-	const handleKeydown = createKeydownHandler({
+	function isTypingTarget(target: EventTarget | null): boolean {
+		const element = target as HTMLElement | null;
+		if (!element) return false;
+		const tag = element.tagName;
+		return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || element.isContentEditable;
+	}
+
+	const shortcutKeydown = createKeydownHandler({
 		deleteSelection: () => {
 			if (graphStore.selectedNodeIds.size > 1) nodeCrud.handleBatchDelete();
 			else if (graphStore.selectedNodeId) nodeCrud.handleDeleteNode(graphStore.selectedNodeId);
@@ -256,9 +266,43 @@
 		toggleAnalysis: () => graphStore.toggleAnalysisMode(),
 		togglePanel: () => { panelCollapsed = !panelCollapsed; },
 	});
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (!isTypingTarget(e.target)) {
+			if (e.code === 'Space') {
+				e.preventDefault();
+				spacePanMode = true;
+				return;
+			}
+			if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.code === 'KeyV') {
+				e.preventDefault();
+				panMode = !panMode;
+				return;
+			}
+			if (e.code === 'Escape' && panMode) {
+				panMode = false;
+				spacePanMode = false;
+				e.preventDefault();
+				return;
+			}
+		}
+		shortcutKeydown(e);
+	}
+
+	function handleKeyup(e: KeyboardEvent) {
+		if (e.code !== 'Space') return;
+		if (spacePanMode) {
+			e.preventDefault();
+			spacePanMode = false;
+		}
+	}
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window
+	onkeydown={handleKeydown}
+	onkeyup={handleKeyup}
+	onblur={() => { spacePanMode = false; }}
+/>
 
 <div class="h-full flex flex-col">
 	<div class="flex-1 flex overflow-hidden">
@@ -286,6 +330,7 @@
 					onUpdateNodeParent={nodeCrud.handleUpdateNodeParent}
 					onCreateEdge={edgeCrud.handleCreateEdge}
 					onZoomChange={(z) => (zoomLevel = z)}
+					panMode={moveDragActive}
 				/>
 
 				<!-- Floating toolbar -->
@@ -296,6 +341,7 @@
 						onZoomIn={() => canvas?.zoomIn()}
 						onZoomOut={() => canvas?.zoomOut()}
 						onFitView={() => canvas?.fitView()}
+						onTogglePanMode={() => { panMode = !panMode; }}
 						onRunLayout={(algorithm) => canvas?.runLayout(algorithm)}
 						onToggleImpact={() => graphStore.toggleImpactMode()}
 						onToggleAnalysis={() => graphStore.toggleAnalysisMode()}
@@ -304,9 +350,10 @@
 						onImport={handleImport}
 						isImpactActive={graphStore.impactMode}
 						isAnalysisActive={graphStore.analysisMode}
+						isPanModeActive={moveDragActive}
 						canImpact={!!graphStore.selectedNodeId}
 						{nodes}
-						onFocusNode={(id) => canvas?.focusNode(id)}
+						onFocusNode={(id) => canvas?.focusNode(id, { zoom: true })}
 						onUndo={() => undoStack.undo()}
 						onRedo={() => undoStack.redo()}
 						canUndo={undoStack.canUndo}
@@ -382,4 +429,3 @@
 		onClose={() => { showShareDialog = false; }}
 	/>
 {/if}
-

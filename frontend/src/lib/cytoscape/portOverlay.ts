@@ -8,6 +8,7 @@ interface Edgehandles {
 
 interface PortOverlayOptions {
 	isResizing: () => boolean;
+	isPanMode?: () => boolean;
 	isOnGroupBorder: (pos: { x: number; y: number }, node: cytoscape.NodeSingular) => boolean;
 }
 
@@ -23,6 +24,7 @@ export function attachPortOverlay(
 	let portHideTimer: ReturnType<typeof setTimeout> | null = null;
 
 	function showPorts(node: cytoscape.NodeSingular) {
+		if (options.isPanMode?.()) return;
 		portSource = node;
 		if (portHideTimer) {
 			clearTimeout(portHideTimer);
@@ -68,6 +70,7 @@ export function attachPortOverlay(
 	function onPortMouseDown(e: MouseEvent) {
 		const target = e.target as HTMLElement;
 		if (!target.classList.contains('port-dot')) return;
+		if (options.isPanMode?.()) return;
 		e.preventDefault();
 		e.stopPropagation();
 
@@ -99,7 +102,7 @@ export function attachPortOverlay(
 
 	cy.on('mouseover', 'node', (e) => {
 		const node = e.target as cytoscape.NodeSingular;
-		if (eh.active || node.grabbed() || options.isResizing()) return;
+		if (eh.active || node.grabbed() || options.isResizing() || options.isPanMode?.()) return;
 		if (node.data('nodeType') === 'GROUP' && !node.hasClass('group-collapsed')) {
 			if (!options.isOnGroupBorder(e.position, node)) return;
 		}
@@ -130,4 +133,3 @@ export function attachPortOverlay(
 		},
 	};
 }
-

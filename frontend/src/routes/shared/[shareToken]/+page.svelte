@@ -299,11 +299,10 @@
 							isAnalysisActive={false}
 							onExportPNG={() => { const cy = canvas?.getCy(); if (cy) exportPNG(cy); }}
 							onExportJSON={() => exportJSON(nodes, edges)}
-							onImport={noop}
 							isImpactActive={false}
 							canImpact={false}
 							{nodes}
-							onFocusNode={(id) => canvas?.focusNode(id)}
+							onFocusNode={(id) => canvas?.focusNode(id, { zoom: true })}
 							onUndo={noop}
 							onRedo={noop}
 							canUndo={false}

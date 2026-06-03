@@ -8,6 +8,7 @@ export interface GroupDragOptions {
 	onUpdateNodeParent?: (nodeId: string, parentId: string | null) => void;
 	savePositions: () => void;
 	isResizing: () => boolean;
+	isInteractionSuspended?: () => boolean;
 	hidePortOverlay: () => void;
 	trackTimeout: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
 }
@@ -23,9 +24,75 @@ export function attachGroupDragHandlers(
 	let dragDescendantIds: Set<string> | null = null;
 	let preDragPositions: NodePosition[] = [];
 	let currentDropTarget: string | null = null;
+	let previousDropTarget: string | null = null;
 	let dragTimeout: ReturnType<typeof setTimeout> | null = null;
+	let dropTargetRaf: number | null = null;
+	let pendingCursorPos: { x: number; y: number } | null = null;
+	let cachedDropGroups: Array<{ id: string; x1: number; y1: number; x2: number; y2: number; area: number }> = [];
+
+	function clearDropTarget() {
+		if (previousDropTarget) {
+			cy.getElementById(previousDropTarget).removeClass('drop-target');
+			previousDropTarget = null;
+		}
+		currentDropTarget = null;
+	}
+
+	function buildDropGroupCache(draggedNode: cytoscape.NodeSingular) {
+		cachedDropGroups = [];
+		cy.nodes('[nodeType="GROUP"]').forEach((g) => {
+			if (g.id() === draggedNode.id() || g.hasClass('group-collapsed') || dragDescendantIds?.has(g.id())) return;
+			const bb = g.boundingBox({});
+			cachedDropGroups.push({
+				id: g.id(),
+				x1: bb.x1,
+				y1: bb.y1,
+				x2: bb.x2,
+				y2: bb.y2,
+				area: (bb.x2 - bb.x1) * (bb.y2 - bb.y1),
+			});
+		});
+	}
+
+	function computeDropTarget(cursorPos: { x: number; y: number }): string | null {
+		let innerTarget: string | null = null;
+		let innerTargetArea = Infinity;
+		for (const g of cachedDropGroups) {
+			if (
+				cursorPos.x >= g.x1 && cursorPos.x <= g.x2 &&
+				cursorPos.y >= g.y1 && cursorPos.y <= g.y2 &&
+				g.area < innerTargetArea
+			) {
+				innerTarget = g.id;
+				innerTargetArea = g.area;
+			}
+		}
+		return innerTarget;
+	}
+
+	function applyDropTarget(nextTarget: string | null) {
+		if (nextTarget === previousDropTarget) {
+			currentDropTarget = nextTarget;
+			return;
+		}
+		if (previousDropTarget) cy.getElementById(previousDropTarget).removeClass('drop-target');
+		if (nextTarget) cy.getElementById(nextTarget).addClass('drop-target');
+		previousDropTarget = nextTarget;
+		currentDropTarget = nextTarget;
+	}
+
+	function scheduleDropTarget(cursorPos: { x: number; y: number }) {
+		pendingCursorPos = cursorPos;
+		if (dropTargetRaf !== null) return;
+		dropTargetRaf = requestAnimationFrame(() => {
+			dropTargetRaf = null;
+			if (!pendingCursorPos) return;
+			applyDropTarget(computeDropTarget(pendingCursorPos));
+		});
+	}
 
 	function onGrab(e: cytoscape.EventObject) {
+		if (options.isInteractionSuspended?.()) return;
 		const node = e.target as cytoscape.NodeSingular;
 		if (options.isResizing()) return;
 		options.hidePortOverlay();
@@ -57,47 +124,37 @@ export function attachGroupDragHandlers(
 			groupDragState = null;
 			dragDescendantIds = null;
 		}
+		buildDropGroupCache(node);
 	}
 
 	function onDrag(evt: cytoscape.EventObject) {
+		if (options.isInteractionSuspended?.()) return;
 		const node = evt.target as cytoscape.NodeSingular;
 		const cursorPos = evt.position;
 
-		let innerTarget: string | null = null;
-		let innerTargetArea = Infinity;
-		cy.nodes('[nodeType="GROUP"]').forEach((g) => {
-			g.removeClass('drop-target');
-			if (g.id() === node.id() || g.hasClass('group-collapsed') || dragDescendantIds?.has(g.id())) return;
-			const bb = g.boundingBox({});
-			if (
-				cursorPos.x >= bb.x1 && cursorPos.x <= bb.x2 &&
-				cursorPos.y >= bb.y1 && cursorPos.y <= bb.y2
-			) {
-				const area = (bb.x2 - bb.x1) * (bb.y2 - bb.y1);
-				if (area < innerTargetArea) {
-					innerTarget = g.id();
-					innerTargetArea = area;
-				}
-			}
-		});
-		currentDropTarget = innerTarget;
-		if (innerTarget) {
-			cy.getElementById(innerTarget).addClass('drop-target');
-		}
+		scheduleDropTarget(cursorPos);
 
 		if (groupDragState && groupDragState.groupId === node.id()) {
 			const groupPos = node.position();
-			groupDragState.childOffsets.forEach((offset, childId) => {
-				const child = cy.getElementById(childId);
-				if (child.length) {
-					child.position({ x: groupPos.x + offset.dx, y: groupPos.y + offset.dy });
-				}
+			cy.batch(() => {
+				groupDragState?.childOffsets.forEach((offset, childId) => {
+					const child = cy.getElementById(childId);
+					if (child.length) {
+						child.position({ x: groupPos.x + offset.dx, y: groupPos.y + offset.dy });
+					}
+				});
 			});
 		}
 	}
 
 	function onDragfree(evt: cytoscape.EventObject) {
-		cy.nodes('.drop-target').removeClass('drop-target');
+		if (options.isInteractionSuspended?.()) return;
+		if (dropTargetRaf !== null) {
+			cancelAnimationFrame(dropTargetRaf);
+			dropTargetRaf = null;
+		}
+		if (pendingCursorPos) applyDropTarget(computeDropTarget(pendingCursorPos));
+		pendingCursorPos = null;
 		const node = evt.target as cytoscape.NodeSingular;
 
 		// Drop on group: update parentId (with cycle prevention)
@@ -122,7 +179,8 @@ export function attachGroupDragHandlers(
 			options.onUpdateNodeParent?.(node.id(), newParentId);
 			requestAnimationFrame(() => options.savePositions());
 		}
-		currentDropTarget = null;
+		clearDropTarget();
+		cachedDropGroups = [];
 
 		if (groupDragState && groupDragState.groupId === node.id()) {
 			groupDragState = null;
@@ -168,6 +226,8 @@ export function attachGroupDragHandlers(
 	return {
 		cleanup: () => {
 			if (dragTimeout) clearTimeout(dragTimeout);
+			if (dropTargetRaf !== null) cancelAnimationFrame(dropTargetRaf);
+			clearDropTarget();
 			cy.off('grab', 'node', onGrab);
 			cy.off('drag', 'node', onDrag);
 			cy.off('dragfree', 'node', onDragfree);

@@ -16,7 +16,7 @@
 	import { attachGroupDragHandlers } from '$lib/cytoscape/handlers/groupDrag';
 	import { initEdgehandles, attachEdgeCreationHandlers, isOnGroupBorder } from '$lib/cytoscape/handlers/edgeCreation';
 	import { attachSelectionHandlers } from '$lib/cytoscape/handlers/selection';
-	import { attachDynamicRouting } from '$lib/cytoscape/edgeRouter';
+	import { applyDynamicRouting, attachDynamicRouting } from '$lib/cytoscape/edgeRouter';
 	import { attachEdgeBridgeOverlay } from '$lib/cytoscape/edgeBridgeOverlay';
 	import { attachStatusDots } from '$lib/cytoscape/statusDot';
 
@@ -37,12 +37,26 @@
 		onCreateEdge?: (sourceId: string, targetId: string) => void;
 		onNodeTap?: (nodeId: string, position: { x: number; y: number }) => void;
 		readonly?: boolean;
+		panMode?: boolean;
 		apiBasePath?: string;
 	}
 
-	let { nodes, edges, projectId, onUpdateNodeParent, onZoomChange, onCreateEdge, onNodeTap = undefined, readonly = false, apiBasePath }: Props = $props();
+	let {
+		nodes,
+		edges,
+		projectId,
+		onUpdateNodeParent,
+		onZoomChange,
+		onCreateEdge,
+		onNodeTap = undefined,
+		readonly = false,
+		panMode = false,
+		apiBasePath,
+	}: Props = $props();
 
 	const resolvedApiBase = $derived(apiBasePath || (projectId ? `/api/projects/${projectId}` : ''));
+	const SERVER_LAYOUT_ANIMATION_NODE_LIMIT = 40;
+	let autoLayoutRoutingSuspended = false;
 
 	let ehInstance: { start: (n: cytoscape.NodeSingular) => void; stop: () => void } | null = null;
 
@@ -51,6 +65,7 @@
 	let initialLayoutDone = false;
 	let activeTimeouts: ReturnType<typeof setTimeout>[] = [];
 	let lastMouseModelPos = { x: 0, y: 0 };
+	let statusDotsHandle: { update: () => void } | null = null;
 
 	function trackTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
 		const id = setTimeout(() => {
@@ -73,6 +88,49 @@
 			initialLayoutDone,
 			onUpdateNodeParent,
 		});
+		revealPendingEdges();
+		applyInteractionMode();
+		statusDotsHandle?.update();
+		cy.trigger('thask:filter');
+	}
+
+	function revealPendingEdges() {
+		if (!cy) return;
+		const pendingEdges = cy.edges('[?routePending]');
+		if (pendingEdges.length === 0) return;
+		const edgeIds = new Set(pendingEdges.map((edge) => edge.id()));
+		applyDynamicRouting(cy, { useGrid: true, edgeIds });
+		pendingEdges.data('routePending', false);
+	}
+
+	function finishAutoLayoutRouting(delayMs: number) {
+		trackTimeout(() => {
+			if (!cy) return;
+			applyDynamicRouting(cy, { useGrid: true });
+			cy.edges().data('routePending', false);
+			autoLayoutRoutingSuspended = false;
+			cy.fit(undefined, 50);
+		}, delayMs);
+	}
+
+	function applyInteractionMode() {
+		if (!cy) return;
+		cy.boxSelectionEnabled(!readonly && !panMode);
+		if (panMode) {
+			cy.elements().addClass('pan-interaction-disabled');
+			cy.elements().unselectify();
+			cy.$(':selected').unselect();
+		} else {
+			cy.elements().removeClass('pan-interaction-disabled');
+			cy.elements().selectify();
+		}
+		if (readonly || panMode) {
+			cy.nodes().ungrabify();
+			ehInstance?.stop();
+			if (portOverlay) portOverlay.style.display = 'none';
+		} else {
+			cy.nodes().grabify();
+		}
 	}
 
 	async function savePositions() {
@@ -99,26 +157,45 @@
 			runClientLayout();
 			return;
 		}
+
 		try {
 			const res = await api.post(`${resolvedApiBase}/graph/layout`, { algorithm });
 			if (res.data) {
 				const serverData = res.data as { nodes?: Array<{ id: string; positionX: number; positionY: number; width?: number; height?: number }> };
 				const serverNodes = serverData.nodes || [];
-				serverNodes.forEach((sn) => {
-					const ele = cy!.getElementById(sn.id);
-					if (ele.length) {
-						ele.animate({
-							position: { x: sn.positionX, y: sn.positionY },
-							duration: 400,
-							easing: 'ease-out-cubic' as any,
+				const shouldAnimate = serverNodes.length <= SERVER_LAYOUT_ANIMATION_NODE_LIMIT;
+				autoLayoutRoutingSuspended = true;
+				cy.edges().data('routePending', true);
+				if (shouldAnimate) {
+					serverNodes.forEach((sn) => {
+						const ele = cy!.getElementById(sn.id);
+						if (ele.length) {
+							ele.animate({
+								position: { x: sn.positionX, y: sn.positionY },
+								duration: 400,
+								easing: 'ease-out-cubic' as any,
+							});
+							if (sn.width) ele.data('width', sn.width);
+							if (sn.height) ele.data('height', sn.height);
+						}
+					});
+					finishAutoLayoutRouting(450);
+				} else {
+					cy.batch(() => {
+						serverNodes.forEach((sn) => {
+							const ele = cy!.getElementById(sn.id);
+							if (!ele.length) return;
+							ele.position({ x: sn.positionX, y: sn.positionY });
+							if (sn.width) ele.data('width', sn.width);
+							if (sn.height) ele.data('height', sn.height);
 						});
-						if (sn.width) ele.data('width', sn.width);
-						if (sn.height) ele.data('height', sn.height);
-					}
-				});
-				setTimeout(() => cy?.fit(undefined, 50), 450);
+					});
+					finishAutoLayoutRouting(80);
+				}
 			}
 		} catch {
+			autoLayoutRoutingSuspended = false;
+			cy.edges().data('routePending', false);
 			runClientLayout();
 		}
 	}
@@ -139,12 +216,16 @@
 		cy.zoom({ level: cy.zoom() / 1.2, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
 	}
 
-	export function focusNode(nodeId: string) {
+	export function focusNode(nodeId: string, options: { zoom?: boolean } = {}) {
 		if (!cy) return;
 		const node = cy.getElementById(nodeId);
 		if (!node.length) return;
 		cy.stop();
-		cy.animate({ center: { eles: node } }, { duration: 200 });
+		const animation: cytoscape.AnimationOptions = { center: { eles: node } };
+		if (options.zoom) {
+			animation.zoom = Math.min(Math.max(cy.zoom(), 1.15), cy.maxZoom());
+		}
+		cy.animate(animation, { duration: 220, easing: 'ease-out-cubic' });
 		cy.nodes().removeClass('search-highlight');
 		node.addClass('search-highlight');
 		trackTimeout(() => { if (node.inside()) node.removeClass('search-highlight'); }, 2000);
@@ -248,11 +329,15 @@
 		const cleanups: Array<{ cleanup: () => void }> = [];
 
 		// Selection handlers (always active — needed for detail panel in readonly too)
-		const selectionHandlers = attachSelectionHandlers(cy, { onNodeTap });
+		const selectionHandlers = attachSelectionHandlers(cy, {
+			onNodeTap,
+			isSelectionSuspended: () => panMode,
+		});
 		cleanups.push(selectionHandlers);
 
 		// Status indicator dots (bottom-right corner of each node)
 		const statusDots = attachStatusDots(cy);
+		statusDotsHandle = statusDots;
 		cleanups.push(statusDots);
 
 		if (!readonly) {
@@ -265,6 +350,7 @@
 			const resizeHandlers = attachResizeHandlers(cy, cyContainer, {
 				savePositions,
 				isEdgeDrawing: () => (eh as { active: boolean }).active,
+				isInteractionSuspended: () => panMode,
 			});
 			cleanups.push(resizeHandlers);
 
@@ -272,6 +358,7 @@
 			const ehTyped = eh as { active: boolean; start: (n: cytoscape.NodeSingular) => void; stop: () => void };
 			const portHandlers = attachPortOverlay(cy, portOverlay, ehTyped, {
 				isResizing: () => resizeHandlers.isResizing(),
+				isPanMode: () => panMode,
 				isOnGroupBorder,
 			});
 			cleanups.push(portHandlers);
@@ -282,6 +369,7 @@
 				onUpdateNodeParent,
 				savePositions,
 				isResizing: () => resizeHandlers.isResizing(),
+				isInteractionSuspended: () => panMode,
 				hidePortOverlay: () => { portOverlay.style.display = 'none'; },
 				trackTimeout,
 			});
@@ -296,7 +384,10 @@
 		}
 
 		// Visual renderers — active in readonly too so shared iframes match the editor
-		const cleanupRouting = attachDynamicRouting(cy);
+		const cleanupRouting = attachDynamicRouting(cy, {
+			routeImmediately: false,
+			isRoutingSuspended: () => autoLayoutRoutingSuspended,
+		});
 		cleanups.push({ cleanup: cleanupRouting });
 
 		const cleanupBridgeOverlay = attachEdgeBridgeOverlay(cy);
@@ -310,9 +401,11 @@
 
 		// Initial data load
 		syncElements();
+		applyInteractionMode();
 
 		return () => {
 			for (const h of cleanups) h.cleanup();
+			statusDotsHandle = null;
 		};
 	});
 
@@ -329,6 +422,12 @@
 		if (cy) {
 			cy.style().clear().fromJson(getGraphStyles(theme)).update();
 		}
+	});
+
+	$effect(() => {
+		const _panMode = panMode;
+		void _panMode;
+		applyInteractionMode();
 	});
 
 	// React to data changes after mount
@@ -349,7 +448,7 @@
 </script>
 
 <div class="relative h-full w-full overflow-hidden cytoscape-canvas-bg" style="min-height: 400px">
-	<div bind:this={container} class="h-full w-full"></div>
+	<div bind:this={container} class="h-full w-full" class:pan-mode={panMode}></div>
 	<!-- Port overlay for edge creation — 8 dots around hovered node -->
 	<div
 		bind:this={portOverlay}
@@ -378,3 +477,15 @@
 		{/each}
 	</div>
 </div>
+
+<style>
+	.pan-mode,
+	.pan-mode :global(*) {
+		cursor: grab !important;
+	}
+
+	.pan-mode:active,
+	.pan-mode:active :global(*) {
+		cursor: grabbing !important;
+	}
+</style>
