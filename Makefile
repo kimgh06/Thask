@@ -20,9 +20,11 @@ dev-frontend:
 dev-capture:
 	docker compose -f docker-compose.dev.yml --profile capture up -d --build capture
 
+BACKEND_LDFLAGS = -X github.com/thask/backend/internal/handler.Version=$$(git describe --tags --always 2>/dev/null || echo dev)
+
 # Build
 build: build-cli
-	cd backend && go build -o bin/server ./cmd/server
+	cd backend && go build -ldflags "$(BACKEND_LDFLAGS)" -o bin/server ./cmd/server
 	cd frontend && npm run build
 
 build-cli:
