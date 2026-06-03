@@ -90,6 +90,7 @@ func main() {
 		Event:         handler.NewEventHandler(hub),
 		Activity:      handler.NewActivityHandler(historyRepo),
 		Suggestion:    handler.NewSuggestionHandler(suggestionRepo, nodeRepo, auditLogger),
+		Health:        handler.NewHealthHandler(pool),
 	}
 
 	// Echo

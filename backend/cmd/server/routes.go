@@ -25,13 +25,20 @@ type Handlers struct {
 	Event         *handler.EventHandler
 	Activity      *handler.ActivityHandler
 	Suggestion    *handler.SuggestionHandler
+	Health        *handler.HealthHandler
 }
 
 func RegisterRoutes(e *echo.Echo, h Handlers, sessionRepo *repository.SessionRepo, apiKeyRepo *repository.APIKeyRepo, teamRepo *repository.TeamRepo, projectRepo *repository.ProjectRepo, pmRepo *repository.ProjectMemberRepo) {
-	// Health check
-	e.GET("/health", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
-	})
+	// Health check — DB ping + migration version + build info so `thask
+	// doctor` and external monitors can distinguish liveness from readiness.
+	if h.Health != nil {
+		e.GET("/health", h.Health.Get)
+		e.GET("/api/health", h.Health.Get)
+	} else {
+		e.GET("/health", func(c echo.Context) error {
+			return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+		})
+	}
 
 	// Auth routes (public)
 	auth := e.Group("/api/auth")
