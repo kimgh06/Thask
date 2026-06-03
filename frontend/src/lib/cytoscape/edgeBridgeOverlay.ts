@@ -5,6 +5,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const BRIDGE_RADIUS = 10;
 const BRIDGE_GAP_PADDING = 2;
 const STITCH_OVERLAP = 5;
+const BRIDGE_BUCKET_SIZE = 240;
 const BRIDGE_GROUP_ATTR = 'data-edge-bridge-overlay';
 
 interface RenderedPoint {
@@ -36,6 +37,19 @@ interface BridgeDisplayOptions {
 	opacity: number;
 	softRadius: number;
 	softOpacity: number;
+}
+
+interface SegmentBounds {
+	minX: number;
+	minY: number;
+	maxX: number;
+	maxY: number;
+}
+
+interface EdgeVisual {
+	color: string;
+	width: number;
+	opacity: number;
 }
 
 function clamp(min: number, value: number, max: number): number {
@@ -139,6 +153,35 @@ function segmentIntersection(a: RoutedSegment, b: RoutedSegment): SegmentInterse
 	};
 }
 
+function segmentBounds(segment: RoutedSegment): SegmentBounds {
+	return {
+		minX: Math.min(segment.from.x, segment.to.x),
+		minY: Math.min(segment.from.y, segment.to.y),
+		maxX: Math.max(segment.from.x, segment.to.x),
+		maxY: Math.max(segment.from.y, segment.to.y),
+	};
+}
+
+function boundsOverlap(left: SegmentBounds, right: SegmentBounds): boolean {
+	return left.minX <= right.maxX && left.maxX >= right.minX && left.minY <= right.maxY && left.maxY >= right.minY;
+}
+
+function segmentBucketKeys(bounds: SegmentBounds): string[] {
+	const keys: string[] = [];
+	const startX = Math.floor(bounds.minX / BRIDGE_BUCKET_SIZE);
+	const endX = Math.floor(bounds.maxX / BRIDGE_BUCKET_SIZE);
+	const startY = Math.floor(bounds.minY / BRIDGE_BUCKET_SIZE);
+	const endY = Math.floor(bounds.maxY / BRIDGE_BUCKET_SIZE);
+
+	for (let x = startX; x <= endX; x += 1) {
+		for (let y = startY; y <= endY; y += 1) {
+			keys.push(`${x}:${y}`);
+		}
+	}
+
+	return keys;
+}
+
 function chooseCrossingStyle(
 	a: RoutedSegment,
 	b: RoutedSegment,
@@ -221,52 +264,90 @@ function buildBridgeCrossings(
 	if (options.hideAll) return [];
 
 	const allSegments = routes.flatMap((route) => route.segments);
+	const boundsCache = allSegments.map(segmentBounds);
+	const bucketKeys = boundsCache.map(segmentBucketKeys);
+	const buckets = new Map<string, number[]>();
+	const edgeVisualCache = new Map<string, EdgeVisual | null>();
 	const crossings: BridgeCrossing[] = [];
 
+	function getEdgeVisual(edgeId: string): EdgeVisual | null {
+		if (edgeVisualCache.has(edgeId)) return edgeVisualCache.get(edgeId) ?? null;
+
+		const edge = cy.getElementById(edgeId);
+		if (!edge.length) {
+			edgeVisualCache.set(edgeId, null);
+			return null;
+		}
+
+		const color = String(edge.style('line-color') || '#8b7fd9');
+		const modelWidth = parseFloat(String(edge.style('width') || '1.5'));
+		const modelOpacity = parseFloat(String(edge.style('opacity') || '1'));
+		const visual = {
+			color,
+			width: Math.max(1, modelWidth * cy.zoom()),
+			opacity: Number.isFinite(modelOpacity) ? clamp(0, modelOpacity, 1) : 1,
+		};
+		edgeVisualCache.set(edgeId, visual);
+		return visual;
+	}
+
 	for (let i = 0; i < allSegments.length; i += 1) {
-		for (let j = i + 1; j < allSegments.length; j += 1) {
-			const left = allSegments[i];
-			const right = allSegments[j];
+		const left = allSegments[i];
+		const compared = new Set<number>();
 
-			if (left.edgeId === right.edgeId) continue;
+		for (const key of bucketKeys[i]) {
+			const candidates = buckets.get(key);
+			if (!candidates) continue;
 
-			const chosen = chooseCrossingStyle(left, right);
-			if (!chosen) continue;
-			if (chosen.style === 'soft-bypass' && !options.showSoftBypass) continue;
+			for (const j of candidates) {
+				if (compared.has(j)) continue;
+				compared.add(j);
+				const right = allSegments[j];
 
-			const intersection = segmentIntersection(left, right);
-			if (!intersection) continue;
+				if (left.edgeId === right.edgeId) continue;
+				if (!boundsOverlap(boundsCache[i], boundsCache[j])) continue;
 
-			const chosenT = chosen.segment === left ? intersection.aT : intersection.bT;
-			const otherT = chosen.segment === left ? intersection.bT : intersection.aT;
-			if (chosen.style === 'bridge') {
-				// Horizontal jumps should still render near bends, but the crossed
-				// segment should be a real pass-through rather than an endpoint touch.
-				if (!isLooseSegmentParam(chosenT) || !isStrictInteriorParam(otherT)) continue;
-			} else if (!isStrictInteriorParam(chosenT) || !isStrictInteriorParam(otherT)) {
-				continue;
-			}
+				const chosen = chooseCrossingStyle(left, right);
+				if (!chosen) continue;
+				if (chosen.style === 'soft-bypass' && !options.showSoftBypass) continue;
 
-			const edge = cy.getElementById(chosen.segment.edgeId);
-			if (!edge.length) continue;
+				const intersection = segmentIntersection(left, right);
+				if (!intersection) continue;
 
-			const renderedPoint = modelToRendered(cy, intersection.point);
-			const color = String(edge.style('line-color') || '#8b7fd9');
-			const modelWidth = parseFloat(String(edge.style('width') || '1.5'));
-			const width = Math.max(1, modelWidth * cy.zoom());
+				const chosenT = chosen.segment === left ? intersection.aT : intersection.bT;
+				const otherT = chosen.segment === left ? intersection.bT : intersection.aT;
+				if (chosen.style === 'bridge') {
+					// Horizontal jumps should still render near bends, but the crossed
+					// segment should be a real pass-through rather than an endpoint touch.
+					if (!isLooseSegmentParam(chosenT) || !isStrictInteriorParam(otherT)) continue;
+				} else if (!isStrictInteriorParam(chosenT) || !isStrictInteriorParam(otherT)) {
+					continue;
+				}
 
-			crossings.push({
-				segment: chosen.segment,
-				other: chosen.other,
-				point: renderedPoint,
-				color,
-				width,
-				radius: chosen.style === 'soft-bypass' ? options.softRadius : options.radius,
-				opacity: chosen.style === 'soft-bypass' ? options.softOpacity : options.opacity,
-				style: chosen.style,
-			});
+				const visual = getEdgeVisual(chosen.segment.edgeId);
+				if (!visual) continue;
+
+				const renderedPoint = modelToRendered(cy, intersection.point);
+
+				crossings.push({
+					segment: chosen.segment,
+					other: chosen.other,
+					point: renderedPoint,
+					color: visual.color,
+					width: visual.width,
+					radius: chosen.style === 'soft-bypass' ? options.softRadius : options.radius,
+					opacity: visual.opacity * (chosen.style === 'soft-bypass' ? options.softOpacity : options.opacity),
+					style: chosen.style,
+				});
 			}
 		}
+
+		for (const key of bucketKeys[i]) {
+			const bucket = buckets.get(key);
+			if (bucket) bucket.push(i);
+			else buckets.set(key, [i]);
+		}
+	}
 
 	return compactCrossings(crossings);
 }
@@ -305,8 +386,8 @@ function renderBridges(
 			const liftY = baseY - radius * 1.9;
 			const arcPath = `M ${startX} ${baseY} Q ${point.x} ${liftY} ${endX} ${baseY}`;
 
-			svg.appendChild(createPathElement(`M ${startX} ${baseY} L ${endX} ${baseY}`, backdrop, eraseWidth));
-			svg.appendChild(createPathElement(arcPath, backdrop, eraseWidth));
+			svg.appendChild(setOpacity(createPathElement(`M ${startX} ${baseY} L ${endX} ${baseY}`, backdrop, eraseWidth), opacity));
+			svg.appendChild(setOpacity(createPathElement(arcPath, backdrop, eraseWidth), opacity));
 			svg.appendChild(setOpacity(createPathElement(arcPath, color, width), opacity));
 			continue;
 		}
@@ -356,7 +437,7 @@ function renderBridges(
 		};
 		const erasePath = `M ${eraseStart.x} ${eraseStart.y} L ${eraseEnd.x} ${eraseEnd.y}`;
 		const curvePath = `M ${start.x} ${start.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${end.x} ${end.y}`;
-		svg.appendChild(createPathElement(erasePath, backdrop, eraseWidth));
+		svg.appendChild(setOpacity(createPathElement(erasePath, backdrop, eraseWidth), opacity));
 		svg.appendChild(setOpacity(createPathElement(curvePath, color, width), opacity));
 	}
 }
@@ -381,7 +462,17 @@ export function attachEdgeBridgeOverlay(cy: cytoscape.Core): () => void {
 	host.appendChild(svg);
 
 	let rafId: number | null = null;
+	let routesDirty = true;
+	let cachedRoutes: RoutedEdgePath[] = [];
 	const resizeObserver = new ResizeObserver(() => scheduleRender());
+
+	function getCachedRoutes(): RoutedEdgePath[] {
+		if (routesDirty) {
+			cachedRoutes = getStoredRoutes(cy);
+			routesDirty = false;
+		}
+		return cachedRoutes;
+	}
 
 	function render() {
 		rafId = null;
@@ -389,7 +480,7 @@ export function attachEdgeBridgeOverlay(cy: cytoscape.Core): () => void {
 		svg.setAttribute('viewBox', `0 0 ${rect.width} ${rect.height}`);
 		const backdrop = resolveBackdropColor(host);
 		const options = bridgeDisplayOptions(cy.zoom());
-		const routes = getStoredRoutes(cy);
+		const routes = getCachedRoutes();
 		const crossings = buildBridgeCrossings(cy, routes, options);
 		renderBridges(svg, crossings, backdrop);
 	}
@@ -399,18 +490,23 @@ export function attachEdgeBridgeOverlay(cy: cytoscape.Core): () => void {
 		rafId = requestAnimationFrame(render);
 	}
 
+	function markRoutesDirty() {
+		routesDirty = true;
+		scheduleRender();
+	}
+
 	resizeObserver.observe(host);
-	cy.on('layoutstop', scheduleRender);
-	cy.on('position', 'node', scheduleRender);
-	cy.on('add remove data', scheduleRender);
+	cy.on('layoutstop', markRoutesDirty);
+	cy.on('add remove data', markRoutesDirty);
+	cy.on('thask:filter', scheduleRender);
 	cy.on('pan zoom', scheduleRender);
 
 	scheduleRender();
 
 	return () => {
-		cy.off('layoutstop', scheduleRender);
-		cy.off('position', 'node', scheduleRender);
-		cy.off('add remove data', scheduleRender);
+		cy.off('layoutstop', markRoutesDirty);
+		cy.off('add remove data', markRoutesDirty);
+		cy.off('thask:filter', scheduleRender);
 		cy.off('pan zoom', scheduleRender);
 		resizeObserver.disconnect();
 		if (rafId !== null) cancelAnimationFrame(rafId);
