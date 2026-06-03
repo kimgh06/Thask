@@ -116,7 +116,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Println("  /plugin marketplace add kimgh06/Thask")
 	fmt.Println("  /plugin install thask@thask")
 	fmt.Println()
-	fmt.Println("Done. Run `thask guide` to see the dynamic agent guide for this project.")
+	fmt.Println("Done.")
+	fmt.Println("  • `thask doctor` — verify the full setup at a glance")
+	fmt.Println("  • `thask guide`  — dynamic agent guide for this project")
 	return nil
 }
 
