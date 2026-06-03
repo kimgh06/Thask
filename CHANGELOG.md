@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.12] - 2026-06-03
+
 ### Added
 - **`thask doctor`** — single-command diagnostic that walks the full stack (binary version → config file → URL → server reachability → DB + migration version → token validity → token permissions → default team/project → MCP binary on PATH → Claude Code / Cursor / Codex MCP entries). Each check reports `✓` / `⚠` / `✗` with a remediation hint; exit code is `0` on all-pass, `1` when any check is critical. Replaces the previous workflow of correlating 401s, "tools not visible" and silent MCP failures across separate commands.
 - **`GET /api/health` enhanced response** (and `/health` alias): now returns `{status, version, db, migrationVersion, migrationsApplied, uptime}` instead of `{"status":"ok"}`. Returns `503` with `dbError` populated when the DB ping fails so monitors can distinguish "server up, DB down" from "fully healthy". `thask doctor` consumes this; external uptime monitors can too. Backend `Version` is overridable via `-ldflags "-X github.com/thask/backend/internal/handler.Version=X.Y.Z"`.
