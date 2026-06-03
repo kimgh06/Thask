@@ -237,6 +237,14 @@ export function getGraphStyles(theme: 'dark' | 'light' = 'dark'): StylesheetStyl
       } as Record<string, any>,
     },
 
+    // Newly synced edges stay hidden until final routing has segment data.
+    {
+      selector: 'edge[?routePending]',
+      style: {
+        opacity: 0,
+      },
+    },
+
     // Selected edge — brass gold highlight
     {
       selector: 'edge.edge-selected',
@@ -250,6 +258,14 @@ export function getGraphStyles(theme: 'dark' | 'light' = 'dark'): StylesheetStyl
         'overlay-padding': 4,
         'z-index': 999,
       } as Record<string, string | number>,
+    },
+
+    // Camera move mode: keep graph visible but let pointer gestures pass to the canvas.
+    {
+      selector: '.pan-interaction-disabled',
+      style: {
+        events: 'no',
+      } as Record<string, string>,
     },
 
     // Edge hover — connected nodes highlight
@@ -413,8 +429,17 @@ export function getGraphStyles(theme: 'dark' | 'light' = 'dark'): StylesheetStyl
     {
       selector: 'node.filter-hidden',
       style: {
-        display: 'none',
-      },
+        opacity: 0,
+        'text-opacity': 0,
+        events: 'no',
+      } as Record<string, string | number>,
+    },
+    {
+      selector: 'edge.filter-hidden',
+      style: {
+        opacity: 0.16,
+        'z-index': 1,
+      } as Record<string, string | number>,
     },
 
     // Children of collapsed group: hidden

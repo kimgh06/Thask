@@ -163,7 +163,7 @@ export function syncElements(ctx: SyncContext): boolean {
 			if (existing.length) {
 				existing.data(data);
 			} else {
-				cy.add({ group: 'edges', data });
+				cy.add({ group: 'edges', data: { ...data, routePending: true } });
 			}
 		});
 	});
