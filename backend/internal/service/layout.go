@@ -25,21 +25,21 @@ const (
 
 	// Compact rectangular child templates keep common 4-8 node groups readable
 	// without making the rendered group box excessively wide.
-	rectCompactCornerX = 56.0
-	rectCompactCornerY = 56.0
-	rectCompactSideX   = 88.0
-	rectCompactSideY   = 84.0
-	rectDenseCornerX   = 46.0
-	rectDenseCornerY   = 44.0
-	rectDenseSideX     = 70.0
-	rectDenseSideY     = 66.0
+	rectCompactCornerX = 48.0
+	rectCompactCornerY = 48.0
+	rectCompactSideX   = 74.0
+	rectCompactSideY   = 70.0
+	rectDenseCornerX   = 40.0
+	rectDenseCornerY   = 38.0
+	rectDenseSideX     = 60.0
+	rectDenseSideY     = 56.0
 
 	// Group-internal layout needs a larger effective footprint than the bare
 	// 72x72 Cytoscape body because long wrapped labels and thick outlines make
 	// nodes look overlapped much earlier than the raw geometry suggests.
 	childLayoutNodeW         = 104.0
 	childLayoutNodeH         = 92.0
-	childLayoutCellPad       = 60.0
+	childLayoutCellPad       = 36.0
 	childRoutePad            = 10.0
 	childGrowFactor          = 1.10
 	childGrowPasses          = 6
@@ -53,12 +53,12 @@ const (
 	childCompactCorridorPad  = 10.0
 	childHeaderCorridorPad   = 10.0
 	passThroughLaneGap       = 34.0
-	passThroughStep          = 96.0
+	passThroughStep          = 80.0
 	lineMainOffset           = 36.0
-	lineSidecarOffset        = 152.0
+	lineSidecarOffset        = 128.0
 	lineBoundaryMainX        = 136.0
 	lineBoundarySideX        = 84.0
-	lineAxisStep             = 116.0
+	lineAxisStep             = 100.0
 	lineCompactMainOffset    = 28.0
 	lineCompactSidecarOffset = 104.0
 	lineCompactBoundaryMainX = 96.0
@@ -73,6 +73,8 @@ const (
 	routeHotspotCell         = gridSize * 3
 	routeHotspotStep         = gridSize
 	routeHotspotTrim         = nodeW
+	largeGraphNodeThreshold  = 50
+	largeGraphGroupThreshold = 12
 )
 
 type LayoutPosition struct {
@@ -115,6 +117,7 @@ func CalculateLayout(nodes []model.Node, edges []model.Edge, algorithm string) L
 // --- Hierarchical layout (dagre-style) with dynamic spacing ---
 
 func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
+	largeGraph := len(nodes) >= largeGraphNodeThreshold
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
 	nodeMap := make(map[string]*model.Node)
 	for i := range nodes {
@@ -773,13 +776,15 @@ func dagreLayout(nodes []model.Node, edges []model.Edge) []LayoutPosition {
 	// along their smallest overlap axis before the general route cleanup.
 	resolveTopLevelOverlaps(positions, groupSizes)
 
-	// Re-run child layout finalization with the FINAL top-level positions so
-	// children within groups align toward their actual external connections
-	// (the first run used coarse positions which may differ significantly).
-	finalizeGroupLayoutsWithExternalPulls(nodes, children, edges, nodeMap, positions, childRelPos, groupSizes, true, true)
+	if !largeGraph {
+		// Re-run child layout finalization with the FINAL top-level positions so
+		// children within groups align toward their actual external connections
+		// (the first run used coarse positions which may differ significantly).
+		finalizeGroupLayoutsWithExternalPulls(nodes, children, edges, nodeMap, positions, childRelPos, groupSizes, true, true)
 
-	// Micro-adjust children to steer cross-group routes through gaps.
-	adjustChildrenToAvoidRouteCrossings(positions, edges, nodeMap, childRelPos, groupSizes)
+		// Micro-adjust children to steer cross-group routes through gaps.
+		adjustChildrenToAvoidRouteCrossings(positions, edges, nodeMap, childRelPos, groupSizes)
+	}
 
 	result := make([]LayoutPosition, 0, len(nodes))
 	for _, n := range nodes {

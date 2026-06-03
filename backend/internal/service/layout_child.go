@@ -1171,7 +1171,7 @@ func countRenderedCompactChildHeaderIntersections(
 }
 
 func childCompactAreaScore(groupW, groupH float64) float64 {
-	return groupW*groupH + (groupW+groupH)*120
+	return groupW*groupH + groupW*100 + groupH*160
 }
 
 func cloneChildLayout(childIDs []string, relPos map[string][2]float64) map[string][2]float64 {
@@ -1276,7 +1276,11 @@ func expandChildLayoutUntilClear(
 	}
 
 	groupW, groupH := recenterAndMeasureChildLayout(childIDs, relPos)
-	for attempt := 0; attempt < childGrowPasses; attempt++ {
+	growPasses := childGrowPasses
+	if len(childIDs) >= largeGraphGroupThreshold {
+		growPasses = 2
+	}
+	for attempt := 0; attempt < growPasses; attempt++ {
 		violations := measureChildLayoutViolations(childIDs, childEdges, externalLinks, relPos)
 		if childLayoutViolationsClear(violations) {
 			break
@@ -1698,7 +1702,14 @@ func childLayoutCost(
 	groupH := math.Max((maxY-minY)+childLayoutNodeH+groupPadTop+groupPadBot, minGroupH)
 	overlaps := countChildBoxOverlaps(childIDs, relPos, 4)
 	aspectPenalty := childLayoutAspectPenalty(childIDs, childEdges, externalLinks, groupW, groupH)
-	return float64(overlaps)*1_500_000 + float64(intersections)*1_000_000 + float64(headerHits)*50_000 + float64(crossings)*36_000 + (groupW+groupH)*16 + math.Max(groupW, groupH)*6 + aspectPenalty
+	return float64(overlaps)*1_500_000 +
+		float64(intersections)*1_000_000 +
+		float64(headerHits)*50_000 +
+		float64(crossings)*36_000 +
+		groupW*12 +
+		groupH*28 +
+		math.Max(groupW, groupH)*6 +
+		aspectPenalty
 }
 
 func layeredChildLayoutCost(
