@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.13] - 2026-06-12
+
+### Added
+- **Handoff / onboarding flow (Phase 10).** Node detail panel now shows a subtle `Created by {email} · {relative date}` footer (click the email to add `?author=<uuid>` to the URL — filter consumer arrives later). New CLI command `thask graph export --format md` renders the project graph as a markdown handoff document: H1 project header, one H2 section per node with type/status/tags badge, description as-is, GROUP children list, `Depends on` / `Blocks` link sections (anchor-linked, GitHub-style slugs), and a creator footer. Nodes sorted by `createdAt` for deterministic output; golden-file test in `cli/internal/output/markdown_test.go`. New project template "Team Handoff Starter" with three example nodes demonstrating the convention.
+- **Handoff Convention (docs/GRAPH.md).** New `## Handoff Convention (v0.5.13+)` section recommending node descriptions follow a structured markdown shape — `## Why` / `## Q&A` / `## Gotchas` / `## See also` — so descriptions stay useful for both onboarding humans and agents reading the graph. Three realistic example descriptions (FLOW: Stripe webhook handler, TASK: payment retry, BUG: duplicate charge). One-paragraph hint in `docs/MCP.md` near the `suggest_update` agent workflow pointing agents at the convention when composing `proposedValue`.
+- **Backend: `creator_email` on Node read responses.** All node read paths (`FindByID`, `FindByProjectID`, `FindChangedSince`, `FindFailOrBug`, `FindByIDs`, `FindByProjectIDPaginated`) now LEFT JOIN `users` and return `creatorEmail` in the JSON payload. Migration `011_nodes_created_by.sql` adds `nodes.created_by` (nullable, FK to `users` with `ON DELETE SET NULL`) and backfills from the earliest `node_history` row with `action='created'` so existing projects pick up provenance without a re-import. Index `idx_nodes_created_by` for the eventual `?author=<uuid>` filter.
+
+### Upgrade notes
+- **Migration 011 lock window.** The backfill (`UPDATE nodes SET created_by = (SELECT ... FROM node_history ...) WHERE created_by IS NULL`) runs as a single statement and acquires row locks on every previously-existing node. On large tables (~100k+ nodes) this can block concurrent writes for several seconds. Deploy during a maintenance window if you have a busy instance, or chunk the backfill by hand before running migrations. For Thask's current scale this completes in well under a second.
+- **`creatorEmail` is `""` until you create new nodes.** Existing nodes without any `node_history` row of `action='created'` remain with NULL `created_by` and an empty `creatorEmail`. The NodeDetailView footer renders "Created by unknown · {date}" for these. Future node creations carry their author end-to-end.
+
+### Fixed
+- **`nodeRepo.Create` and `Graph.Import` now populate `created_by`.** Migration 011 only added the column + backfilled history — write paths still left it NULL for brand-new nodes. Both the single-node create handler (`POST /api/projects/:pid/nodes`) and the bulk graph import handler now read `userID` from the request context and pass it to the INSERT, so every node created after this release carries its author. Anonymous shared-access creates still write NULL (no session user available — expected).
+- **`thask graph export --format md` header showed the project UUID instead of the project name.** The CLI assumed `/api/projects/:id` always wraps responses in `{data: {...}}` but the endpoint returns a bare `{name: ...}` shape on some paths. Now tries both envelope and bare formats before falling back to the UUID.
+
+### Docs
+- **Phase 9 positioning rollout.** README hero gains a "Before vs After" comparison table and "Works with Claude Code / Cursor / MCP" badges to land the dependency-graph-for-AI-agents positioning above the fold. New `marketing/server.json` follows the MCP Registry 2025-09-29 schema (npm package `@thask-org/cli`, stdio transport, `THASK_URL` + `THASK_TOKEN` env, tool_count=24, category tags) for submission to the official Anthropic MCP Registry. New `marketing/show-hn.md` draft with three title options, body, posting checklist, and follow-up channel sequence.
+
 ## [0.5.12] - 2026-06-03
 
 ### Added
