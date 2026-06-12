@@ -42,10 +42,32 @@
 		return page.url.pathname === path || (path !== '/dashboard' && page.url.pathname.startsWith(path));
 	}
 
-	const avatarLetter = $derived(
-		authStore.user?.displayName?.charAt(0)?.toUpperCase() ?? '?'
+	const currentTeam = $derived(
+		teamsStore.teams.find((team) => team.slug === page.params.teamSlug) ?? null,
 	);
+	const currentProject = $derived(
+		currentTeam?.projects?.find((project) => project.id === page.params.projectId) ?? null,
+	);
+	const browserTitle = $derived.by(() => {
+		const path = page.url.pathname;
+		if (path === '/dashboard/settings') return 'Settings — Thask';
+		if (path.endsWith('/members')) {
+			return currentTeam ? `${currentTeam.name} Members — Thask` : 'Team Members — Thask';
+		}
+		if (page.params.projectId) {
+			return currentProject ? `${currentProject.name} — Thask` : 'Project — Thask';
+		}
+		if (page.params.teamSlug) {
+			return currentTeam ? `${currentTeam.name} — Thask` : `${page.params.teamSlug} — Thask`;
+		}
+		return 'Dashboard — Thask';
+	});
+
 </script>
+
+<svelte:head>
+	<title>{browserTitle}</title>
+</svelte:head>
 
 {#if authStore.loading}
 	<div class="flex items-center justify-center min-h-screen">
@@ -68,15 +90,20 @@
 				class:gap-3={!sidebarCollapsed}
 				style="padding: {sidebarCollapsed ? '8px' : '16px'};"
 			>
-				<div class="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center text-white text-sm font-semibold shrink-0">
-					{avatarLetter}
-				</div>
-				{#if !sidebarCollapsed}
-					<div class="min-w-0">
-						<h1 class="text-sm font-bold leading-tight truncate">Thask</h1>
-						<p class="text-xs text-[var(--color-text-muted)] truncate">{authStore.user?.displayName}</p>
-					</div>
-				{/if}
+				<a
+					href="/"
+					aria-label="Go to Thask home"
+					class="flex items-center min-w-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:ring-offset-2 focus:ring-offset-[var(--color-surface)]"
+					class:gap-3={!sidebarCollapsed}
+				>
+					<img src="/icon.svg" alt="" class="w-8 h-8 rounded-lg shrink-0" />
+					{#if !sidebarCollapsed}
+						<div class="min-w-0">
+							<h1 class="text-sm font-bold leading-tight truncate">Thask</h1>
+							<p class="text-xs text-[var(--color-text-muted)] truncate">{authStore.user?.displayName}</p>
+						</div>
+					{/if}
+				</a>
 			</div>
 
 			<nav class="flex-1 overflow-y-auto p-2 space-y-0.5">
