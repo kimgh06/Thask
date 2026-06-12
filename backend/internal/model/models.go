@@ -105,6 +105,12 @@ type Node struct {
 	LastVerifiedBy         *string    `json:"lastVerifiedBy,omitempty" db:"last_verified_by"`
 	LastVerifiedCommit     *string    `json:"lastVerifiedCommit,omitempty" db:"last_verified_commit"`
 	FieldProvenance        any        `json:"fieldProvenance,omitempty" db:"field_provenance"`
+
+	// Creator metadata (migration 011). CreatedBy is the user UUID who first
+	// created the node; CreatorEmail is the denormalized email from a LEFT JOIN
+	// on users. Empty when the user account has been deleted or for legacy nodes.
+	CreatedBy    *string `json:"createdBy,omitempty" db:"created_by"`
+	CreatorEmail string  `json:"creatorEmail,omitempty" db:"creator_email"`
 }
 
 type NodeDetail struct {

@@ -3,6 +3,7 @@
 	import { NODE_TYPES, STATUS_OPTIONS, TYPE_COLORS, STATUS_COLORS, STATUS_LABELS } from '$lib/constants';
 	import { Trash2, Clock, Tag, Link2, History, FileText, MoreHorizontal, Cable, ArrowUpToLine, ArrowDownToLine } from 'lucide-svelte';
 	import MarkdownEditor from '$lib/components/MarkdownEditor.svelte';
+	import { relativeDate } from '$lib/utils/relativeDate';
 
 	interface Props {
 		node: NodeDetail;
@@ -291,6 +292,17 @@
 				<span class="text-[11px]" style="color: var(--color-text-muted);">{formatDate(node.updatedAt)}</span>
 			</div>
 		</div>
+
+		<!-- Creator metadata footer -->
+		<p class="text-[11px] leading-relaxed" style="color: var(--color-text-tertiary, var(--color-text-muted));">
+			Created by
+			{#if node.creatorEmail}
+				<span>{node.creatorEmail}</span>
+			{:else}
+				<span>unknown</span>
+			{/if}
+			&middot; {relativeDate(node.createdAt)}
+		</p>
 
 		{#if !readonly}
 			<button

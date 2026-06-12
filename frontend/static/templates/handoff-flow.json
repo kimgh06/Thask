@@ -1,0 +1,52 @@
+{
+  "name": "Team Handoff Starter",
+  "description": "Self-documenting graph template demonstrating the Handoff Convention for onboarding and knowledge transfer",
+  "nodes": [
+    {
+      "type": "GROUP",
+      "title": "How to read this graph",
+      "status": "IN_PROGRESS",
+      "positionX": 60,
+      "positionY": 60,
+      "description": "## Why\nThis group shows what good node descriptions look like. Each child node uses the Handoff Convention: ## Why, ## Q&A, ## Gotchas. Replace these examples with your own nodes and fill in the descriptions before your next handoff."
+    },
+    {
+      "type": "FLOW",
+      "title": "Example: why this exists",
+      "status": "PASS",
+      "positionX": 200,
+      "positionY": 180,
+      "description": "## Why\nStripe delivers payment events (charge.succeeded, payment_intent.failed, etc.) asynchronously. This flow receives those webhooks, verifies the signature, and routes them to the correct domain handler. Without it, subscriptions would never activate and failed payments would go unnoticed.\n\n## Q&A\n- **Why not handle Stripe events inline in the checkout API?** — Checkout is synchronous; Stripe can retry webhooks for hours, so they need their own idempotency layer.\n- **What happens if the handler returns a non-2xx?** — Stripe retries with exponential backoff for up to 72 hours. After that the event is dropped.\n- **How do I test locally?** — `stripe listen --forward-to localhost:3000/webhooks/stripe`\n\n## Gotchas\n- Signature verification uses the **endpoint-specific** signing secret, not the API key. Using the wrong secret silently rejects all events.\n- `charge.succeeded` and `payment_intent.succeeded` can both fire for the same payment. The handler deduplicates by `stripeEventId` in the `webhook_events` table.\n\n## See also\n- [Stripe webhook docs](https://stripe.com/docs/webhooks)\n- Slack #payments — \"why we moved off Sidekiq for webhooks\" (2025-09-03)"
+    },
+    {
+      "type": "TASK",
+      "title": "Example: in-flight work",
+      "status": "IN_PROGRESS",
+      "positionX": 520,
+      "positionY": 180,
+      "description": "## Why\nOur current retry loop is a cron job that polls the DB every minute. Under load it causes lock contention on the `invoices` table. Moving retries to Sidekiq gives per-job backoff and removes the polling.\n\n## Q&A\n- **Is this safe to deploy incrementally?** — Yes. The cron and Sidekiq workers can coexist; set `SIDEKIQ_RETRY_ENABLED=true` in staging first.\n- **What queue does this use?** — `payments_retry` — separate from the default queue so a retry storm doesn't starve other jobs.\n- **Who approved the queue naming?** — Platform team, see Linear ENG-5102.\n\n## Gotchas\n- The `max_attempts` column in `invoices` maps to Sidekiq's `retry:` option — keep them in sync when changing retry limits.\n- Sidekiq's dead-job TTL is 6 months by default; adjust `dead_timeout_in_seconds` or dead jobs accumulate unboundedly."
+    },
+    {
+      "type": "BUG",
+      "title": "Example: known issue",
+      "status": "FAIL",
+      "positionX": 840,
+      "positionY": 180,
+      "description": "## Why\nUnder concurrent checkout (two tabs, rapid double-click), two `payment_intent.create` calls can race and produce two charges for the same order. Reported by three users; reproduced in staging.\n\n## Q&A\n- **Is this in production right now?** — Yes, low frequency (~1/week). A manual refund runbook lives in Notion.\n- **What's the root cause?** — `orders.payment_intent_id` lacks a UNIQUE constraint, so the idempotency check is a read-then-write race.\n- **What's the fix?** — Add the DB constraint + a Redis lock around `checkout.confirm`. Draft in branch `fix/double-charge-lock`.\n\n## Gotchas\n- The Redis lock needs a timeout — don't set it below 10 s or mobile users on slow connections will hit false positives.\n- Stripe's own idempotency key helps but doesn't fully cover the case where the client generates a new key on retry.\n\n## See also\n- Notion: Payment Incident Runbook\n- Linear ENG-5311 (tracks the fix)"
+    }
+  ],
+  "edges": [
+    {
+      "sourceTitle": "Example: why this exists",
+      "targetTitle": "Example: in-flight work",
+      "edgeType": "triggers",
+      "label": "enqueues retry on failure"
+    },
+    {
+      "sourceTitle": "Example: known issue",
+      "targetTitle": "Example: in-flight work",
+      "edgeType": "blocks",
+      "label": "motivates"
+    }
+  ]
+}

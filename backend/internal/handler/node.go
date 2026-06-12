@@ -184,6 +184,10 @@ func (h *NodeHandler) Create(c echo.Context) error {
 		Width:       req.Width,
 		Height:      req.Height,
 	}
+	if userID != "" {
+		uid := userID
+		node.CreatedBy = &uid
+	}
 	if node.Tags == nil {
 		node.Tags = []string{}
 	}

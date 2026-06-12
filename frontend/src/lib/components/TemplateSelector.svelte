@@ -20,6 +20,7 @@
 		{ file: 'sprint-board.json', name: 'Sprint Board', description: 'Kanban-style sprint with tasks, bugs, and milestones' },
 		{ file: 'microservice-map.json', name: 'Microservice Map', description: 'Service dependency map with API gateway and data layer' },
 		{ file: 'api-flow.json', name: 'API Flow', description: 'Request lifecycle from client to database and back' },
+		{ file: 'handoff-flow.json', name: 'Team Handoff Starter', description: 'Self-documenting template with Handoff Convention examples for onboarding and knowledge transfer' },
 	];
 
 	let loading = $state(false);

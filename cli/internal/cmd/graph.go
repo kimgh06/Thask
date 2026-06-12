@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/thask/cli/internal/output"
@@ -37,7 +38,7 @@ var graphGetCmd = &cobra.Command{
 var graphExportCmd = &cobra.Command{
 	Use:     "export",
 	Aliases: []string{"ex"},
-	Short:   "Export graph to JSON file",
+	Short:   "Export graph to JSON or markdown file",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		pid := resolveProject()
 		if pid == "" {
@@ -48,7 +49,50 @@ var graphExportCmd = &cobra.Command{
 			return err
 		}
 
+		format, _ := cmd.Flags().GetString("format")
 		filePath, _ := cmd.Flags().GetString("file")
+
+		if format == "md" {
+			// Fetch project name for the document header.
+			projectName := pid
+			if projData, perr := apiClient.Get("/api/projects/" + pid); perr == nil {
+				var envelope struct {
+					Data struct {
+						Name string `json:"name"`
+					} `json:"data"`
+				}
+				if jerr := json.Unmarshal(projData, &envelope); jerr == nil && envelope.Data.Name != "" {
+					projectName = envelope.Data.Name
+				} else {
+					var bare struct {
+						Name string `json:"name"`
+					}
+					if jerr := json.Unmarshal(projData, &bare); jerr == nil && bare.Name != "" {
+						projectName = bare.Name
+					}
+				}
+			}
+
+			md, merr := output.RenderGraphAsMarkdown(data, projectName, time.Now())
+			if merr != nil {
+				return merr
+			}
+
+			if filePath != "" {
+				if werr := os.WriteFile(filePath, []byte(md), 0644); werr != nil {
+					return fmt.Errorf("failed to write file: %w", werr)
+				}
+				fmt.Fprintf(os.Stderr, "Exported to %s\n", filePath)
+			} else {
+				fmt.Print(md)
+			}
+			return nil
+		}
+
+		if format != "" && format != "json" {
+			return fmt.Errorf("unsupported format %q: use json or md", format)
+		}
+
 		if filePath == "" {
 			filePath = "graph.json"
 		}
@@ -255,7 +299,8 @@ func init() {
 	graphImportCmd.Flags().String("mode", "merge", "Import mode: replace or merge")
 	_ = graphImportCmd.MarkFlagRequired("file")
 
-	graphExportCmd.Flags().String("file", "graph.json", "Output file path")
+	graphExportCmd.Flags().String("file", "", "Output file path (default: graph.json for json, stdout for md)")
+	graphExportCmd.Flags().String("format", "json", "Output format: json or md")
 
 	graphCaptureCmd.Flags().String("out", "", "Output image path")
 	graphCaptureCmd.Flags().String("file", "", "Output image path (deprecated; use --out)")

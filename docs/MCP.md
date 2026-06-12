@@ -313,6 +313,8 @@ Agent keys are blocked from `thask.node.update {description: ...}` and
 `thask.node.verify` by default. The CLI/MCP backend returns a 403 with
 guidance pointing at the suggest_update path.
 
+When composing a `proposedValue` for `suggest_update`, prefer the **Handoff Convention** from [GRAPH.md](./GRAPH.md#handoff-convention-v0513) — structure the description with `## Why`, `## Q&A`, and `## Gotchas` headings. This makes the description useful for both onboarding humans and future agents reading the graph.
+
 ### Provenance in read responses
 
 Every node returned by `thask.node.get`, `thask.node.list`, `thask.graph.get`,

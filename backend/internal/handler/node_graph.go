@@ -147,6 +147,12 @@ func (h *NodeHandler) Import(c echo.Context) error {
 
 	ctx := c.Request().Context()
 	projectID := mw.ResolveProjectID(c)
+	userID := mw.GetUserID(c)
+	var createdBy *string
+	if userID != "" {
+		uid := userID
+		createdBy = &uid
+	}
 
 	// Classify the import: any node with a description means the payload
 	// carries semantic claims, so it must clear write_semantic.
@@ -195,10 +201,10 @@ func (h *NodeHandler) Import(c echo.Context) error {
 
 		var node model.Node
 		err := tx.QueryRow(ctx,
-			`INSERT INTO nodes (project_id, type, title, description, status, tags, position_x, position_y, width, height)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			`INSERT INTO nodes (project_id, type, title, description, status, tags, position_x, position_y, width, height, created_by)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 			 RETURNING id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at`,
-			projectID, item.Type, item.Title, item.Description, status, tags, item.PositionX, item.PositionY, item.Width, item.Height,
+			projectID, item.Type, item.Title, item.Description, status, tags, item.PositionX, item.PositionY, item.Width, item.Height, createdBy,
 		).Scan(&node.ID, &node.ProjectID, &node.Type, &node.Title, &node.Description, &node.Status, &node.AssigneeID, &node.Tags, &node.Metadata, &node.ParentID, &node.PositionX, &node.PositionY, &node.Width, &node.Height, &node.CreatedAt, &node.UpdatedAt)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, dto.Err(fmt.Sprintf("Failed to create node: %s", item.Title)))

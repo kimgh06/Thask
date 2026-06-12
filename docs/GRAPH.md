@@ -323,6 +323,136 @@ granted `permissions.verify=true` if you accept the trade-off.
 
 ---
 
+## Handoff Convention (v0.5.13+)
+
+When a team member leaves or a new engineer joins, the Thask graph should be
+the first thing they open — not a stale Confluence page. For that to work,
+node descriptions need enough context to be self-explanatory.
+
+### Recommended description structure
+
+Use this markdown skeleton in the `description` field of any node that owns
+non-obvious logic:
+
+```markdown
+## Why
+Why does this exist? What problem does it solve? (1–3 sentences)
+
+## Q&A
+- **What triggers this?** — ...
+- **What can go wrong?** — ...
+- **Who owns this?** — ...
+
+## Gotchas
+- Non-obvious constraint or footgun
+- Hidden dependency that doesn't appear in the graph
+
+## See also  *(optional)*
+- [Slack thread](https://...) — decision from 2025-11
+- Linear ticket ENG-4201
+```
+
+The headings are a convention, not enforced by the schema. Feel free to add or
+drop sections — the point is that a new engineer reading the node can answer
+their first three questions without pinging anyone.
+
+### Example: FLOW node — Stripe webhook handler
+
+```markdown
+## Why
+Stripe delivers payment events (charge.succeeded, payment_intent.failed, etc.)
+asynchronously. This flow receives those webhooks, verifies the signature, and
+routes them to the correct domain handler. Without it, subscriptions would
+never activate and failed payments would go unnoticed.
+
+## Q&A
+- **Why not handle Stripe events inline in the checkout API?** — Checkout is
+  synchronous; Stripe can retry webhooks for hours, so they need their own
+  idempotency layer.
+- **What happens if the handler returns a non-2xx?** — Stripe retries with
+  exponential backoff for up to 72 hours. After that the event is dropped.
+- **How do I test locally?** — `stripe listen --forward-to localhost:3000/webhooks/stripe`
+
+## Gotchas
+- Signature verification uses the **endpoint-specific** signing secret, not the
+  API key. Using the wrong secret silently rejects all events.
+- `charge.succeeded` and `payment_intent.succeeded` can both fire for the same
+  payment. The handler deduplicates by `stripeEventId` in the `webhook_events`
+  table.
+
+## See also
+- [Stripe webhook docs](https://stripe.com/docs/webhooks)
+- Slack #payments — "why we moved off Sidekiq for webhooks" (2025-09-03)
+```
+
+### Example: TASK node — Migrate payment retry to Sidekiq
+
+```markdown
+## Why
+Our current retry loop is a cron job that polls the DB every minute. Under
+load it causes lock contention on the `invoices` table. Moving retries to
+Sidekiq gives per-job backoff and removes the polling.
+
+## Q&A
+- **Is this safe to deploy incrementally?** — Yes. The cron and Sidekiq
+  workers can coexist; set `SIDEKIQ_RETRY_ENABLED=true` in staging first.
+- **What queue does this use?** — `payments_retry` — separate from the default
+  queue so a retry storm doesn't starve other jobs.
+- **Who approved the queue naming?** — Platform team, see Linear ENG-5102.
+
+## Gotchas
+- The `max_attempts` column in `invoices` maps to Sidekiq's `retry:` option —
+  keep them in sync when changing retry limits.
+- Sidekiq's dead-job TTL is 6 months by default; adjust `dead_timeout_in_seconds`
+  or dead jobs accumulate unboundedly.
+```
+
+### Example: BUG node — Duplicate charge race condition
+
+```markdown
+## Why
+Under concurrent checkout (two tabs, rapid double-click), two
+`payment_intent.create` calls can race and produce two charges for the same
+order. Reported by three users in June 2026; reproduced in staging.
+
+## Q&A
+- **Is this in production right now?** — Yes, low frequency (~1/week). We have
+  a manual refund runbook in Notion.
+- **What's the root cause?** — `orders.payment_intent_id` lacks a UNIQUE
+  constraint, so the idempotency check is a read-then-write race.
+- **What's the fix?** — Add the DB constraint + a Redis lock around
+  `checkout.confirm`. Draft in branch `fix/double-charge-lock`.
+
+## Gotchas
+- The Redis lock approach needs a timeout — don't set it below 10 s or mobile
+  users on slow connections will hit false positives.
+- Stripe's own idempotency key helps but doesn't fully cover the case where the
+  client generates a new key on retry.
+
+## See also
+- Notion: Payment Incident Runbook
+- Linear ENG-5311 (tracks the fix)
+```
+
+### Why this matters
+
+Graphs go stale in two ways: nodes get deleted when they should be kept, and
+descriptions stop matching the code. The second failure mode is the dangerous
+one for the AI-agent-context-layer use case — an agent reading a stale
+description makes confident, wrong decisions.
+
+A consistent structural shape (`## Why / ## Q&A / ## Gotchas`) makes
+descriptions easier to maintain: each section has a single clear owner
+(domain knowledge, anticipated questions, footguns). It also makes them easier
+for agents to extract context from — a model can answer "what are the gotchas
+for this node?" with a targeted read rather than parsing free-form prose.
+
+The convention pairs with the provenance system (v0.5.9+): human-authored
+descriptions with a recent `last_verified_at` timestamp are the ground truth;
+agent-authored descriptions with no verification are signals worth double-checking.
+
+---
+
 ## File Map
 
 | File | Responsibility |

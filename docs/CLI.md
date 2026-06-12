@@ -688,18 +688,23 @@ Output:
 }
 ```
 
-### graph export [\--file \<path\>]
+### graph export [\--format json\|md] [\--file \<path\>]
 
-Export graph to a JSON file.
+Export graph to a JSON file or a markdown handoff document.
 
 ```bash
 thask graph export -p <projectId>
 thask graph export -p <projectId> --file my-graph.json
+thask graph export -p <projectId> --format md > handoff.md
+thask graph export -p <projectId> --format md --file handoff.md
 ```
+
+Use `--format md` to render the project graph as a markdown handoff document, one H2 section per node with dependency links and a creator footer. Suitable for attaching to a Slack message or PR.
 
 | Flag | Default | Description |
 |---|---|---|
-| `--file` | `graph.json` | Output file path |
+| `--file` | `graph.json` (json) / stdout (md) | Output file path |
+| `--format` | `json` | Output format: `json` or `md` |
 
 ### graph capture [\--out \<path\>] [\--width 1600] [\--height 1000]
 

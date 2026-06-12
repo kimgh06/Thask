@@ -21,14 +21,20 @@ func NewNodeRepo(pool *pgxpool.Pool) *NodeRepo {
 
 func (r *NodeRepo) Pool() *pgxpool.Pool { return r.pool }
 
+// nodeCols is the SELECT column list for a plain nodes query (no JOIN).
+const nodeCols = `id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance`
+
+// nodeColsWithCreator is the SELECT list when LEFT JOIN-ing the users table for
+// creator metadata. The alias "n" must be applied to the nodes table.
+const nodeColsWithCreator = `n.id, n.project_id, n.type, n.title, n.description, n.status, n.assignee_id, n.tags, n.metadata, n.parent_id, n.position_x, n.position_y, n.width, n.height, n.created_at, n.updated_at, n.description_source, n.description_authored_by, n.description_authored_at, n.description_agent_model, n.last_verified_at, n.last_verified_by, n.last_verified_commit, n.field_provenance, n.created_by, COALESCE(u.email, '') AS creator_email`
 
 func (r *NodeRepo) Create(ctx context.Context, n *model.Node) (*model.Node, error) {
 	var node model.Node
 	err := r.pool.QueryRow(ctx,
-		`INSERT INTO nodes (project_id, type, title, description, status, assignee_id, tags, parent_id, position_x, position_y, width, height)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-		 RETURNING id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance`,
-		n.ProjectID, n.Type, n.Title, n.Description, n.Status, n.AssigneeID, n.Tags, n.ParentID, n.PositionX, n.PositionY, n.Width, n.Height,
+		`INSERT INTO nodes (project_id, type, title, description, status, assignee_id, tags, parent_id, position_x, position_y, width, height, created_by)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		 RETURNING `+nodeCols,
+		n.ProjectID, n.Type, n.Title, n.Description, n.Status, n.AssigneeID, n.Tags, n.ParentID, n.PositionX, n.PositionY, n.Width, n.Height, n.CreatedBy,
 	).Scan(&node.ID, &node.ProjectID, &node.Type, &node.Title, &node.Description, &node.Status, &node.AssigneeID, &node.Tags, &node.Metadata, &node.ParentID, &node.PositionX, &node.PositionY, &node.Width, &node.Height, &node.CreatedAt, &node.UpdatedAt, &node.DescriptionSource, &node.DescriptionAuthoredBy, &node.DescriptionAuthoredAt, &node.DescriptionAgentModel, &node.LastVerifiedAt, &node.LastVerifiedBy, &node.LastVerifiedCommit, &node.FieldProvenance)
 	if err != nil {
 		return nil, err
@@ -39,10 +45,12 @@ func (r *NodeRepo) Create(ctx context.Context, n *model.Node) (*model.Node, erro
 func (r *NodeRepo) FindByID(ctx context.Context, id, projectID string) (*model.Node, error) {
 	var n model.Node
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance
-		 FROM nodes WHERE id = $1 AND project_id = $2`,
+		`SELECT `+nodeColsWithCreator+`
+		 FROM nodes n
+		 LEFT JOIN users u ON u.id = n.created_by
+		 WHERE n.id = $1 AND n.project_id = $2`,
 		id, projectID,
-	).Scan(&n.ID, &n.ProjectID, &n.Type, &n.Title, &n.Description, &n.Status, &n.AssigneeID, &n.Tags, &n.Metadata, &n.ParentID, &n.PositionX, &n.PositionY, &n.Width, &n.Height, &n.CreatedAt, &n.UpdatedAt, &n.DescriptionSource, &n.DescriptionAuthoredBy, &n.DescriptionAuthoredAt, &n.DescriptionAgentModel, &n.LastVerifiedAt, &n.LastVerifiedBy, &n.LastVerifiedCommit, &n.FieldProvenance)
+	).Scan(&n.ID, &n.ProjectID, &n.Type, &n.Title, &n.Description, &n.Status, &n.AssigneeID, &n.Tags, &n.Metadata, &n.ParentID, &n.PositionX, &n.PositionY, &n.Width, &n.Height, &n.CreatedAt, &n.UpdatedAt, &n.DescriptionSource, &n.DescriptionAuthoredBy, &n.DescriptionAuthoredAt, &n.DescriptionAgentModel, &n.LastVerifiedAt, &n.LastVerifiedBy, &n.LastVerifiedCommit, &n.FieldProvenance, &n.CreatedBy, &n.CreatorEmail)
 	if err != nil {
 		return nil, err
 	}
@@ -50,18 +58,20 @@ func (r *NodeRepo) FindByID(ctx context.Context, id, projectID string) (*model.N
 }
 
 func (r *NodeRepo) FindByProjectID(ctx context.Context, projectID string, nodeType, status *string) ([]model.Node, error) {
-	query := `SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance
-		 FROM nodes WHERE project_id = $1`
+	query := `SELECT ` + nodeColsWithCreator + `
+		 FROM nodes n
+		 LEFT JOIN users u ON u.id = n.created_by
+		 WHERE n.project_id = $1`
 	args := []any{projectID}
 	idx := 2
 
 	if nodeType != nil {
-		query += fmt.Sprintf(" AND type = $%d", idx)
+		query += fmt.Sprintf(" AND n.type = $%d", idx)
 		args = append(args, *nodeType)
 		idx++
 	}
 	if status != nil {
-		query += fmt.Sprintf(" AND status = $%d", idx)
+		query += fmt.Sprintf(" AND n.status = $%d", idx)
 		args = append(args, *status)
 	}
 
@@ -88,7 +98,7 @@ func (r *NodeRepo) Update(ctx context.Context, id string, fields map[string]any)
 	args = append(args, id)
 	query := fmt.Sprintf(
 		`UPDATE nodes SET %s WHERE id = $%d
-		 RETURNING id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance`,
+		 RETURNING `+nodeCols,
 		strings.Join(setClauses, ", "), idx,
 	)
 	var n model.Node
@@ -189,8 +199,10 @@ func (r *NodeRepo) BatchUpdatePositions(ctx context.Context, projectID string, p
 
 func (r *NodeRepo) FindChangedSince(ctx context.Context, projectID string, since time.Time) ([]model.Node, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance
-		 FROM nodes WHERE project_id = $1 AND updated_at >= $2`, projectID, since)
+		`SELECT `+nodeColsWithCreator+`
+		 FROM nodes n
+		 LEFT JOIN users u ON u.id = n.created_by
+		 WHERE n.project_id = $1 AND n.updated_at >= $2`, projectID, since)
 	if err != nil {
 		return nil, err
 	}
@@ -200,8 +212,10 @@ func (r *NodeRepo) FindChangedSince(ctx context.Context, projectID string, since
 
 func (r *NodeRepo) FindFailOrBug(ctx context.Context, projectID string) ([]model.Node, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance
-		 FROM nodes WHERE project_id = $1 AND (status = 'FAIL' OR type = 'BUG')`, projectID)
+		`SELECT `+nodeColsWithCreator+`
+		 FROM nodes n
+		 LEFT JOIN users u ON u.id = n.created_by
+		 WHERE n.project_id = $1 AND (n.status = 'FAIL' OR n.type = 'BUG')`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -214,8 +228,10 @@ func (r *NodeRepo) FindByIDs(ctx context.Context, ids []string) ([]model.Node, e
 		return nil, nil
 	}
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance
-		 FROM nodes WHERE id = ANY($1)`, ids)
+		`SELECT `+nodeColsWithCreator+`
+		 FROM nodes n
+		 LEFT JOIN users u ON u.id = n.created_by
+		 WHERE n.id = ANY($1)`, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -257,27 +273,27 @@ func (r *NodeRepo) BatchUpdateStatus(ctx context.Context, projectID string, ids 
 // Returns up to limit+1 rows; if len(result) > limit, hasMore=true and trim the last row.
 func (r *NodeRepo) FindByProjectIDPaginated(ctx context.Context, projectID string, nodeType, status *string, limit int, afterTime *time.Time, afterID *string) ([]model.Node, bool, error) {
 	args := []any{projectID}
-	where := "WHERE project_id = $1"
+	where := "WHERE n.project_id = $1"
 	argIdx := 2
 
 	if nodeType != nil {
-		where += fmt.Sprintf(" AND type = $%d", argIdx)
+		where += fmt.Sprintf(" AND n.type = $%d", argIdx)
 		args = append(args, *nodeType)
 		argIdx++
 	}
 	if status != nil {
-		where += fmt.Sprintf(" AND status = $%d", argIdx)
+		where += fmt.Sprintf(" AND n.status = $%d", argIdx)
 		args = append(args, *status)
 		argIdx++
 	}
 	if afterTime != nil && afterID != nil {
-		where += fmt.Sprintf(" AND (created_at, id) > ($%d, $%d)", argIdx, argIdx+1)
+		where += fmt.Sprintf(" AND (n.created_at, n.id) > ($%d, $%d)", argIdx, argIdx+1)
 		args = append(args, *afterTime, *afterID)
 		argIdx += 2
 	}
 
 	query := fmt.Sprintf(
-		`SELECT id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance FROM nodes %s ORDER BY created_at ASC, id ASC LIMIT $%d`,
+		`SELECT `+nodeColsWithCreator+` FROM nodes n LEFT JOIN users u ON u.id = n.created_by %s ORDER BY n.created_at ASC, n.id ASC LIMIT $%d`,
 		where, argIdx,
 	)
 	args = append(args, limit+1)
@@ -305,7 +321,7 @@ func scanNodes(rows interface{ Next() bool; Scan(dest ...any) error }) ([]model.
 	var nodes []model.Node
 	for rows.Next() {
 		var n model.Node
-		if err := rows.Scan(&n.ID, &n.ProjectID, &n.Type, &n.Title, &n.Description, &n.Status, &n.AssigneeID, &n.Tags, &n.Metadata, &n.ParentID, &n.PositionX, &n.PositionY, &n.Width, &n.Height, &n.CreatedAt, &n.UpdatedAt, &n.DescriptionSource, &n.DescriptionAuthoredBy, &n.DescriptionAuthoredAt, &n.DescriptionAgentModel, &n.LastVerifiedAt, &n.LastVerifiedBy, &n.LastVerifiedCommit, &n.FieldProvenance); err != nil {
+		if err := rows.Scan(&n.ID, &n.ProjectID, &n.Type, &n.Title, &n.Description, &n.Status, &n.AssigneeID, &n.Tags, &n.Metadata, &n.ParentID, &n.PositionX, &n.PositionY, &n.Width, &n.Height, &n.CreatedAt, &n.UpdatedAt, &n.DescriptionSource, &n.DescriptionAuthoredBy, &n.DescriptionAuthoredAt, &n.DescriptionAgentModel, &n.LastVerifiedAt, &n.LastVerifiedBy, &n.LastVerifiedCommit, &n.FieldProvenance, &n.CreatedBy, &n.CreatorEmail); err != nil {
 			return nil, err
 		}
 		nodes = append(nodes, n)

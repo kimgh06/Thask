@@ -47,6 +47,8 @@ export interface GraphNode {
 	height: number | null;
 	createdAt: string;
 	updatedAt: string;
+	createdBy?: string;
+	creatorEmail?: string;
 }
 
 export interface GraphEdge {
