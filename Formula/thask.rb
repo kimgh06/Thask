@@ -3,26 +3,26 @@
 class Thask < Formula
   desc "Dependency visualization CLI for AI-assisted development"
   homepage "https://github.com/kimgh06/Thask"
-  version "0.5.12"
+  version "0.5.13"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/kimgh06/Thask/releases/download/v#{version}/thask-darwin-arm64.tar.gz"
-      sha256 "94eb2f6b7e59986a0c484ff529a9e9a4fc245cef4472db2e1b545be230bca107"
+      sha256 "8b429815570aba8f9486754644e8c227049c94e100427b10cbae7c30b1d79e2e"
     else
       url "https://github.com/kimgh06/Thask/releases/download/v#{version}/thask-darwin-amd64.tar.gz"
-      sha256 "ca14e09cf4a5d2317c715bfe2d2edf83819549536d852d22c18377dd404b2492"
+      sha256 "4280c8ce13dab28096b5aa9510b3ebeb3e1595c2894c5a6655b10fa6ce3d57ab"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/kimgh06/Thask/releases/download/v#{version}/thask-linux-arm64.tar.gz"
-      sha256 "a5ac70c00e2621c7d016dbf5a0a5ba0e7bb14a22e29923cd4abb5bdd754b6545"
+      sha256 "0c9673df306aceac20d2588c7ff6352ea1e39de681e472adfbfd710b64c0b43e"
     else
       url "https://github.com/kimgh06/Thask/releases/download/v#{version}/thask-linux-amd64.tar.gz"
-      sha256 "347d8d25f25ca6f9b82f139224e709161e47b1e2d398c1aede2b20087fde59ed"
+      sha256 "ddbb8dc14afb48d660b76fce389cd5e9144ffba0a97e3264249e4337c0b0d5d9"
     end
   end
 
