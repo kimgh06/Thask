@@ -1,0 +1,64 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.kimgh06/thask",
+  "description": "Dependency-graph layer for AI-assisted development. Lets Claude Code / Cursor / Codex query 'what breaks if I change this?' against a structured graph of your codebase, with provenance guards that block agents from silently landing hallucinated descriptions.",
+  "repository": {
+    "url": "https://github.com/kimgh06/Thask",
+    "source": "github"
+  },
+  "version": "0.5.13",
+  "websiteUrl": "https://thask.kimgh06.com",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@thask-org/cli",
+      "version": "0.5.13",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "positional",
+          "value": "mcp",
+          "isRequired": true
+        },
+        {
+          "type": "positional",
+          "value": "serve",
+          "isRequired": true
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "THASK_URL",
+          "description": "URL of your Thask server (e.g. https://thask.kimgh06.com or http://localhost:7244). Can also be set via `thask config set url <url>`.",
+          "isRequired": true
+        },
+        {
+          "name": "THASK_TOKEN",
+          "description": "API key for your Thask account. Generate via `thask login` (browser flow, recommended) or in the web UI settings.",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "tool_count": 24,
+      "categories": ["development", "graph", "code-intelligence", "dependency-analysis"],
+      "tags": [
+        "dependency-graph",
+        "claude-code",
+        "cursor",
+        "codex",
+        "code-intelligence",
+        "impact-analysis",
+        "audit-log",
+        "provenance",
+        "go",
+        "typescript"
+      ]
+    }
+  }
+}

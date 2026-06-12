@@ -14,11 +14,15 @@ Map what depends on what, then let Claude Code / Cursor / Codex query it through
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 &nbsp;
+[![Works with Claude Code](https://img.shields.io/badge/Works_with-Claude_Code-D97706?logo=anthropic&logoColor=white)](docs/CLAUDE_CODE_PLUGIN.md)
+&nbsp;
+[![Works with Cursor](https://img.shields.io/badge/Works_with-Cursor-000000?logo=cursor&logoColor=white)](docs/MCP.md)
+&nbsp;
+[![MCP](https://img.shields.io/badge/MCP-24_tools-7C3AED)](docs/MCP.md)
+&nbsp;
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 &nbsp;
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-Svelte_5-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev/)
-&nbsp;
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 &nbsp;
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 
@@ -27,6 +31,19 @@ Map what depends on what, then let Claude Code / Cursor / Codex query it through
 [**Live Demo** — Documentation Graph](https://thask.kimgh06.com/shared/562a734b85200bbdd65a65e18e066dc377b7dcfd3c86edb1eab4e6aece9a9bbf) · [**Architecture Graph**](https://thask.kimgh06.com/shared/de5cb3d3587d2479d6c875f873bd6479f031187e4054fd8cc93eafca8c840691)
 
 </div>
+
+---
+
+## Before vs After
+
+| | **Without Thask** | **With Thask** |
+|---|---|---|
+| You ask | *"Refactor this payment function."* | *"Refactor this payment function."* |
+| Agent sees | Just the open file. | The file **plus** every node that `depends_on` it across your graph. |
+| Agent answers | Plausible code. Three downstream flows quietly break. | "This change touches 3 flows and 2 UIs — I will update them together, or stop and ask." |
+| Description drift | Agent rewrites the "why" prose on confidence, you read it, the next agent treats it as ground truth. | Agent keys default to **blocking semantic writes**. They propose to a queue; a human approves. Source-of-record stays human. |
+
+Every change is recorded with **6-dimension provenance** (actor, channel, agent model, mutation kind, trigger, evidence) so the next agent knows what to trust and what to re-derive from code.
 
 ---
 
