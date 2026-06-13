@@ -94,6 +94,28 @@ is a per-server-instance UUID. This populates the `client_type`,
 `agent_model`, and `agent_session_id` columns the backend uses to attribute
 writes — see [API.md > Provenance & Suggestion Queue](API.md#provenance--suggestion-queue-v059).
 
+### Error output split (v0.5.14+)
+
+Thask routes two classes of failures to different formats so that humans get
+readable terminal output while scripts and MCP clients keep a stable JSON
+contract.
+
+| Class | Examples | Where it goes | Exit |
+|---|---|---|---|
+| **Usage** | unknown flag, unknown command, wrong arg count, missing required flag | `stderr`, plain text: `Error: ...\nRun 'thask --help' for usage.` (Cobra also adds "Did you mean" suggestions where possible) | `2` |
+| **Runtime / API** | auth failure, 4xx/5xx from backend, network error, validation failure from the server | `stderr`, JSON: `{"error":"..."}` | `1` (or whatever `client.ExitCode` maps the error to) |
+
+Why the split: a first-time user typing `thask --version` should get
+`thask v0.5.13 (...)` not `{"error":"unknown flag"}`. But a script running
+`thask node create ...` and parsing `.error` to retry should keep getting
+JSON. The match is by error message prefix — `unknown flag`, `unknown
+command`, `unknown shorthand flag`, `flag provided but not defined`,
+`required flag(s)`, `invalid argument`, `bad flag syntax`, plus phrase
+matches for `accepts at most`, `requires at least`, etc.
+
+`thask mcp serve` is unaffected — its stdio loop is MCP-protocol JSON-RPC,
+not the regular CLI output path.
+
 ---
 
 ## config

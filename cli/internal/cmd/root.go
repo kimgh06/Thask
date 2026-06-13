@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/thask/cli/internal/client"
@@ -73,6 +75,11 @@ var rootCmd = &cobra.Command{
 }
 
 func init() {
+	// Wire native --version / -v handling so first-time users get a
+	// readable response instead of {"error":"unknown flag: --version"}.
+	rootCmd.Version = Version + " (" + Commit + ")"
+	rootCmd.SetVersionTemplate("thask {{.Version}}\n")
+
 	rootCmd.PersistentFlags().StringVar(&urlFlag, "url", "", "Backend URL (env: THASK_URL)")
 	rootCmd.PersistentFlags().StringVar(&tokenFlag, "token", "", "API token (env: THASK_TOKEN)")
 	rootCmd.PersistentFlags().StringVarP(&projectFlag, "project", "p", "", "Project ID (env: THASK_PROJECT)")
@@ -96,11 +103,53 @@ func init() {
 	rootCmd.AddCommand(mistakeCmd)
 }
 
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		output.ErrorJSON(err.Error())
-		os.Exit(client.ExitCode(err))
+// usageErrorPrefixes match Cobra's flag-parser / unknown-command / arg-count
+// failures. These are user typos, not API/data failures — humans get a
+// readable stderr message instead of a JSON envelope. Anything not matched
+// falls through to ErrorJSON so the MCP/script contract is preserved.
+var usageErrorPrefixes = []string{
+	"unknown command",
+	"unknown flag",
+	"unknown shorthand flag",
+	"flag provided but not defined",
+	"flag needs an argument",
+	"required flag(s)",
+	"invalid argument",
+	"bad flag syntax",
+}
+
+func isUsageError(err error) bool {
+	msg := err.Error()
+	for _, p := range usageErrorPrefixes {
+		if strings.HasPrefix(msg, p) {
+			return true
+		}
 	}
+	// Argcount enforcement errors: "accepts at most N arg(s)" / "requires
+	// at least N arg(s)" / variants.
+	if strings.Contains(msg, "accepts at most") || strings.Contains(msg, "requires at least") ||
+		strings.Contains(msg, "accepts no") || strings.Contains(msg, "requires exactly") {
+		return true
+	}
+	// pflag parse failures bubble up wrapped with strconv. prefix e.g.
+	// `strconv.ParseBool: parsing "yep": invalid syntax`. Treat as usage.
+	if strings.Contains(msg, "strconv.") {
+		return true
+	}
+	return false
+}
+
+func Execute() {
+	err := rootCmd.Execute()
+	if err == nil {
+		return
+	}
+	if isUsageError(err) {
+		fmt.Fprintf(os.Stderr, "Error: %s\nRun 'thask --help' for usage.\n", err)
+		os.Exit(2)
+	}
+	output.ErrorJSON(err.Error())
+	os.Exit(client.ExitCode(err))
 }
 
 func getFormat() output.Format {
