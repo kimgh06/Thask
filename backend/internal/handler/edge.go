@@ -93,6 +93,13 @@ func (h *EdgeHandler) Create(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, dto.Err("Self-referencing edges are not allowed"))
 	}
 
+	// Reject cross-project endpoints. Authenticated callers can otherwise
+	// reach this path with IDs from a different project they also belong to,
+	// producing an edge whose project_id mismatches its endpoints' project_id.
+	if err := h.edgeRepo.VerifyNodesInProject(ctx, projectID, []string{req.SourceID, req.TargetID}); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.Err("Source and target nodes must both belong to this project"))
+	}
+
 	// Edges are structural — they describe graph topology, not claims.
 	if err := h.audit.RequirePermission(c, audit.MutationStructural, "write", audit.Event{
 		ProjectID: projectID, EntityType: "edge", Action: audit.ActionCreated,
@@ -237,9 +244,33 @@ func (h *EdgeHandler) BatchCreate(c echo.Context) error {
 	var ups []createdEdge
 	var skips []skipped
 
+	// Pre-flight: build the set of source/target IDs that actually live in
+	// this project so we can skip cross-project endpoints rather than corrupt
+	// the graph. Same gap that v0.5.14 closed on single-edge Create — applies
+	// equally to bulk insert.
+	uniq := make(map[string]struct{}, len(req.Edges)*2)
+	for _, item := range req.Edges {
+		uniq[item.SourceID] = struct{}{}
+		uniq[item.TargetID] = struct{}{}
+	}
+	allIDs := make([]string, 0, len(uniq))
+	for id := range uniq {
+		allIDs = append(allIDs, id)
+	}
+	inProject, vErr := h.edgeRepo.FilterNodesInProject(ctx, projectID, allIDs)
+	if vErr != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to validate endpoints"))
+	}
+
 	for _, item := range req.Edges {
 		if item.SourceID == item.TargetID {
 			skips = append(skips, skipped{item.SourceID, item.TargetID, "self_reference"})
+			continue
+		}
+		_, sOK := inProject[item.SourceID]
+		_, tOK := inProject[item.TargetID]
+		if !sOK || !tOK {
+			skips = append(skips, skipped{item.SourceID, item.TargetID, "cross_project"})
 			continue
 		}
 		edgeType := item.EdgeType
