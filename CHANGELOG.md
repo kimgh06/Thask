@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.14] - 2026-06-13
+
+### Added
+- **MCP Registry submission.** `cli/package.json` gains `"mcpName": "io.github.kimgh06/thask"` so the official Anthropic [MCP Registry](https://registry.modelcontextprotocol.io) can verify ownership of the `@thask-org/cli` npm package matches the `io.github.kimgh06/thask` registry entry. `marketing/server.json` upgraded to the latest `2025-12-11` schema and version-aligned to the npm tarball. Published to the registry via `mcp-publisher publish` — Claude Code / Cursor / Codex users can now discover Thask through the registry's first-party search instead of GitHub stars.
+
+### Fixed
+- **`thask --version` / `-v` no longer emit `{"error":"unknown flag: --version"}`.** Cobra's native `Version` field is now wired so the first thing a new user types yields a human-readable response. Unknown-flag / unknown-command / wrong-arg-count errors are similarly humanized — they go to stderr as `Error: ...\nRun 'thask --help' for usage.` with exit code 2, restoring conventional CLI behavior. Runtime / API errors (auth failure, 4xx/5xx, network) still emit `{"error":"..."}` JSON to stderr with the original exit codes, so MCP and script consumers are unaffected. `thask version` subcommand kept for backwards compatibility and now renders identical output to `--version`. Decision rationale recorded in [docs/CLI.md](docs/CLI.md) — see "Error output split".
+
+### Changed
+- **Backend repositories migrated to `sqlc` codegen for all 60+ static SQL queries.** Every fixed-shape read/write across `backend/internal/repository/*.go` (Node, Edge, Project, ProjectMember, Team, User, Session, APIKey, Audit, History, Idempotency, Suggestion) now goes through type-safe wrappers generated from `backend/db/queries/*.sql`. Schema-to-code drift is now a compile error: adding a column to a migration + updating the SELECT lists up the generated `internal/dbgen/` until every call site is consistent. Generated files are checked into the repo; regen via `make sqlc-gen`. `sqlc.yaml` in `backend/db/` configures pgx/v5 driver, UUID-as-string, JSONB-as-`json.RawMessage` (with repo-side conversion to `any` for handler compatibility), and `api_keys.permissions` as `model.APIKeyPermissions` so the existing custom `Scan/Value` methods continue to drive JSONB serialization.
+- **Dynamic queries (Update `setClauses`, pagination cursor WHERE, `pgx.Batch` bulk operations, multi-statement transactions) stay hand-written.** ~11 dynamic queries across Node, Edge, History keep raw `pool.Query`/`Scan` semantics — sqlc isn't the right hammer for SQL that's assembled at runtime. The `Update` paths now re-fetch through the sqlc-generated `FindByID` so callers receive the full row including JOINed `creatorEmail`, closing the v0.5.13 code-review borderline issue.
+
+### Added
+- `Makefile` gains `make sqlc-gen` (regenerate `backend/internal/dbgen/`) and `make sqlc-check` (compile-validate queries against `migrations/` without writing output) targets. Both fail fast if sqlc isn't installed and suggest `brew install sqlc`.
+
+### Internal
+- New `backend/db/sqlc.yaml`, `backend/db/queries/*.sql` (one per entity), `backend/internal/dbgen/` (generated, tracked).
+- Verified via 14-endpoint API smoke (auth/me, teams.list, node.create/findById/update/delete, graph.get, edge.create/delete, impact.analyze, api_keys.list, activity feed) hitting the local backend. All sqlc-backed paths return identical JSON shape to pre-migration responses; the JOINed `creatorEmail` round-trip continues to work end-to-end.
+- Handler-level inline SQL (5 sites in `node_graph.go`, `edge.go`, `health.go`, `node_batch.go`, `node_helpers.go`) intentionally NOT migrated — these are inside transactions or one-shot operations that don't benefit from sqlc abstraction. Queued for a separate cleanup phase if drift becomes painful.
+
 ## [0.5.13] - 2026-06-12
 
 ### Added
