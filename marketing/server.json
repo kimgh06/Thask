@@ -1,18 +1,18 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.kimgh06/thask",
   "description": "Dependency-graph layer for AI-assisted development. Lets Claude Code / Cursor / Codex query 'what breaks if I change this?' against a structured graph of your codebase, with provenance guards that block agents from silently landing hallucinated descriptions.",
   "repository": {
     "url": "https://github.com/kimgh06/Thask",
     "source": "github"
   },
-  "version": "0.5.13",
+  "version": "0.5.14",
   "websiteUrl": "https://thask.kimgh06.com",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@thask-org/cli",
-      "version": "0.5.13",
+      "version": "0.5.14",
       "transport": {
         "type": "stdio"
       },
