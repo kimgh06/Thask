@@ -30,6 +30,17 @@ build: build-cli
 build-cli:
 	cd cli && go build -ldflags "-X github.com/thask/cli/internal/cmd.Version=$$(git describe --tags --always 2>/dev/null || echo dev) -X github.com/thask/cli/internal/cmd.Commit=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown) -X github.com/thask/cli/internal/mcp.Version=$$(git describe --tags --always 2>/dev/null || echo dev)" -o ../bin/thask ./cmd/thask
 
+# Code generation
+sqlc-gen:
+	@command -v sqlc >/dev/null 2>&1 || { echo "sqlc not installed. Install: brew install sqlc"; exit 1; }
+	cd backend/db && sqlc generate
+	@echo "✓ Regenerated backend/internal/dbgen/. Commit the diff."
+
+sqlc-check:
+	@command -v sqlc >/dev/null 2>&1 || { echo "sqlc not installed. Install: brew install sqlc"; exit 1; }
+	cd backend/db && sqlc compile
+	@echo "✓ All queries parse cleanly against migrations/"
+
 # Test
 test:
 	cd backend && go test ./...

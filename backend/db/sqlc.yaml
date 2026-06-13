@@ -1,0 +1,110 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "queries/"
+    schema: "../migrations/"
+    gen:
+      go:
+        package: "dbgen"
+        out: "../internal/dbgen"
+        sql_package: "pgx/v5"
+        emit_interface: false
+        emit_json_tags: true
+        emit_db_tags: true
+        emit_pointers_for_null_types: true
+        emit_prepared_queries: false
+        emit_empty_slices: true
+        emit_methods_with_db_argument: false
+        overrides:
+          # ────────── UUID columns ──────────
+          # NOT NULL uuid -> string; nullable uuid -> *string (via pointer:true).
+          - db_type: "uuid"
+            go_type:
+              type: "string"
+          - db_type: "uuid"
+            nullable: true
+            go_type:
+              type: "string"
+              pointer: true
+          - db_type: "pg_catalog.uuid"
+            go_type:
+              type: "string"
+          - db_type: "pg_catalog.uuid"
+            nullable: true
+            go_type:
+              type: "string"
+              pointer: true
+
+          # ────────── Timestamps -> time.Time (model uses bare time.Time / *time.Time) ──────────
+          - db_type: "timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+          - db_type: "pg_catalog.timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"
+          - db_type: "pg_catalog.timestamptz"
+            nullable: true
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+
+          # ────────── Domain enums (TEXT/CHECK-based, see migrations 008/009) ──────────
+          - db_type: "node_type"
+            go_type:
+              type: "string"
+          - db_type: "node_status"
+            go_type:
+              type: "string"
+          - db_type: "edge_type"
+            go_type:
+              type: "string"
+          - db_type: "team_role"
+            go_type:
+              type: "string"
+          - db_type: "project_role"
+            go_type:
+              type: "string"
+
+          # ────────── JSONB columns -> json.RawMessage ──────────
+          - column: "nodes.metadata"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
+          - column: "nodes.field_provenance"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
+          - column: "edges.metadata"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
+          - column: "audit_log.metadata"
+            go_type:
+              import: "encoding/json"
+              type: "RawMessage"
+
+          # api_keys.permissions has custom Scan()/Value() in model.APIKeyPermissions.
+          - column: "api_keys.permissions"
+            go_type:
+              import: "github.com/thask/backend/internal/model"
+              package: "model"
+              type: "APIKeyPermissions"
+
+          # ────────── Per-column fixes ──────────
+          # nodes.position_x/y are nullable in schema but always written with
+          # DEFAULT 0; the Go model uses plain float64, so force non-pointer.
+          - column: "nodes.position_x"
+            go_type:
+              type: "float64"
+          - column: "nodes.position_y"
+            go_type:
+              type: "float64"

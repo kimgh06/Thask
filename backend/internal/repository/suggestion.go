@@ -2,9 +2,11 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/thask/backend/internal/dbgen"
 	"github.com/thask/backend/internal/model"
 )
 
@@ -12,28 +14,80 @@ import (
 // Agents call Create to enqueue a proposal; humans call Decide to accept/reject.
 type SuggestionRepo struct {
 	pool *pgxpool.Pool
+	q    *dbgen.Queries
 }
 
 func NewSuggestionRepo(pool *pgxpool.Pool) *SuggestionRepo {
-	return &SuggestionRepo{pool: pool}
+	return &SuggestionRepo{pool: pool, q: dbgen.New(pool)}
+}
+
+// suggestionFromRow converts a dbgen.NodeSuggestion to model.NodeSuggestion.
+// Evidence is stored as JSONB ([]byte in dbgen) but typed as any in the model.
+func suggestionFromRow(r dbgen.NodeSuggestion) model.NodeSuggestion {
+	s := model.NodeSuggestion{
+		ID:             r.ID,
+		ProjectID:      r.ProjectID,
+		NodeID:         r.NodeID,
+		FieldName:      r.FieldName,
+		ProposedValue:  r.ProposedValue,
+		CurrentValue:   r.CurrentValue,
+		Rationale:      r.Rationale,
+		ProposedBy:     r.ProposedBy,
+		AgentModel:     r.AgentModel,
+		AgentSessionID: r.AgentSessionID,
+		Status:         r.Status,
+		DecidedBy:      r.DecidedBy,
+		DecidedAt:      r.DecidedAt,
+		DecidedReason:  r.DecidedReason,
+		CreatedAt:      r.CreatedAt,
+	}
+	if len(r.Evidence) > 0 {
+		var ev any
+		if err := json.Unmarshal(r.Evidence, &ev); err == nil {
+			s.Evidence = ev
+		} else {
+			s.Evidence = r.Evidence
+		}
+	}
+	return s
+}
+
+// evidenceBytes marshals the model Evidence (any) to []byte for storage.
+// `evidence` is JSONB NOT NULL DEFAULT '{}' in the schema (migration 009),
+// so nil / unmarshal error must map to `{}` not NULL to avoid 23502.
+func evidenceBytes(ev any) []byte {
+	if ev == nil {
+		return []byte("{}")
+	}
+	b, err := json.Marshal(ev)
+	if err != nil {
+		return []byte("{}")
+	}
+	return b
 }
 
 // Create enqueues a suggestion. The same agent_session_id may stack multiple
 // pending suggestions on the same node; the human deciding can supersede
 // older ones.
 func (r *SuggestionRepo) Create(ctx context.Context, s *model.NodeSuggestion) (*model.NodeSuggestion, error) {
-	err := r.pool.QueryRow(ctx,
-		`INSERT INTO node_suggestions (
-			project_id, node_id, field_name, proposed_value, current_value,
-			rationale, evidence, proposed_by, agent_model, agent_session_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-		RETURNING id, status, created_at`,
-		s.ProjectID, s.NodeID, s.FieldName, s.ProposedValue, s.CurrentValue,
-		s.Rationale, s.Evidence, s.ProposedBy, s.AgentModel, s.AgentSessionID,
-	).Scan(&s.ID, &s.Status, &s.CreatedAt)
+	row, err := r.q.SuggestionCreate(ctx, dbgen.SuggestionCreateParams{
+		ProjectID:      s.ProjectID,
+		NodeID:         s.NodeID,
+		FieldName:      s.FieldName,
+		ProposedValue:  s.ProposedValue,
+		CurrentValue:   s.CurrentValue,
+		Rationale:      s.Rationale,
+		Evidence:       evidenceBytes(s.Evidence),
+		ProposedBy:     s.ProposedBy,
+		AgentModel:     s.AgentModel,
+		AgentSessionID: s.AgentSessionID,
+	})
 	if err != nil {
 		return nil, err
 	}
+	s.ID = row.ID
+	s.Status = row.Status
+	s.CreatedAt = row.CreatedAt
 	return s, nil
 }
 
@@ -42,19 +96,18 @@ func (r *SuggestionRepo) ListPending(ctx context.Context, projectID string, limi
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, project_id, node_id, field_name, proposed_value, current_value,
-		        rationale, evidence, proposed_by, agent_model, agent_session_id,
-		        status, decided_by, decided_at, decided_reason, created_at
-		 FROM node_suggestions
-		 WHERE project_id = $1 AND status = 'pending'
-		 ORDER BY created_at DESC
-		 LIMIT $2`, projectID, limit)
+	rows, err := r.q.SuggestionListPending(ctx, dbgen.SuggestionListPendingParams{
+		ProjectID: projectID,
+		Limit:     int32(limit),
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	return scanSuggestions(rows)
+	out := make([]model.NodeSuggestion, len(rows))
+	for i, row := range rows {
+		out[i] = suggestionFromRow(row)
+	}
+	return out, nil
 }
 
 // ListForNode returns suggestion history for a single node (any status).
@@ -62,38 +115,28 @@ func (r *SuggestionRepo) ListForNode(ctx context.Context, nodeID string, limit i
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, project_id, node_id, field_name, proposed_value, current_value,
-		        rationale, evidence, proposed_by, agent_model, agent_session_id,
-		        status, decided_by, decided_at, decided_reason, created_at
-		 FROM node_suggestions
-		 WHERE node_id = $1
-		 ORDER BY created_at DESC
-		 LIMIT $2`, nodeID, limit)
+	rows, err := r.q.SuggestionListForNode(ctx, dbgen.SuggestionListForNodeParams{
+		NodeID: nodeID,
+		Limit:  int32(limit),
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	return scanSuggestions(rows)
+	out := make([]model.NodeSuggestion, len(rows))
+	for i, row := range rows {
+		out[i] = suggestionFromRow(row)
+	}
+	return out, nil
 }
 
 // FindByID loads a single suggestion (used to verify ownership / fetch fields
 // before deciding).
 func (r *SuggestionRepo) FindByID(ctx context.Context, id string) (*model.NodeSuggestion, error) {
-	var s model.NodeSuggestion
-	err := r.pool.QueryRow(ctx,
-		`SELECT id, project_id, node_id, field_name, proposed_value, current_value,
-		        rationale, evidence, proposed_by, agent_model, agent_session_id,
-		        status, decided_by, decided_at, decided_reason, created_at
-		 FROM node_suggestions WHERE id = $1`, id,
-	).Scan(
-		&s.ID, &s.ProjectID, &s.NodeID, &s.FieldName, &s.ProposedValue, &s.CurrentValue,
-		&s.Rationale, &s.Evidence, &s.ProposedBy, &s.AgentModel, &s.AgentSessionID,
-		&s.Status, &s.DecidedBy, &s.DecidedAt, &s.DecidedReason, &s.CreatedAt,
-	)
+	row, err := r.q.SuggestionFindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
+	s := suggestionFromRow(row)
 	return &s, nil
 }
 
@@ -108,15 +151,16 @@ func (r *SuggestionRepo) Decide(ctx context.Context, id, status, deciderID, reas
 	if reason != "" {
 		reasonPtr = &reason
 	}
-	tag, err := r.pool.Exec(ctx,
-		`UPDATE node_suggestions
-		 SET status = $1, decided_by = $2, decided_at = now(), decided_reason = $3
-		 WHERE id = $4 AND status = 'pending'`,
-		status, deciderID, reasonPtr, id)
+	n, err := r.q.SuggestionDecide(ctx, dbgen.SuggestionDecideParams{
+		Status:        status,
+		DecidedBy:     &deciderID,
+		DecidedReason: reasonPtr,
+		ID:            id,
+	})
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	if n == 0 {
 		return fmt.Errorf("suggestion not found or already decided")
 	}
 	return nil
@@ -125,30 +169,9 @@ func (r *SuggestionRepo) Decide(ctx context.Context, id, status, deciderID, reas
 // SupersedePendingForNode marks any earlier pending suggestions on the same
 // node+field as 'superseded' so the queue doesn't pile up duplicates.
 func (r *SuggestionRepo) SupersedePendingForNode(ctx context.Context, nodeID, fieldName, exceptID string) error {
-	_, err := r.pool.Exec(ctx,
-		`UPDATE node_suggestions
-		 SET status = 'superseded', decided_at = now()
-		 WHERE node_id = $1 AND field_name = $2 AND status = 'pending' AND id != $3`,
-		nodeID, fieldName, exceptID)
-	return err
-}
-
-func scanSuggestions(rows interface {
-	Next() bool
-	Scan(dest ...any) error
-	Err() error
-}) ([]model.NodeSuggestion, error) {
-	var out []model.NodeSuggestion
-	for rows.Next() {
-		var s model.NodeSuggestion
-		if err := rows.Scan(
-			&s.ID, &s.ProjectID, &s.NodeID, &s.FieldName, &s.ProposedValue, &s.CurrentValue,
-			&s.Rationale, &s.Evidence, &s.ProposedBy, &s.AgentModel, &s.AgentSessionID,
-			&s.Status, &s.DecidedBy, &s.DecidedAt, &s.DecidedReason, &s.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
+	return r.q.SuggestionSupersedePendingForNode(ctx, dbgen.SuggestionSupersedePendingForNodeParams{
+		NodeID:    nodeID,
+		FieldName: fieldName,
+		ID:        exceptID,
+	})
 }

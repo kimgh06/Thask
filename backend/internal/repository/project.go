@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/thask/backend/internal/dbgen"
 	"github.com/thask/backend/internal/model"
 	"github.com/thask/backend/internal/service"
 )
@@ -13,12 +14,82 @@ const projectCols = `id, team_id, name, description, created_by, link_sharing, s
 
 type ProjectRepo struct {
 	pool *pgxpool.Pool
+	q    *dbgen.Queries
 }
 
 func NewProjectRepo(pool *pgxpool.Pool) *ProjectRepo {
-	return &ProjectRepo{pool: pool}
+	return &ProjectRepo{pool: pool, q: dbgen.New(pool)}
 }
 
+// ============================================================================
+// model.Project converters (per sqlc-generated row type).
+// ============================================================================
+
+func projectFromCreateRow(r dbgen.ProjectCreateRow) *model.Project {
+	return &model.Project{
+		ID: r.ID, TeamID: r.TeamID, Name: r.Name, Description: r.Description,
+		CreatedBy: r.CreatedBy, LinkSharing: r.LinkSharing,
+		ShareToken: r.ShareToken, ShareTokenHash: r.ShareTokenHash,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
+}
+
+func projectFromFindByIDRow(r dbgen.ProjectFindByIDRow) *model.Project {
+	return &model.Project{
+		ID: r.ID, TeamID: r.TeamID, Name: r.Name, Description: r.Description,
+		CreatedBy: r.CreatedBy, LinkSharing: r.LinkSharing,
+		ShareToken: r.ShareToken, ShareTokenHash: r.ShareTokenHash,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
+}
+
+func projectFromFindByShareTokenRow(r dbgen.ProjectFindByShareTokenRow) *model.Project {
+	return &model.Project{
+		ID: r.ID, TeamID: r.TeamID, Name: r.Name, Description: r.Description,
+		CreatedBy: r.CreatedBy, LinkSharing: r.LinkSharing,
+		ShareToken: r.ShareToken, ShareTokenHash: r.ShareTokenHash,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
+}
+
+func projectFromFindByTeamIDRow(r dbgen.ProjectFindByTeamIDRow) *model.Project {
+	return &model.Project{
+		ID: r.ID, TeamID: r.TeamID, Name: r.Name, Description: r.Description,
+		CreatedBy: r.CreatedBy, LinkSharing: r.LinkSharing,
+		ShareToken: r.ShareToken, ShareTokenHash: r.ShareTokenHash,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
+}
+
+func projectFromFindByTeamIDsRow(r dbgen.ProjectFindByTeamIDsRow) *model.Project {
+	return &model.Project{
+		ID: r.ID, TeamID: r.TeamID, Name: r.Name, Description: r.Description,
+		CreatedBy: r.CreatedBy, LinkSharing: r.LinkSharing,
+		ShareToken: r.ShareToken, ShareTokenHash: r.ShareTokenHash,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
+}
+
+func projectFromUpdateRow(r dbgen.ProjectUpdateRow) *model.Project {
+	return &model.Project{
+		ID: r.ID, TeamID: r.TeamID, Name: r.Name, Description: r.Description,
+		CreatedBy: r.CreatedBy, LinkSharing: r.LinkSharing,
+		ShareToken: r.ShareToken, ShareTokenHash: r.ShareTokenHash,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
+}
+
+func projectFromUpdateLinkSharingRow(r dbgen.ProjectUpdateLinkSharingRow) *model.Project {
+	return &model.Project{
+		ID: r.ID, TeamID: r.TeamID, Name: r.Name, Description: r.Description,
+		CreatedBy: r.CreatedBy, LinkSharing: r.LinkSharing,
+		ShareToken: r.ShareToken, ShareTokenHash: r.ShareTokenHash,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+	}
+}
+
+// scanProject is kept for the one hand-written query (GraphUpdatedAt uses raw
+// pgx; Update uses raw pgx for nullable-name semantics).
 func scanProject(row interface{ Scan(...any) error }) (*model.Project, error) {
 	var p model.Project
 	err := row.Scan(&p.ID, &p.TeamID, &p.Name, &p.Description, &p.CreatedBy, &p.LinkSharing, &p.ShareToken, &p.ShareTokenHash, &p.CreatedAt, &p.UpdatedAt)
@@ -28,24 +99,35 @@ func scanProject(row interface{ Scan(...any) error }) (*model.Project, error) {
 	return &p, nil
 }
 
+// ============================================================================
+// Repo methods — static = sqlc-generated wrappers, dynamic = hand-written pgx
+// ============================================================================
+
 func (r *ProjectRepo) Create(ctx context.Context, teamID, name string, description *string, createdBy string) (*model.Project, error) {
-	row := r.pool.QueryRow(ctx,
-		`INSERT INTO projects (team_id, name, description, created_by) VALUES ($1, $2, $3, $4)
-		 RETURNING `+projectCols,
-		teamID, name, description, createdBy,
-	)
-	return scanProject(row)
+	row, err := r.q.ProjectCreate(ctx, dbgen.ProjectCreateParams{
+		TeamID:      teamID,
+		Name:        name,
+		Description: description,
+		CreatedBy:   createdBy,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return projectFromCreateRow(row), nil
 }
 
 func (r *ProjectRepo) FindByID(ctx context.Context, id string) (*model.Project, error) {
-	row := r.pool.QueryRow(ctx,
-		`SELECT `+projectCols+` FROM projects WHERE id = $1`, id,
-	)
-	return scanProject(row)
+	row, err := r.q.ProjectFindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return projectFromFindByIDRow(row), nil
 }
 
 // GraphUpdatedAt returns the latest update time across the project's graph
 // (project metadata, nodes, edges) — used for og:image cache busting.
+// Stays as hand-written pgx: multi-subquery GREATEST across 3 tables can't be
+// expressed as a single sqlc query without losing type safety.
 func (r *ProjectRepo) GraphUpdatedAt(ctx context.Context, projectID string) (time.Time, error) {
 	var t time.Time
 	err := r.pool.QueryRow(ctx, `
@@ -59,53 +141,43 @@ func (r *ProjectRepo) GraphUpdatedAt(ctx context.Context, projectID string) (tim
 
 func (r *ProjectRepo) FindByShareToken(ctx context.Context, token string) (*model.Project, error) {
 	tokenHash := service.HashShareToken(token)
-	row := r.pool.QueryRow(ctx,
-		`SELECT `+projectCols+` FROM projects WHERE share_token_hash = $1 AND link_sharing != 'off'`, tokenHash,
-	)
-	return scanProject(row)
-}
-
-func (r *ProjectRepo) FindByTeamID(ctx context.Context, teamID string) ([]model.Project, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT `+projectCols+` FROM projects WHERE team_id = $1`, teamID)
+	row, err := r.q.ProjectFindByShareToken(ctx, &tokenHash)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	return projectFromFindByShareTokenRow(row), nil
+}
 
-	var projects []model.Project
-	for rows.Next() {
-		p, err := scanProject(rows)
-		if err != nil {
-			return nil, err
-		}
-		projects = append(projects, *p)
+func (r *ProjectRepo) FindByTeamID(ctx context.Context, teamID string) ([]model.Project, error) {
+	rows, err := r.q.ProjectFindByTeamID(ctx, teamID)
+	if err != nil {
+		return nil, err
 	}
-	return projects, nil
+	out := make([]model.Project, len(rows))
+	for i, row := range rows {
+		out[i] = *projectFromFindByTeamIDRow(row)
+	}
+	return out, nil
 }
 
 func (r *ProjectRepo) FindByTeamIDs(ctx context.Context, teamIDs []string) ([]model.Project, error) {
 	if len(teamIDs) == 0 {
 		return nil, nil
 	}
-	rows, err := r.pool.Query(ctx,
-		`SELECT `+projectCols+` FROM projects WHERE team_id = ANY($1)`, teamIDs)
+	rows, err := r.q.ProjectFindByTeamIDs(ctx, teamIDs)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var projects []model.Project
-	for rows.Next() {
-		p, err := scanProject(rows)
-		if err != nil {
-			return nil, err
-		}
-		projects = append(projects, *p)
+	out := make([]model.Project, len(rows))
+	for i, row := range rows {
+		out[i] = *projectFromFindByTeamIDsRow(row)
 	}
-	return projects, nil
+	return out, nil
 }
 
+// Update stays hand-written pgx: name is nullable (*string) for partial-update
+// semantics via COALESCE, but sqlc infers name as string (NOT NULL in schema),
+// so the generated param can't carry a nil to mean "don't change".
 func (r *ProjectRepo) Update(ctx context.Context, id string, name *string, description *string) (*model.Project, error) {
 	row := r.pool.QueryRow(ctx,
 		`UPDATE projects SET
@@ -125,32 +197,25 @@ func (r *ProjectRepo) UpdateLinkSharing(ctx context.Context, id, linkSharing str
 		h := service.HashShareToken(*shareToken)
 		shareTokenHash = &h
 	}
-	row := r.pool.QueryRow(ctx,
-		`UPDATE projects SET
-		   link_sharing = $1,
-		   share_token = $2,
-		   share_token_hash = $3,
-		   updated_at = now()
-		 WHERE id = $4
-		 RETURNING `+projectCols,
-		linkSharing, shareToken, shareTokenHash, id,
-	)
-	return scanProject(row)
+	row, err := r.q.ProjectUpdateLinkSharing(ctx, dbgen.ProjectUpdateLinkSharingParams{
+		LinkSharing:    linkSharing,
+		ShareToken:     shareToken,
+		ShareTokenHash: shareTokenHash,
+		ID:             id,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return projectFromUpdateLinkSharingRow(row), nil
 }
 
 func (r *ProjectRepo) Delete(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM projects WHERE id = $1`, id)
-	return err
+	return r.q.ProjectDelete(ctx, id)
 }
 
 func (r *ProjectRepo) VerifyAccess(ctx context.Context, projectID, userID string) (bool, error) {
-	var exists bool
-	err := r.pool.QueryRow(ctx,
-		`SELECT EXISTS(
-		   SELECT 1 FROM projects p
-		   INNER JOIN team_members tm ON tm.team_id = p.team_id AND tm.user_id = $2
-		   WHERE p.id = $1
-		 )`, projectID, userID,
-	).Scan(&exists)
-	return exists, err
+	return r.q.ProjectVerifyAccess(ctx, dbgen.ProjectVerifyAccessParams{
+		ID:     projectID,
+		UserID: userID,
+	})
 }

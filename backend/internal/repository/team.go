@@ -5,90 +5,135 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/thask/backend/internal/dbgen"
 	"github.com/thask/backend/internal/model"
 )
 
 type TeamRepo struct {
 	pool *pgxpool.Pool
+	q    *dbgen.Queries
 }
 
 func NewTeamRepo(pool *pgxpool.Pool) *TeamRepo {
-	return &TeamRepo{pool: pool}
+	return &TeamRepo{pool: pool, q: dbgen.New(pool)}
 }
 
+// teamFromRow converts a dbgen.Team row to *model.Team.
+func teamFromRow(r dbgen.Team) *model.Team {
+	return &model.Team{
+		ID:        r.ID,
+		Name:      r.Name,
+		Slug:      r.Slug,
+		CreatedBy: r.CreatedBy,
+		CreatedAt: r.CreatedAt,
+		UpdatedAt: r.UpdatedAt,
+	}
+}
+
+// ============================================================================
+// Static methods — sqlc-generated wrappers
+// ============================================================================
+
 func (r *TeamRepo) Create(ctx context.Context, name, slug, createdBy string) (*model.Team, error) {
-	var t model.Team
-	err := r.pool.QueryRow(ctx,
-		`INSERT INTO teams (name, slug, created_by) VALUES ($1, $2, $3)
-		 RETURNING id, name, slug, created_by, created_at, updated_at`,
-		name, slug, createdBy,
-	).Scan(&t.ID, &t.Name, &t.Slug, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt)
+	row, err := r.q.TeamCreate(ctx, dbgen.TeamCreateParams{
+		Name:      name,
+		Slug:      slug,
+		CreatedBy: createdBy,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &t, nil
+	return teamFromRow(row), nil
 }
 
 func (r *TeamRepo) FindBySlug(ctx context.Context, slug string) (*model.Team, error) {
-	var t model.Team
-	err := r.pool.QueryRow(ctx,
-		`SELECT id, name, slug, created_by, created_at, updated_at FROM teams WHERE slug = $1`,
-		slug,
-	).Scan(&t.ID, &t.Name, &t.Slug, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt)
+	row, err := r.q.TeamFindBySlug(ctx, slug)
 	if err != nil {
 		return nil, err
 	}
-	return &t, nil
+	return teamFromRow(row), nil
 }
 
 func (r *TeamRepo) FindByUserID(ctx context.Context, userID string) ([]model.Team, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT t.id, t.name, t.slug, t.created_by, t.created_at, t.updated_at
-		 FROM teams t
-		 INNER JOIN team_members tm ON tm.team_id = t.id
-		 WHERE tm.user_id = $1`, userID)
+	rows, err := r.q.TeamFindByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var teams []model.Team
-	for rows.Next() {
-		var t model.Team
-		if err := rows.Scan(&t.ID, &t.Name, &t.Slug, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt); err != nil {
-			return nil, err
-		}
-		teams = append(teams, t)
+	out := make([]model.Team, len(rows))
+	for i, row := range rows {
+		out[i] = *teamFromRow(row)
 	}
-	return teams, nil
+	return out, nil
 }
 
 func (r *TeamRepo) Delete(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM teams WHERE id = $1`, id)
-	return err
+	return r.q.TeamDelete(ctx, id)
 }
 
 func (r *TeamRepo) Update(ctx context.Context, id, name string) (*model.Team, error) {
-	var t model.Team
-	err := r.pool.QueryRow(ctx,
-		`UPDATE teams SET name = $1, updated_at = now() WHERE id = $2
-		 RETURNING id, name, slug, created_by, created_at, updated_at`,
-		name, id,
-	).Scan(&t.ID, &t.Name, &t.Slug, &t.CreatedBy, &t.CreatedAt, &t.UpdatedAt)
+	row, err := r.q.TeamUpdate(ctx, dbgen.TeamUpdateParams{Name: name, ID: id})
 	if err != nil {
 		return nil, err
 	}
-	return &t, nil
+	return teamFromRow(row), nil
 }
 
 func (r *TeamRepo) AddMember(ctx context.Context, teamID, userID string, role model.TeamRole) error {
-	_, err := r.pool.Exec(ctx,
-		`INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, $3)`,
-		teamID, userID, role,
-	)
-	return err
+	return r.q.TeamMemberAdd(ctx, dbgen.TeamMemberAddParams{
+		TeamID: teamID,
+		UserID: userID,
+		Role:   string(role),
+	})
 }
 
+func (r *TeamRepo) IsMember(ctx context.Context, teamID, userID string) (bool, error) {
+	return r.q.TeamMemberExists(ctx, dbgen.TeamMemberExistsParams{TeamID: teamID, UserID: userID})
+}
+
+func (r *TeamRepo) RemoveMember(ctx context.Context, teamID, userID string) error {
+	return r.q.TeamMemberRemove(ctx, dbgen.TeamMemberRemoveParams{TeamID: teamID, UserID: userID})
+}
+
+func (r *TeamRepo) GetMemberRole(ctx context.Context, teamID, userID string) (model.TeamRole, error) {
+	role, err := r.q.TeamMemberGetRole(ctx, dbgen.TeamMemberGetRoleParams{TeamID: teamID, UserID: userID})
+	if err != nil {
+		return "", err
+	}
+	return model.TeamRole(role), nil
+}
+
+func (r *TeamRepo) UpdateMemberRole(ctx context.Context, teamID, userID string, role model.TeamRole) error {
+	rows, err := r.q.TeamMemberUpdateRole(ctx, dbgen.TeamMemberUpdateRoleParams{
+		TeamID: teamID,
+		UserID: userID,
+		Role:   string(role),
+	})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return fmt.Errorf("member not found")
+	}
+	return nil
+}
+
+func (r *TeamRepo) CountByRole(ctx context.Context, teamID string, role model.TeamRole) (int, error) {
+	n, err := r.q.TeamMemberCountByRole(ctx, dbgen.TeamMemberCountByRoleParams{
+		TeamID: teamID,
+		Role:   string(role),
+	})
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
+// ============================================================================
+// Dynamic / multi-statement methods — hand-written pgx
+// ============================================================================
+
+// GetMembers JOINs team_members with users into a flat TeamMemberWithUser.
+// Kept as raw pgx because sqlc cannot split a JOIN row across two structs.
 func (r *TeamRepo) GetMembers(ctx context.Context, teamID string) ([]model.TeamMemberWithUser, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT tm.id, tm.team_id, tm.user_id, tm.role, tm.joined_at,
@@ -117,52 +162,8 @@ func (r *TeamRepo) GetMembers(ctx context.Context, teamID string) ([]model.TeamM
 	return members, nil
 }
 
-func (r *TeamRepo) IsMember(ctx context.Context, teamID, userID string) (bool, error) {
-	var exists bool
-	err := r.pool.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM team_members WHERE team_id = $1 AND user_id = $2)`,
-		teamID, userID,
-	).Scan(&exists)
-	return exists, err
-}
-
-func (r *TeamRepo) RemoveMember(ctx context.Context, teamID, userID string) error {
-	_, err := r.pool.Exec(ctx, `DELETE FROM team_members WHERE team_id = $1 AND user_id = $2`, teamID, userID)
-	return err
-}
-
-func (r *TeamRepo) GetMemberRole(ctx context.Context, teamID, userID string) (model.TeamRole, error) {
-	var role model.TeamRole
-	err := r.pool.QueryRow(ctx,
-		`SELECT role FROM team_members WHERE team_id = $1 AND user_id = $2`,
-		teamID, userID,
-	).Scan(&role)
-	return role, err
-}
-
-func (r *TeamRepo) UpdateMemberRole(ctx context.Context, teamID, userID string, role model.TeamRole) error {
-	tag, err := r.pool.Exec(ctx,
-		`UPDATE team_members SET role = $3 WHERE team_id = $1 AND user_id = $2`,
-		teamID, userID, role,
-	)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("member not found")
-	}
-	return nil
-}
-
-func (r *TeamRepo) CountByRole(ctx context.Context, teamID string, role model.TeamRole) (int, error) {
-	var count int
-	err := r.pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM team_members WHERE team_id = $1 AND role = $2`,
-		teamID, role,
-	).Scan(&count)
-	return count, err
-}
-
+// TransferOwnership atomically demotes fromUserID to admin and promotes
+// toUserID to owner. Kept as raw pgx because it is a multi-statement tx.
 func (r *TeamRepo) TransferOwnership(ctx context.Context, teamID, fromUserID, toUserID string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

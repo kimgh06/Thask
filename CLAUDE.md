@@ -21,6 +21,9 @@ Why: `thask.impact.analyze --node <release-id>` then answers "what areas did thi
 - Backend: `cd backend && go build ./... && go test ./...`
 - Frontend: `cd frontend && npx svelte-check`
 - CLI: `cd cli && go build ./... && go test ./...`
+- Code generation: `make sqlc-gen` (whenever you touch `backend/db/queries/*.sql`
+  or `backend/migrations/*.sql`). `make sqlc-check` validates queries against
+  the schema without writing anything — useful in CI.
 - Release pipeline (needs npm OTP): `make release-cli CLI_VERSION=X.Y.Z THASKOTP=<6-digit>`
 
 ## Release rules
@@ -33,6 +36,11 @@ Why: `thask.impact.analyze --node <release-id>` then answers "what areas did thi
 - If you're blocked on an external dependency mid-release (npm token,
   OTP, gh auth), use the wait window to do the doc sweep rather than
   skipping it.
+- **`backend/internal/dbgen/` must be regenerated and committed alongside
+  any change to `backend/db/queries/*.sql` or `backend/migrations/*.sql`.**
+  CI doesn't run `sqlc generate` — the diff is the contract. If `make
+  sqlc-check` passes but the generated files are stale in git, builds
+  will reference old types and fail unpredictably.
 
 ## Commit rules
 

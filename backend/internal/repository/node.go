@@ -8,63 +8,194 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/thask/backend/internal/dbgen"
 	"github.com/thask/backend/internal/model"
 )
 
 type NodeRepo struct {
 	pool *pgxpool.Pool
+	q    *dbgen.Queries
 }
 
 func NewNodeRepo(pool *pgxpool.Pool) *NodeRepo {
-	return &NodeRepo{pool: pool}
+	return &NodeRepo{pool: pool, q: dbgen.New(pool)}
 }
 
 func (r *NodeRepo) Pool() *pgxpool.Pool { return r.pool }
 
-// nodeCols is the SELECT column list for a plain nodes query (no JOIN).
-const nodeCols = `id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at, description_source, description_authored_by, description_authored_at, description_agent_model, last_verified_at, last_verified_by, last_verified_commit, field_provenance`
+// ============================================================================
+// model.Node converters (per sqlc-generated row type).
+// All "WithCreator" join rows share an identical column shape; sqlc names them
+// per-query, so we have one trivial converter per row type. Keeping the field
+// list explicit means adding a field to model.Node + the query SELECT lights
+// up a compile error here until each converter is updated — that's the point.
+// ============================================================================
 
-// nodeColsWithCreator is the SELECT list when LEFT JOIN-ing the users table for
-// creator metadata. The alias "n" must be applied to the nodes table.
+func nodeFromCreateRow(r dbgen.Node) *model.Node {
+	return &model.Node{
+		ID:                    r.ID,
+		ProjectID:             r.ProjectID,
+		Type:                  model.NodeType(r.Type),
+		Title:                 r.Title,
+		Description:           r.Description,
+		Status:                model.NodeStatus(r.Status),
+		AssigneeID:            r.AssigneeID,
+		Tags:                  r.Tags,
+		Metadata:              r.Metadata,
+		ParentID:              r.ParentID,
+		PositionX:             r.PositionX,
+		PositionY:             r.PositionY,
+		Width:                 r.Width,
+		Height:                r.Height,
+		CreatedAt:             r.CreatedAt,
+		UpdatedAt:             r.UpdatedAt,
+		DescriptionSource:     r.DescriptionSource,
+		DescriptionAuthoredBy: r.DescriptionAuthoredBy,
+		DescriptionAuthoredAt: r.DescriptionAuthoredAt,
+		DescriptionAgentModel: r.DescriptionAgentModel,
+		LastVerifiedAt:        r.LastVerifiedAt,
+		LastVerifiedBy:        r.LastVerifiedBy,
+		LastVerifiedCommit:    r.LastVerifiedCommit,
+		FieldProvenance:       r.FieldProvenance,
+		CreatedBy:             r.CreatedBy,
+		// CreatorEmail left empty — Create RETURNING can't JOIN users.
+		// Re-fetch via FindByID if the caller needs it immediately.
+	}
+}
+
+func nodeFromFindByIDRow(r dbgen.NodeFindByIDRow) *model.Node {
+	return &model.Node{
+		ID: r.ID, ProjectID: r.ProjectID, Type: model.NodeType(r.Type), Title: r.Title,
+		Description: r.Description, Status: model.NodeStatus(r.Status), AssigneeID: r.AssigneeID,
+		Tags: r.Tags, Metadata: r.Metadata, ParentID: r.ParentID,
+		PositionX: r.PositionX, PositionY: r.PositionY, Width: r.Width, Height: r.Height,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		DescriptionSource: r.DescriptionSource, DescriptionAuthoredBy: r.DescriptionAuthoredBy,
+		DescriptionAuthoredAt: r.DescriptionAuthoredAt, DescriptionAgentModel: r.DescriptionAgentModel,
+		LastVerifiedAt: r.LastVerifiedAt, LastVerifiedBy: r.LastVerifiedBy,
+		LastVerifiedCommit: r.LastVerifiedCommit, FieldProvenance: r.FieldProvenance,
+		CreatedBy: r.CreatedBy, CreatorEmail: r.CreatorEmail,
+	}
+}
+
+func nodeFromFindByIDsRow(r dbgen.NodeFindByIDsRow) *model.Node {
+	return &model.Node{
+		ID: r.ID, ProjectID: r.ProjectID, Type: model.NodeType(r.Type), Title: r.Title,
+		Description: r.Description, Status: model.NodeStatus(r.Status), AssigneeID: r.AssigneeID,
+		Tags: r.Tags, Metadata: r.Metadata, ParentID: r.ParentID,
+		PositionX: r.PositionX, PositionY: r.PositionY, Width: r.Width, Height: r.Height,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		DescriptionSource: r.DescriptionSource, DescriptionAuthoredBy: r.DescriptionAuthoredBy,
+		DescriptionAuthoredAt: r.DescriptionAuthoredAt, DescriptionAgentModel: r.DescriptionAgentModel,
+		LastVerifiedAt: r.LastVerifiedAt, LastVerifiedBy: r.LastVerifiedBy,
+		LastVerifiedCommit: r.LastVerifiedCommit, FieldProvenance: r.FieldProvenance,
+		CreatedBy: r.CreatedBy, CreatorEmail: r.CreatorEmail,
+	}
+}
+
+func nodeFromFindByProjectIDSimpleRow(r dbgen.NodeFindByProjectIDSimpleRow) *model.Node {
+	return &model.Node{
+		ID: r.ID, ProjectID: r.ProjectID, Type: model.NodeType(r.Type), Title: r.Title,
+		Description: r.Description, Status: model.NodeStatus(r.Status), AssigneeID: r.AssigneeID,
+		Tags: r.Tags, Metadata: r.Metadata, ParentID: r.ParentID,
+		PositionX: r.PositionX, PositionY: r.PositionY, Width: r.Width, Height: r.Height,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		DescriptionSource: r.DescriptionSource, DescriptionAuthoredBy: r.DescriptionAuthoredBy,
+		DescriptionAuthoredAt: r.DescriptionAuthoredAt, DescriptionAgentModel: r.DescriptionAgentModel,
+		LastVerifiedAt: r.LastVerifiedAt, LastVerifiedBy: r.LastVerifiedBy,
+		LastVerifiedCommit: r.LastVerifiedCommit, FieldProvenance: r.FieldProvenance,
+		CreatedBy: r.CreatedBy, CreatorEmail: r.CreatorEmail,
+	}
+}
+
+func nodeFromFindChangedSinceRow(r dbgen.NodeFindChangedSinceRow) *model.Node {
+	return &model.Node{
+		ID: r.ID, ProjectID: r.ProjectID, Type: model.NodeType(r.Type), Title: r.Title,
+		Description: r.Description, Status: model.NodeStatus(r.Status), AssigneeID: r.AssigneeID,
+		Tags: r.Tags, Metadata: r.Metadata, ParentID: r.ParentID,
+		PositionX: r.PositionX, PositionY: r.PositionY, Width: r.Width, Height: r.Height,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		DescriptionSource: r.DescriptionSource, DescriptionAuthoredBy: r.DescriptionAuthoredBy,
+		DescriptionAuthoredAt: r.DescriptionAuthoredAt, DescriptionAgentModel: r.DescriptionAgentModel,
+		LastVerifiedAt: r.LastVerifiedAt, LastVerifiedBy: r.LastVerifiedBy,
+		LastVerifiedCommit: r.LastVerifiedCommit, FieldProvenance: r.FieldProvenance,
+		CreatedBy: r.CreatedBy, CreatorEmail: r.CreatorEmail,
+	}
+}
+
+func nodeFromFindFailOrBugRow(r dbgen.NodeFindFailOrBugRow) *model.Node {
+	return &model.Node{
+		ID: r.ID, ProjectID: r.ProjectID, Type: model.NodeType(r.Type), Title: r.Title,
+		Description: r.Description, Status: model.NodeStatus(r.Status), AssigneeID: r.AssigneeID,
+		Tags: r.Tags, Metadata: r.Metadata, ParentID: r.ParentID,
+		PositionX: r.PositionX, PositionY: r.PositionY, Width: r.Width, Height: r.Height,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		DescriptionSource: r.DescriptionSource, DescriptionAuthoredBy: r.DescriptionAuthoredBy,
+		DescriptionAuthoredAt: r.DescriptionAuthoredAt, DescriptionAgentModel: r.DescriptionAgentModel,
+		LastVerifiedAt: r.LastVerifiedAt, LastVerifiedBy: r.LastVerifiedBy,
+		LastVerifiedCommit: r.LastVerifiedCommit, FieldProvenance: r.FieldProvenance,
+		CreatedBy: r.CreatedBy, CreatorEmail: r.CreatorEmail,
+	}
+}
+
+// nodeColsWithCreator is the SELECT list for the hand-written dynamic queries
+// below (FindByProjectIDPaginated, FindByProjectID-with-filters). The alias
+// "n" must be applied to the nodes table.
 const nodeColsWithCreator = `n.id, n.project_id, n.type, n.title, n.description, n.status, n.assignee_id, n.tags, n.metadata, n.parent_id, n.position_x, n.position_y, n.width, n.height, n.created_at, n.updated_at, n.description_source, n.description_authored_by, n.description_authored_at, n.description_agent_model, n.last_verified_at, n.last_verified_by, n.last_verified_commit, n.field_provenance, n.created_by, COALESCE(u.email, '') AS creator_email`
 
+// ============================================================================
+// Repo methods — static = sqlc-generated wrappers, dynamic = hand-written pgx
+// ============================================================================
+
 func (r *NodeRepo) Create(ctx context.Context, n *model.Node) (*model.Node, error) {
-	var node model.Node
-	err := r.pool.QueryRow(ctx,
-		`INSERT INTO nodes (project_id, type, title, description, status, assignee_id, tags, parent_id, position_x, position_y, width, height, created_by)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-		 RETURNING `+nodeCols,
-		n.ProjectID, n.Type, n.Title, n.Description, n.Status, n.AssigneeID, n.Tags, n.ParentID, n.PositionX, n.PositionY, n.Width, n.Height, n.CreatedBy,
-	).Scan(&node.ID, &node.ProjectID, &node.Type, &node.Title, &node.Description, &node.Status, &node.AssigneeID, &node.Tags, &node.Metadata, &node.ParentID, &node.PositionX, &node.PositionY, &node.Width, &node.Height, &node.CreatedAt, &node.UpdatedAt, &node.DescriptionSource, &node.DescriptionAuthoredBy, &node.DescriptionAuthoredAt, &node.DescriptionAgentModel, &node.LastVerifiedAt, &node.LastVerifiedBy, &node.LastVerifiedCommit, &node.FieldProvenance)
+	row, err := r.q.NodeCreate(ctx, dbgen.NodeCreateParams{
+		ProjectID:   n.ProjectID,
+		Type:        string(n.Type),
+		Title:       n.Title,
+		Description: n.Description,
+		Status:      string(n.Status),
+		AssigneeID:  n.AssigneeID,
+		Tags:        n.Tags,
+		ParentID:    n.ParentID,
+		PositionX:   n.PositionX,
+		PositionY:   n.PositionY,
+		Width:       n.Width,
+		Height:      n.Height,
+		CreatedBy:   n.CreatedBy,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &node, nil
+	return nodeFromCreateRow(row), nil
 }
 
 func (r *NodeRepo) FindByID(ctx context.Context, id, projectID string) (*model.Node, error) {
-	var n model.Node
-	err := r.pool.QueryRow(ctx,
-		`SELECT `+nodeColsWithCreator+`
-		 FROM nodes n
-		 LEFT JOIN users u ON u.id = n.created_by
-		 WHERE n.id = $1 AND n.project_id = $2`,
-		id, projectID,
-	).Scan(&n.ID, &n.ProjectID, &n.Type, &n.Title, &n.Description, &n.Status, &n.AssigneeID, &n.Tags, &n.Metadata, &n.ParentID, &n.PositionX, &n.PositionY, &n.Width, &n.Height, &n.CreatedAt, &n.UpdatedAt, &n.DescriptionSource, &n.DescriptionAuthoredBy, &n.DescriptionAuthoredAt, &n.DescriptionAgentModel, &n.LastVerifiedAt, &n.LastVerifiedBy, &n.LastVerifiedCommit, &n.FieldProvenance, &n.CreatedBy, &n.CreatorEmail)
+	row, err := r.q.NodeFindByID(ctx, dbgen.NodeFindByIDParams{ID: id, ProjectID: projectID})
 	if err != nil {
 		return nil, err
 	}
-	return &n, nil
+	return nodeFromFindByIDRow(row), nil
 }
 
 func (r *NodeRepo) FindByProjectID(ctx context.Context, projectID string, nodeType, status *string) ([]model.Node, error) {
+	if nodeType == nil && status == nil {
+		rows, err := r.q.NodeFindByProjectIDSimple(ctx, projectID)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]model.Node, len(rows))
+		for i, r := range rows {
+			out[i] = *nodeFromFindByProjectIDSimpleRow(r)
+		}
+		return out, nil
+	}
+	// Dynamic filter path stays as hand-written pgx.
 	query := `SELECT ` + nodeColsWithCreator + `
 		 FROM nodes n
 		 LEFT JOIN users u ON u.id = n.created_by
 		 WHERE n.project_id = $1`
 	args := []any{projectID}
 	idx := 2
-
 	if nodeType != nil {
 		query += fmt.Sprintf(" AND n.type = $%d", idx)
 		args = append(args, *nodeType)
@@ -74,19 +205,20 @@ func (r *NodeRepo) FindByProjectID(ctx context.Context, projectID string, nodeTy
 		query += fmt.Sprintf(" AND n.status = $%d", idx)
 		args = append(args, *status)
 	}
-
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanNodes(rows)
+	return scanNodesRaw(rows)
 }
 
 func (r *NodeRepo) Update(ctx context.Context, id string, fields map[string]any) (*model.Node, error) {
 	if len(fields) == 0 {
 		return nil, fmt.Errorf("no fields to update")
 	}
+	// Dynamic setClauses path stays as hand-written pgx — RETURN just the keys
+	// we need to re-fetch the full row through the sqlc-generated FindByID.
 	setClauses := []string{"updated_at = now()"}
 	args := []any{}
 	idx := 1
@@ -97,18 +229,14 @@ func (r *NodeRepo) Update(ctx context.Context, id string, fields map[string]any)
 	}
 	args = append(args, id)
 	query := fmt.Sprintf(
-		`UPDATE nodes SET %s WHERE id = $%d
-		 RETURNING `+nodeCols,
+		`UPDATE nodes SET %s WHERE id = $%d RETURNING project_id`,
 		strings.Join(setClauses, ", "), idx,
 	)
-	var n model.Node
-	err := r.pool.QueryRow(ctx, query, args...).Scan(
-		&n.ID, &n.ProjectID, &n.Type, &n.Title, &n.Description, &n.Status, &n.AssigneeID, &n.Tags, &n.Metadata, &n.ParentID, &n.PositionX, &n.PositionY, &n.Width, &n.Height, &n.CreatedAt, &n.UpdatedAt, &n.DescriptionSource, &n.DescriptionAuthoredBy, &n.DescriptionAuthoredAt, &n.DescriptionAgentModel, &n.LastVerifiedAt, &n.LastVerifiedBy, &n.LastVerifiedCommit, &n.FieldProvenance,
-	)
-	if err != nil {
+	var projectID string
+	if err := r.pool.QueryRow(ctx, query, args...).Scan(&projectID); err != nil {
 		return nil, err
 	}
-	return &n, nil
+	return r.FindByID(ctx, id, projectID)
 }
 
 // MarkVerified stamps last_verified_at / last_verified_by / last_verified_commit
@@ -120,18 +248,16 @@ func (r *NodeRepo) MarkVerified(ctx context.Context, nodeID, projectID, userID, 
 	if commit != "" {
 		commitPtr = &commit
 	}
-	tag, err := r.pool.Exec(ctx,
-		`UPDATE nodes
-		 SET last_verified_at = now(),
-		     last_verified_by = $1,
-		     last_verified_commit = $2,
-		     updated_at = now()
-		 WHERE id = $3 AND project_id = $4`,
-		userID, commitPtr, nodeID, projectID)
+	rows, err := r.q.NodeMarkVerified(ctx, dbgen.NodeMarkVerifiedParams{
+		LastVerifiedBy:     &userID,
+		LastVerifiedCommit: commitPtr,
+		ID:                 nodeID,
+		ProjectID:          projectID,
+	})
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	if rows == 0 {
 		return fmt.Errorf("node not found")
 	}
 	return nil
@@ -146,29 +272,26 @@ func (r *NodeRepo) UpdateDescriptionProvenance(ctx context.Context, nodeID, auth
 	if agentModel != "" {
 		agentPtr = &agentModel
 	}
-	_, err := r.pool.Exec(ctx,
-		`UPDATE nodes
-		 SET description_source = $1,
-		     description_authored_by = $2,
-		     description_authored_at = now(),
-		     description_agent_model = $3
-		 WHERE id = $4`,
-		source, authoredBy, agentPtr, nodeID)
-	return err
+	return r.q.NodeUpdateDescriptionProvenance(ctx, dbgen.NodeUpdateDescriptionProvenanceParams{
+		DescriptionSource:     source,
+		DescriptionAuthoredBy: &authoredBy,
+		DescriptionAgentModel: agentPtr,
+		ID:                    nodeID,
+	})
 }
 
 func (r *NodeRepo) Delete(ctx context.Context, id, projectID string) error {
-	// Unparent children
-	_, _ = r.pool.Exec(ctx,
-		`UPDATE nodes SET parent_id = NULL, updated_at = now() WHERE parent_id = $1 AND project_id = $2`,
-		id, projectID)
-	// Delete connected edges
-	_, _ = r.pool.Exec(ctx,
+	if err := r.q.NodeUnparentChildren(ctx, dbgen.NodeUnparentChildrenParams{
+		ParentIds: []string{id}, ProjectID: projectID,
+	}); err != nil {
+		return err
+	}
+	if _, err := r.pool.Exec(ctx,
 		`DELETE FROM edges WHERE project_id = $1 AND (source_id = $2 OR target_id = $2)`,
-		projectID, id)
-	// Delete node
-	_, err := r.pool.Exec(ctx, `DELETE FROM nodes WHERE id = $1 AND project_id = $2`, id, projectID)
-	return err
+		projectID, id); err != nil {
+		return err
+	}
+	return r.q.NodeDeleteByID(ctx, dbgen.NodeDeleteByIDParams{ID: id, ProjectID: projectID})
 }
 
 func (r *NodeRepo) BatchUpdatePositions(ctx context.Context, projectID string, positions []struct {
@@ -177,6 +300,7 @@ func (r *NodeRepo) BatchUpdatePositions(ctx context.Context, projectID string, p
 	Width  *float64
 	Height *float64
 }) error {
+	// Hot path that benefits from pgx.Batch pipelining — stays raw.
 	b := &pgx.Batch{}
 	for _, p := range positions {
 		if p.Width != nil && p.Height != nil {
@@ -198,79 +322,72 @@ func (r *NodeRepo) BatchUpdatePositions(ctx context.Context, projectID string, p
 }
 
 func (r *NodeRepo) FindChangedSince(ctx context.Context, projectID string, since time.Time) ([]model.Node, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT `+nodeColsWithCreator+`
-		 FROM nodes n
-		 LEFT JOIN users u ON u.id = n.created_by
-		 WHERE n.project_id = $1 AND n.updated_at >= $2`, projectID, since)
+	rows, err := r.q.NodeFindChangedSince(ctx, dbgen.NodeFindChangedSinceParams{ProjectID: projectID, UpdatedAt: since})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	return scanNodes(rows)
+	out := make([]model.Node, len(rows))
+	for i, r := range rows {
+		out[i] = *nodeFromFindChangedSinceRow(r)
+	}
+	return out, nil
 }
 
 func (r *NodeRepo) FindFailOrBug(ctx context.Context, projectID string) ([]model.Node, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT `+nodeColsWithCreator+`
-		 FROM nodes n
-		 LEFT JOIN users u ON u.id = n.created_by
-		 WHERE n.project_id = $1 AND (n.status = 'FAIL' OR n.type = 'BUG')`, projectID)
+	rows, err := r.q.NodeFindFailOrBug(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	return scanNodes(rows)
+	out := make([]model.Node, len(rows))
+	for i, r := range rows {
+		out[i] = *nodeFromFindFailOrBugRow(r)
+	}
+	return out, nil
 }
 
 func (r *NodeRepo) FindByIDs(ctx context.Context, ids []string) ([]model.Node, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	rows, err := r.pool.Query(ctx,
-		`SELECT `+nodeColsWithCreator+`
-		 FROM nodes n
-		 LEFT JOIN users u ON u.id = n.created_by
-		 WHERE n.id = ANY($1)`, ids)
+	rows, err := r.q.NodeFindByIDs(ctx, ids)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	return scanNodes(rows)
+	out := make([]model.Node, len(rows))
+	for i, r := range rows {
+		out[i] = *nodeFromFindByIDsRow(r)
+	}
+	return out, nil
 }
 
 func (r *NodeRepo) UpdateStatus(ctx context.Context, id string, status model.NodeStatus) error {
-	_, err := r.pool.Exec(ctx,
-		`UPDATE nodes SET status = $1, updated_at = now() WHERE id = $2`, status, id)
-	return err
+	return r.q.NodeUpdateStatus(ctx, dbgen.NodeUpdateStatusParams{Status: string(status), ID: id})
 }
 
 func (r *NodeRepo) BatchDelete(ctx context.Context, projectID string, ids []string) error {
-	// Unparent children
-	_, _ = r.pool.Exec(ctx,
-		`UPDATE nodes SET parent_id = NULL, updated_at = now() WHERE parent_id = ANY($1) AND project_id = $2`,
-		ids, projectID)
-	// Delete connected edges
-	_, _ = r.pool.Exec(ctx,
+	if err := r.q.NodeUnparentChildren(ctx, dbgen.NodeUnparentChildrenParams{
+		ParentIds: ids, ProjectID: projectID,
+	}); err != nil {
+		return err
+	}
+	if _, err := r.pool.Exec(ctx,
 		`DELETE FROM edges WHERE project_id = $1 AND (source_id = ANY($2) OR target_id = ANY($2))`,
-		projectID, ids)
-	// Delete nodes
-	_, err := r.pool.Exec(ctx,
-		`DELETE FROM nodes WHERE id = ANY($1) AND project_id = $2`,
-		ids, projectID)
-	return err
+		projectID, ids); err != nil {
+		return err
+	}
+	return r.q.NodeDeleteByIDs(ctx, dbgen.NodeDeleteByIDsParams{NodeIds: ids, ProjectID: projectID})
 }
 
 func (r *NodeRepo) BatchUpdateStatus(ctx context.Context, projectID string, ids []string, status model.NodeStatus) error {
-	_, err := r.pool.Exec(ctx,
-		`UPDATE nodes SET status = $1, updated_at = now() WHERE id = ANY($2) AND project_id = $3`,
-		status, ids, projectID)
-	return err
+	return r.q.NodeBatchUpdateStatus(ctx, dbgen.NodeBatchUpdateStatusParams{
+		Status: string(status), NodeIds: ids, ProjectID: projectID,
+	})
 }
 
 // FindByProjectIDPaginated returns nodes with cursor-based pagination.
 // Uses (created_at, id) keyset for stable ordering.
 // Returns up to limit+1 rows; if len(result) > limit, hasMore=true and trim the last row.
+// Stays as hand-written pgx because the WHERE/ORDER clauses are dynamic.
 func (r *NodeRepo) FindByProjectIDPaginated(ctx context.Context, projectID string, nodeType, status *string, limit int, afterTime *time.Time, afterID *string) ([]model.Node, bool, error) {
 	args := []any{projectID}
 	where := "WHERE n.project_id = $1"
@@ -304,7 +421,7 @@ func (r *NodeRepo) FindByProjectIDPaginated(ctx context.Context, projectID strin
 	}
 	defer rows.Close()
 
-	nodes, err := scanNodes(rows)
+	nodes, err := scanNodesRaw(rows)
 	if err != nil {
 		return nil, false, err
 	}
@@ -316,12 +433,24 @@ func (r *NodeRepo) FindByProjectIDPaginated(ctx context.Context, projectID strin
 	return nodes, hasMore, nil
 }
 
-// scanNodes is a helper to scan rows into []model.Node
-func scanNodes(rows interface{ Next() bool; Scan(dest ...any) error }) ([]model.Node, error) {
+// scanNodesRaw is the manual scanner for dynamic-WHERE queries that can't go
+// through sqlc. Field order MUST match nodeColsWithCreator.
+func scanNodesRaw(rows interface {
+	Next() bool
+	Scan(dest ...any) error
+}) ([]model.Node, error) {
 	var nodes []model.Node
 	for rows.Next() {
 		var n model.Node
-		if err := rows.Scan(&n.ID, &n.ProjectID, &n.Type, &n.Title, &n.Description, &n.Status, &n.AssigneeID, &n.Tags, &n.Metadata, &n.ParentID, &n.PositionX, &n.PositionY, &n.Width, &n.Height, &n.CreatedAt, &n.UpdatedAt, &n.DescriptionSource, &n.DescriptionAuthoredBy, &n.DescriptionAuthoredAt, &n.DescriptionAgentModel, &n.LastVerifiedAt, &n.LastVerifiedBy, &n.LastVerifiedCommit, &n.FieldProvenance, &n.CreatedBy, &n.CreatorEmail); err != nil {
+		if err := rows.Scan(
+			&n.ID, &n.ProjectID, &n.Type, &n.Title, &n.Description, &n.Status,
+			&n.AssigneeID, &n.Tags, &n.Metadata, &n.ParentID,
+			&n.PositionX, &n.PositionY, &n.Width, &n.Height,
+			&n.CreatedAt, &n.UpdatedAt,
+			&n.DescriptionSource, &n.DescriptionAuthoredBy, &n.DescriptionAuthoredAt, &n.DescriptionAgentModel,
+			&n.LastVerifiedAt, &n.LastVerifiedBy, &n.LastVerifiedCommit, &n.FieldProvenance,
+			&n.CreatedBy, &n.CreatorEmail,
+		); err != nil {
 			return nil, err
 		}
 		nodes = append(nodes, n)

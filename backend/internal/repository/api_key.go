@@ -6,31 +6,66 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/thask/backend/internal/dbgen"
 	"github.com/thask/backend/internal/model"
 )
 
 type APIKeyRepo struct {
 	pool *pgxpool.Pool
+	q    *dbgen.Queries
 }
 
 func NewAPIKeyRepo(pool *pgxpool.Pool) *APIKeyRepo {
-	return &APIKeyRepo{pool: pool}
+	return &APIKeyRepo{pool: pool, q: dbgen.New(pool)}
+}
+
+func apiKeyFromCreateRow(r dbgen.APIKeyCreateRow) *model.APIKey {
+	return &model.APIKey{
+		ID:          r.ID,
+		UserID:      r.UserID,
+		Name:        r.Name,
+		KeyPrefix:   r.KeyPrefix,
+		Kind:        model.APIKeyKind(r.Kind),
+		Permissions: r.Permissions,
+		LastUsedAt:  r.LastUsedAt,
+		ExpiresAt:   r.ExpiresAt,
+		CreatedAt:   r.CreatedAt,
+	}
+}
+
+func apiKeyFromFindByUserIDRow(r dbgen.APIKeyFindByUserIDRow) model.APIKey {
+	return model.APIKey{
+		ID:          r.ID,
+		UserID:      r.UserID,
+		Name:        r.Name,
+		KeyPrefix:   r.KeyPrefix,
+		Kind:        model.APIKeyKind(r.Kind),
+		Permissions: r.Permissions,
+		LastUsedAt:  r.LastUsedAt,
+		ExpiresAt:   r.ExpiresAt,
+		CreatedAt:   r.CreatedAt,
+	}
 }
 
 func (r *APIKeyRepo) Create(ctx context.Context, userID, name, keyPrefix, keyHash string, kind model.APIKeyKind, perms model.APIKeyPermissions, expiresAt *time.Time) (*model.APIKey, error) {
-	var k model.APIKey
-	err := r.pool.QueryRow(ctx,
-		`INSERT INTO api_keys (user_id, name, key_prefix, key_hash, kind, permissions, expires_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
-		 RETURNING id, user_id, name, key_prefix, kind, permissions, last_used_at, expires_at, created_at`,
-		userID, name, keyPrefix, keyHash, string(kind), perms, expiresAt,
-	).Scan(&k.ID, &k.UserID, &k.Name, &k.KeyPrefix, &k.Kind, &k.Permissions, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt)
+	row, err := r.q.APIKeyCreate(ctx, dbgen.APIKeyCreateParams{
+		UserID:      userID,
+		Name:        name,
+		KeyPrefix:   keyPrefix,
+		KeyHash:     keyHash,
+		Kind:        string(kind),
+		Permissions: perms,
+		ExpiresAt:   expiresAt,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &k, nil
+	return apiKeyFromCreateRow(row), nil
 }
 
+// FindByKeyHash stays as raw pgx — the JOIN returns columns from two different
+// tables that must be split into separate model.APIKey and model.User structs,
+// which sqlc cannot express as a single mapped output type.
 func (r *APIKeyRepo) FindByKeyHash(ctx context.Context, keyHash string) (*model.APIKey, *model.User, error) {
 	var k model.APIKey
 	var u model.User
@@ -53,54 +88,33 @@ func (r *APIKeyRepo) FindByKeyHash(ctx context.Context, keyHash string) (*model.
 }
 
 func (r *APIKeyRepo) FindByUserID(ctx context.Context, userID string) ([]model.APIKey, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, user_id, name, key_prefix, kind, permissions, last_used_at, expires_at, created_at
-		 FROM api_keys WHERE user_id = $1 ORDER BY created_at DESC`,
-		userID,
-	)
+	rows, err := r.q.APIKeyFindByUserID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var keys []model.APIKey
-	for rows.Next() {
-		var k model.APIKey
-		if err := rows.Scan(&k.ID, &k.UserID, &k.Name, &k.KeyPrefix, &k.Kind, &k.Permissions, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt); err != nil {
-			return nil, err
-		}
-		keys = append(keys, k)
+	out := make([]model.APIKey, len(rows))
+	for i, row := range rows {
+		out[i] = apiKeyFromFindByUserIDRow(row)
 	}
-	return keys, nil
+	return out, nil
 }
 
 func (r *APIKeyRepo) Delete(ctx context.Context, id, userID string) error {
-	tag, err := r.pool.Exec(ctx,
-		`DELETE FROM api_keys WHERE id = $1 AND user_id = $2`,
-		id, userID,
-	)
+	n, err := r.q.APIKeyDelete(ctx, dbgen.APIKeyDeleteParams{ID: id, UserID: userID})
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	if n == 0 {
 		return fmt.Errorf("api key not found")
 	}
 	return nil
 }
 
 func (r *APIKeyRepo) UpdateLastUsed(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx,
-		`UPDATE api_keys SET last_used_at = now() WHERE id = $1`,
-		id,
-	)
-	return err
+	return r.q.APIKeyUpdateLastUsed(ctx, id)
 }
 
 func (r *APIKeyRepo) CountByUserID(ctx context.Context, userID string) (int, error) {
-	var count int
-	err := r.pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM api_keys WHERE user_id = $1`,
-		userID,
-	).Scan(&count)
-	return count, err
+	n, err := r.q.APIKeyCountByUserID(ctx, userID)
+	return int(n), err
 }

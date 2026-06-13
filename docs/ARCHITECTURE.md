@@ -212,6 +212,12 @@ frontend/
 
 ### Backend — Repository Layer
 
+**Code generation (v0.5.14+).** Repositories are thin wrappers over `internal/dbgen/`, a `sqlc`-generated layer compiled from `backend/db/queries/*.sql` + `backend/migrations/*.sql`. Adding a field to a migration + the SELECT list of the query that returns it forces `make sqlc-gen` to update the generated row struct, which then surfaces as a compile error at every call site until the model / converter / handler is updated. SQL-to-Go drift is no longer silent.
+
+Static queries (fixed shape: Create, FindByID, list-without-filters, simple Update/Delete) go through sqlc. Dynamic queries (Update setClauses built from a `map[string]any`, pagination cursor WHERE, `pgx.Batch` pipelining, multi-statement transactions) stay hand-written — these account for ~11 of 60+ queries across the repo. Wrappers convert the generated row types into the existing `model.*` structs at the boundary so handlers and services are unchanged.
+
+JSONB columns (`nodes.metadata`, `nodes.field_provenance`, `edges.metadata`, `audit_log.metadata`) map to `json.RawMessage` in the generated layer; the wrapper marshals `any` → `json.RawMessage` on writes so the handler-facing shape stays `any`. `api_keys.permissions` overrides directly to `model.APIKeyPermissions` so the existing `Scan`/`Value` methods continue to drive serialization.
+
 | Repository | Responsibility |
 |---|---|
 | `UserRepo` | User CRUD, lookup by email/ID |

@@ -5,62 +5,67 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/thask/backend/internal/dbgen"
 	"github.com/thask/backend/internal/model"
 )
 
 type ProjectMemberRepo struct {
 	pool *pgxpool.Pool
+	q    *dbgen.Queries
 }
 
 func NewProjectMemberRepo(pool *pgxpool.Pool) *ProjectMemberRepo {
-	return &ProjectMemberRepo{pool: pool}
+	return &ProjectMemberRepo{pool: pool, q: dbgen.New(pool)}
 }
 
 func (r *ProjectMemberRepo) GetRole(ctx context.Context, projectID, userID string) (model.ProjectRole, error) {
-	var role model.ProjectRole
-	err := r.pool.QueryRow(ctx,
-		`SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2`,
-		projectID, userID,
-	).Scan(&role)
-	return role, err
+	role, err := r.q.ProjectMemberGetRole(ctx, dbgen.ProjectMemberGetRoleParams{
+		ProjectID: projectID,
+		UserID:    userID,
+	})
+	return model.ProjectRole(role), err
 }
 
 func (r *ProjectMemberRepo) Add(ctx context.Context, projectID, userID string, role model.ProjectRole) error {
-	_, err := r.pool.Exec(ctx,
-		`INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, $3)`,
-		projectID, userID, role,
-	)
-	return err
+	return r.q.ProjectMemberAdd(ctx, dbgen.ProjectMemberAddParams{
+		ProjectID: projectID,
+		UserID:    userID,
+		Role:      string(role),
+	})
 }
 
 func (r *ProjectMemberRepo) UpdateRole(ctx context.Context, projectID, userID string, role model.ProjectRole) error {
-	tag, err := r.pool.Exec(ctx,
-		`UPDATE project_members SET role = $3 WHERE project_id = $1 AND user_id = $2`,
-		projectID, userID, role,
-	)
+	rows, err := r.q.ProjectMemberUpdateRole(ctx, dbgen.ProjectMemberUpdateRoleParams{
+		ProjectID: projectID,
+		UserID:    userID,
+		Role:      string(role),
+	})
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	if rows == 0 {
 		return fmt.Errorf("project member not found")
 	}
 	return nil
 }
 
 func (r *ProjectMemberRepo) Remove(ctx context.Context, projectID, userID string) error {
-	tag, err := r.pool.Exec(ctx,
-		`DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`,
-		projectID, userID,
-	)
+	rows, err := r.q.ProjectMemberRemove(ctx, dbgen.ProjectMemberRemoveParams{
+		ProjectID: projectID,
+		UserID:    userID,
+	})
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 0 {
+	if rows == 0 {
 		return fmt.Errorf("project member not found")
 	}
 	return nil
 }
 
+// ListWithUsers stays hand-written pgx: the JOIN produces a flat row that maps
+// to two destination structs (ProjectMember + User) — sqlc can't split one
+// row into two destination structs cleanly.
 func (r *ProjectMemberRepo) ListWithUsers(ctx context.Context, projectID string) ([]model.ProjectMemberWithUser, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT pm.id, pm.project_id, pm.user_id, pm.role, pm.created_at,
