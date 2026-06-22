@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.15] - 2026-06-22
+
+### Added
+- **Local-first CLI telemetry (Phase 13).** `~/.thask/events.jsonl` records one append-only JSONL line per CLI invocation, HTTP round-trip, and MCP tool call — for the user to read on their own machine. Sister commands surface the data: `thask usage` / `usage top` / `usage errors` aggregate the file in-memory, `thask reflog` lists recent invocations, `thask reflog search <q>` greps raw lines, `thask telemetry status` / `show schema` / `show last` print the schema and the most recent event, `thask telemetry purge --before "30 days ago"` rewrites the file atomically (temp file + `os.Rename`), `thask telemetry disable` / `enable` drop/remove a tombstone file. No SQL, no index, no dependency outside the Go stdlib — bytes.Contains grep over a 30-day file finishes in ~30 ms.
+  - **Payload bodies are opt-in.** Default state writes only metadata (command, duration, exit code, error class, backend host hash, response size bucket). Enable raw body capture with `thask telemetry config set capture_payloads true` — payload events get `local_only:true` and the blob lands in `~/.thask/payloads/<id>.blob` (0600) by reference so the JSONL row stays under PIPE_BUF for append atomicity.
+  - **Redaction at write time.** `--token` / `THASK_TOKEN` / `Authorization: Bearer` / URL credentials / JWT / Cookie / Set-Cookie / `thsk_`-prefixed strings are masked in both metadata and (when opted in) payload blobs. User content (titles, descriptions) is preserved — it's the user's machine.
+  - **Backend `X-Thask-Server-Version` header.** Echo middleware now stamps every `/api/*` response with `handler.Version`, which the CLI client wrap captures into `backend_version` per invocation. Static / non-API routes are unaffected.
+
 ### Fixed
 - **Edge BatchCreate aborted the whole transaction on first call.** Pre-existing gap surfaced during post-release ralph verification: the inline `INSERT INTO edges` passed `item.Waypoints` directly, and a nil DTO field became SQL NULL — violating `edges.waypoints JSONB NOT NULL DEFAULT '[]'::jsonb`. Postgres marked the tx as failed, so `tx.Commit()` returned the cryptic `"commit unexpectedly resulted in rollback"` and every valid edge in the same batch was lost. `CreateWithRouting` already normalised nil → `[]byte("[]")`; the inline path now matches.
 - **CLI usage-error sniffer now covers `accepts N arg(s)`, `flag needs an argument`, and pflag `strconv.` parse errors.** Previously `thask node get` (no arg) returned a JSON `{"error":"accepts 1 arg(s)..."}` because the matcher only recognised `accepts at most` / `requires at least` variants. Now all Cobra `ArgFunc` shapes route to human-readable stderr + exit 2, while runtime API errors still emit JSON.
