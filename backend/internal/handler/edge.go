@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -224,6 +226,25 @@ func (h *EdgeHandler) BatchCreate(c echo.Context) error {
 		return err
 	}
 
+	// Pre-flight (outside tx): build the set of source/target IDs that
+	// actually live in this project so we can skip cross-project endpoints
+	// rather than corrupt the graph. Same gap that v0.5.14 closed on
+	// single-edge Create — applies equally to bulk insert. Runs before
+	// tx.Begin so it can't interfere with the tx connection state.
+	uniq := make(map[string]struct{}, len(req.Edges)*2)
+	for _, item := range req.Edges {
+		uniq[item.SourceID] = struct{}{}
+		uniq[item.TargetID] = struct{}{}
+	}
+	allIDs := make([]string, 0, len(uniq))
+	for id := range uniq {
+		allIDs = append(allIDs, id)
+	}
+	inProject, vErr := h.edgeRepo.FilterNodesInProject(ctx, projectID, allIDs)
+	if vErr != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to validate endpoints"))
+	}
+
 	tx, err := h.edgeRepo.Pool().Begin(ctx)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to start transaction"))
@@ -244,24 +265,6 @@ func (h *EdgeHandler) BatchCreate(c echo.Context) error {
 	var ups []createdEdge
 	var skips []skipped
 
-	// Pre-flight: build the set of source/target IDs that actually live in
-	// this project so we can skip cross-project endpoints rather than corrupt
-	// the graph. Same gap that v0.5.14 closed on single-edge Create — applies
-	// equally to bulk insert.
-	uniq := make(map[string]struct{}, len(req.Edges)*2)
-	for _, item := range req.Edges {
-		uniq[item.SourceID] = struct{}{}
-		uniq[item.TargetID] = struct{}{}
-	}
-	allIDs := make([]string, 0, len(uniq))
-	for id := range uniq {
-		allIDs = append(allIDs, id)
-	}
-	inProject, vErr := h.edgeRepo.FilterNodesInProject(ctx, projectID, allIDs)
-	if vErr != nil {
-		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to validate endpoints"))
-	}
-
 	for _, item := range req.Edges {
 		if item.SourceID == item.TargetID {
 			skips = append(skips, skipped{item.SourceID, item.TargetID, "self_reference"})
@@ -279,6 +282,20 @@ func (h *EdgeHandler) BatchCreate(c echo.Context) error {
 		}
 		// Per-edge insert under tx; UNIQUE(source_id, target_id, edge_type)
 		// raises on duplicate, FK fails on missing node — both reported as skip.
+		// waypoints column is JSONB NOT NULL DEFAULT '[]'::jsonb — nil from the
+		// DTO would otherwise send SQL NULL and poison the entire batch tx with
+		// "current transaction is aborted", so normalise here.
+		var wpBytes []byte
+		if item.Waypoints == nil {
+			wpBytes = []byte("[]")
+		} else {
+			b, mErr := json.Marshal(item.Waypoints)
+			if mErr != nil {
+				skips = append(skips, skipped{item.SourceID, item.TargetID, "invalid_waypoints"})
+				continue
+			}
+			wpBytes = b
+		}
 		var id string
 		err := tx.QueryRow(ctx,
 			`INSERT INTO edges (project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints)
@@ -286,7 +303,7 @@ func (h *EdgeHandler) BatchCreate(c echo.Context) error {
 			 ON CONFLICT (source_id, target_id, edge_type) DO NOTHING
 			 RETURNING id`,
 			projectID, item.SourceID, item.TargetID, edgeType, item.Label,
-			nullableString(item.SourcePort, "auto"), nullableString(item.TargetPort, "auto"), item.Waypoints,
+			nullableString(item.SourcePort, "auto"), nullableString(item.TargetPort, "auto"), wpBytes,
 		).Scan(&id)
 		if err != nil {
 			// pgx.ErrNoRows fires when ON CONFLICT DO NOTHING skips the row;
@@ -303,6 +320,7 @@ func (h *EdgeHandler) BatchCreate(c echo.Context) error {
 	}
 
 	if err := tx.Commit(ctx); err != nil {
+		slog.Error("edge.BatchCreate commit failed", "error", err, "edges", len(req.Edges), "ups", len(ups), "skips", len(skips))
 		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to commit batch"))
 	}
 

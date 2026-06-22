@@ -125,9 +125,16 @@ func isUsageError(err error) bool {
 			return true
 		}
 	}
-	// Argcount enforcement errors: "accepts at most N arg(s)" / "requires
-	// at least N arg(s)" / variants.
-	if strings.Contains(msg, "accepts at most") || strings.Contains(msg, "requires at least") ||
+	// Argcount enforcement errors:
+	//   "accepts at most N arg(s), received M" (cobra.MaximumNArgs)
+	//   "accepts %d arg(s), received %d"       (cobra.ExactArgs / RangeArgs)
+	//   "requires at least N arg(s)"           (cobra.MinimumNArgs)
+	//   "accepts no arg(s)"                    (cobra.NoArgs)
+	//   "requires exactly"                     (variants)
+	// `arg(s), received` is the most reliable common substring across
+	// all of Cobra's ArgFunc messages — use it as a catch-all.
+	if strings.Contains(msg, "arg(s), received") ||
+		strings.Contains(msg, "accepts at most") || strings.Contains(msg, "requires at least") ||
 		strings.Contains(msg, "accepts no") || strings.Contains(msg, "requires exactly") {
 		return true
 	}
