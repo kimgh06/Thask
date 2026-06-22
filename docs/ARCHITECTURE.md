@@ -243,6 +243,11 @@ JSONB columns (`nodes.metadata`, `nodes.field_provenance`, `edges.metadata`, `au
 | `service/eventhub` | Pub/sub hub for SSE realtime events (node/edge CRUD, layout, import) |
 | `service/layout` | Server-side graph layout algorithms (dagre, grid) with GROUP auto-sizing |
 | `audit` (own package) | `Logger.Log()` — write to `audit_log` with actor/channel pulled from echo context. `RequirePermission()` — gate handler by `permissions.write_semantic / write_structural / write_meta / verify / suggest / delete / read`. Lives outside `service` to avoid the `service ↔ repository ↔ middleware` import cycle. |
+| middleware shim | A 4-line `cmd/server/main.go` middleware stamps `X-Thask-Server-Version: <handler.Version>` on every `/api/*` response so CLI telemetry (v0.5.15+) can record the backend it talked to. Static / non-API routes are excluded. |
+
+### CLI — Local-First Telemetry (`cli/internal/telemetry/`)
+
+New in v0.5.15. Every CLI invocation, HTTP round-trip, and MCP tool call appends one JSONL line to `~/.thask/events.jsonl` — local-only, append-only (single explicit purge command rewrites via temp file + `os.Rename`). Hooks live in three places: `cmd/root.go` `PersistentPreRunE` calls `telemetry.Begin()` and `Execute()` calls `Finalize()`; `client/client.go do()` records the HTTP outcome on every response; `mcp/handler.go HandleToolCall` wraps each tool dispatch with an `mcp_call` event whose `parent` references the in-flight invocation. Failures inside the telemetry stack are swallowed (`defer recover()`) so the CLI never breaks on telemetry pressure. Raw request/response bodies are opt-in (`capture_payloads`); the default captures only metadata. Inspection commands (`thask usage`, `thask reflog` / `history`, `thask telemetry status`) full-scan the file (~30 ms / year) — no SQL, no index.
 
 ### Capture Worker (`capture/`)
 

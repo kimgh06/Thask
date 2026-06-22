@@ -250,6 +250,56 @@ the legacy `{"status":"ok"}` body are accepted as `version=unknown, db=ok`.
 
 ---
 
+## telemetry / usage / reflog (local-first, Phase 13)
+
+Every CLI invocation appends one JSONL line to `~/.thask/events.jsonl` for
+the user to inspect on their own machine. No SQL, no index, no upload. Default
+captures metadata only (command, duration, exit code, error class, backend
+host hash, response size bucket). Raw request/response bodies are opt-in.
+
+### Quick inspection
+
+```bash
+thask usage                           # 30-day summary (success rate, p50/p95, top commands)
+thask usage top --limit 5             # top commands with avg ms + ok rate
+thask usage errors                    # error funnel grouped by error_class
+thask reflog -n 20                    # recent invocations (most-recent first)
+thask reflog --show <id-prefix>       # full pretty-printed event for one invocation
+thask reflog search "node create"     # raw grep over events.jsonl
+```
+
+### Manage collection
+
+```bash
+thask telemetry status                # what's collected, payload opt-in state
+thask telemetry show schema           # full field list + redaction policy
+thask telemetry show last             # most recent raw event, pretty-printed
+thask telemetry config set capture_payloads true   # opt in to body capture
+thask telemetry disable               # drop a tombstone — no further writes
+thask telemetry enable                # remove the tombstone
+thask telemetry purge --before "30 days ago"   # atomic rewrite
+thask telemetry purge --payloads-only          # delete blobs, keep events
+thask telemetry purge --all                    # remove everything
+```
+
+Direct file access works too — `tail -n 5 ~/.thask/events.jsonl | jq` is a
+first-class workflow. The file is append-only during normal runs; only
+`telemetry purge` rewrites it (via temp file + `os.Rename`).
+
+### What gets written
+
+Redacted at write time: `--token`, `THASK_TOKEN`, `Authorization: Bearer`,
+URL credentials, JWT, `Cookie` / `Set-Cookie`, `thsk_`-prefixed tokens.
+
+Never written: raw URLs, token values, node titles or descriptions, file
+paths beyond install-source detection.
+
+Failure of the telemetry stack (permission denied, disk full, malformed
+events.jsonl) never affects the CLI's exit code or stderr — every write
+path is wrapped in `defer recover()`.
+
+---
+
 ## auth
 
 Authenticate and manage sessions.

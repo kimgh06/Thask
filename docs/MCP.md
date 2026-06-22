@@ -182,6 +182,10 @@ The MCP server exposes 24 tools organized into 7 categories.
 | `thask.guide` | Get the full AI agent guide for Thask. Call this before your first interaction with a Thask project. | — | `projectId` |
 | `thask.mistake.record` | Record an agent mistake as a BUG node under the project's "실수 기록" GROUP (auto-created). Surfaced by `thask.guide` in future sessions. | `projectId`, `title`, `lesson` | `cause`, `fix` |
 
+### Local Telemetry of MCP Calls (v0.5.15+)
+
+Every `tools/call` dispatch through `thask mcp serve` appends an `mcp_call` event to `~/.thask/events.jsonl` with `tool_name`, `duration_ms`, `ok`, in/out payload size buckets, and `parent` pointing to the serve session's invocation event. The agent never sees this — it is the human's own usage log. The serve session itself also gets one `invocation` event (`cmd: "thask mcp serve"`) on shutdown. Inspect via `thask reflog` (the serve invocation) or directly with `jq 'select(.kind=="mcp_call")' ~/.thask/events.jsonl` for the per-tool rows. Opt out with `thask telemetry disable`. Raw request/response bodies stay local-only and require `thask telemetry config set capture_payloads true` to be recorded at all.
+
 ---
 
 ## Enum Values

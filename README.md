@@ -116,6 +116,10 @@ Agents wanting to revise a description post to `node_suggestions` and a human ap
 
 Three endpoints cut N round-trips down to one — `node.batch_update` (up to 200), `edge.batch_create` / `edge.batch_delete` (up to 500). Atomic on permission / cycle failure; per-item skip reasons in `skipped[]`; HTTP `207 Multi-Status` when any item skips. Saves substantial agent context (1 call vs N).
 
+### Local-First CLI Telemetry (v0.5.15+)
+
+Every CLI invocation, MCP tool call, and HTTP response appends a single JSONL line to `~/.thask/events.jsonl` — on your machine only, no upload. Inspect with `thask usage` (30-day summary, p50/p95 latency, top commands), `thask reflog` / `thask history` (recent events, full-text search), or `tail -f` the file directly. Raw bodies are opt-in (`thask telemetry config set capture_payloads true`); the default captures only metadata. Tokens, URL credentials, JWT and cookies are masked at write time.
+
 ### Go Dependency Scanner
 
 Scan Go codebases to auto-generate dependency graphs. `thask scan --path .` parses `go.mod` and imports, creating nodes and edges automatically. Extensible via [plugin system](docs/PLUGINS.md).
