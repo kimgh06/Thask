@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -113,6 +114,18 @@ func main() {
 	})
 	e.Use(internalCORS)
 	e.Use(echoMw.RateLimiter(echoMw.NewRateLimiterMemoryStore(20)))
+
+	// Stamp X-Thask-Server-Version on every /api/* response so the CLI
+	// can record backend_version in its telemetry. Skips static assets
+	// and non-API routes per the Phase 13 §K narrowing.
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if strings.HasPrefix(c.Path(), "/api/") {
+				c.Response().Header().Set("X-Thask-Server-Version", handler.Version)
+			}
+			return next(c)
+		}
+	})
 
 	// Routes
 	RegisterRoutes(e, h, sessionRepo, apiKeyRepo, teamRepo, projectRepo, pmRepo)

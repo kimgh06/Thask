@@ -6,11 +6,18 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/thask/cli/internal/client"
 	"github.com/thask/cli/internal/config"
 	"github.com/thask/cli/internal/output"
+	"github.com/thask/cli/internal/telemetry"
 	"github.com/thask/cli/internal/update"
 )
+
+// teleState is the per-process telemetry context loaded once in
+// PersistentPreRunE. Held package-level so client/mcp hooks can reach it
+// without threading a parameter through every Cobra subtree.
+var teleState *telemetry.State
 
 var (
 	cfg       *config.Config
@@ -35,6 +42,15 @@ var rootCmd = &cobra.Command{
 			cobra.OnFinalize(cleanup)
 		}
 
+		// Begin telemetry as early as possible so even auth failures get
+		// captured. Failures inside the telemetry stack are swallowed —
+		// the CLI must succeed regardless of telemetry health.
+		teleState = telemetry.LoadState()
+		telemetry.EnsureInstall(teleState)
+		sess := telemetry.Begin(teleState, Version, cmd.CommandPath(), telemetry.SourceTerminal)
+		sess.SetFormat(fmtFlag)
+		sess.SetFlags(visitedFlagNames(cmd))
+
 		cfg = config.Load()
 
 		// Flag overrides
@@ -57,6 +73,9 @@ var rootCmd = &cobra.Command{
 			"config": true, "set": true, "show": true, "version": true,
 			"serve": true, "aliases": true, "install": true, "uninstall": true,
 			"guide": true, "init": true, "doctor": true, "login": true,
+			"telemetry": true, "status": true, "disable": true, "enable": true,
+			"purge": true, "usage": true, "top": true, "errors": true,
+			"reflog": true,
 		}
 		if skipAuth[cmd.Name()] {
 			return nil
@@ -101,6 +120,9 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(guideCmd)
 	rootCmd.AddCommand(mistakeCmd)
+	rootCmd.AddCommand(telemetryCmd)
+	rootCmd.AddCommand(usageCmd)
+	rootCmd.AddCommand(reflogCmd)
 }
 
 // usageErrorPrefixes match Cobra's flag-parser / unknown-command / arg-count
@@ -148,6 +170,11 @@ func isUsageError(err error) bool {
 
 func Execute() {
 	err := rootCmd.Execute()
+
+	// Classify outcome and emit the invocation telemetry event before any
+	// os.Exit() short-circuits Cobra's OnFinalize chain.
+	finalizeTelemetry(err)
+
 	if err == nil {
 		return
 	}
@@ -157,6 +184,60 @@ func Execute() {
 	}
 	output.ErrorJSON(err.Error())
 	os.Exit(client.ExitCode(err))
+}
+
+func finalizeTelemetry(err error) {
+	defer func() { _ = recover() }()
+	sess := telemetry.Current()
+	if sess == nil {
+		return
+	}
+	switch {
+	case err == nil:
+		sess.SetError("", 0)
+	case isUsageError(err):
+		sess.SetError("usage", 2)
+	default:
+		sess.SetError(classifyRuntimeError(err), client.ExitCode(err))
+	}
+	sess.Finalize()
+}
+
+// classifyRuntimeError buckets runtime errors into a coarse class for
+// aggregation. Free-form messages stay out of telemetry — only the class
+// label is recorded.
+func classifyRuntimeError(err error) string {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "401"), strings.Contains(msg, "403"),
+		strings.Contains(msg, "unauthorized"), strings.Contains(msg, "forbidden"):
+		return "auth"
+	case strings.Contains(msg, "timeout"), strings.Contains(msg, "deadline exceeded"):
+		return "timeout"
+	case strings.Contains(msg, "dial "), strings.Contains(msg, "no such host"),
+		strings.Contains(msg, "connection refused"):
+		return "network"
+	case strings.Contains(msg, "5") && (strings.Contains(msg, "500") ||
+		strings.Contains(msg, "502") || strings.Contains(msg, "503") ||
+		strings.Contains(msg, "504")):
+		return "server"
+	default:
+		return "other"
+	}
+}
+
+// visitedFlagNames returns the names of flags the user actually set on
+// the resolved command. Values are NOT captured — only the names, so the
+// telemetry signal stays free of user content.
+func visitedFlagNames(cmd *cobra.Command) []string {
+	if cmd == nil {
+		return nil
+	}
+	var names []string
+	cmd.Flags().Visit(func(f *pflag.Flag) {
+		names = append(names, "--"+f.Name)
+	})
+	return names
 }
 
 func getFormat() output.Format {

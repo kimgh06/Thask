@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/thask/cli/internal/client"
 	"github.com/thask/cli/internal/scan"
+	"github.com/thask/cli/internal/telemetry"
 )
 
 type ToolHandler func(c *client.Client, args map[string]any) (any, error)
@@ -45,17 +47,44 @@ var handlers = map[string]ToolHandler{
 }
 
 func HandleToolCall(c *client.Client, name string, args json.RawMessage) (any, error) {
+	start := time.Now()
 	handler, ok := handlers[name]
 	if !ok {
+		logMCPCall(name, len(args), 0, time.Since(start), false)
 		return nil, fmt.Errorf("unknown tool: %s", name)
 	}
 	var params map[string]any
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &params); err != nil {
+			logMCPCall(name, len(args), 0, time.Since(start), false)
 			return nil, fmt.Errorf("invalid arguments: %w", err)
 		}
 	}
-	return handler(c, params)
+	result, err := handler(c, params)
+	outBytes := 0
+	if err == nil && result != nil {
+		if b, mErr := json.Marshal(result); mErr == nil {
+			outBytes = len(b)
+		}
+	}
+	logMCPCall(name, len(args), outBytes, time.Since(start), err == nil)
+	return result, err
+}
+
+func logMCPCall(name string, inBytes, outBytes int, dur time.Duration, ok bool) {
+	sess := telemetry.Current()
+	if sess == nil || sess.State == nil {
+		return
+	}
+	telemetry.Log(sess.State, &telemetry.Event{
+		Kind:             telemetry.KindMCPCall,
+		Parent:           sess.InvocationID,
+		ToolName:         name,
+		DurationMs:       dur.Milliseconds(),
+		OK:               ok,
+		PayloadInBucket:  telemetry.BucketBytes(int64(inBytes)),
+		PayloadOutBucket: telemetry.BucketBytes(int64(outBytes)),
+	})
 }
 
 func str(args map[string]any, key string) string {

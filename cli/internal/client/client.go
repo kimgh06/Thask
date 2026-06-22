@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/thask/cli/internal/telemetry"
 )
 
 type Client struct {
@@ -57,11 +59,13 @@ func (c *Client) do(method, path string, body any) (json.RawMessage, error) {
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
+		telemetry.Current().RecordHTTP(c.BaseURL, 0, "", 0)
 		return nil, fmt.Errorf("network error: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
+	telemetry.Current().RecordHTTP(c.BaseURL, resp.StatusCode, resp.Header.Get("X-Thask-Server-Version"), int64(len(respBody)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -121,11 +125,13 @@ func (c *Client) GetRaw(path, accept string) ([]byte, string, error) {
 
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
+		telemetry.Current().RecordHTTP(c.BaseURL, 0, "", 0)
 		return nil, "", fmt.Errorf("network error: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
+	telemetry.Current().RecordHTTP(c.BaseURL, resp.StatusCode, resp.Header.Get("X-Thask-Server-Version"), int64(len(respBody)))
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to read response: %w", err)
 	}
