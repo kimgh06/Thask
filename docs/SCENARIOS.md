@@ -12,7 +12,7 @@ has an ID so E2E tests, manual QA, and bug reports can reference precisely.
 - Scenarios are positive-path **and** known failure modes.
 - `→` means "expected outcome / observable result".
 
-**Date of last full audit:** 2026-06-13 (commits up to `f7dd39e`, v0.5.13).
+**Date of last full audit:** 2026-06-22 (v0.5.15 release).
 
 ---
 
@@ -198,7 +198,7 @@ has an ID so E2E tests, manual QA, and bug reports can reference precisely.
 | EDGE-04 | H/A | Create edge across projects | 400 (cross-project) |
 | EDGE-05 | H/A | `PATCH /api/projects/:pid/edges/:eid` with `{edgeType?, waypoints?, label?, sourcePort?, targetPort?}` | 200 (COALESCE for optional fields) |
 | EDGE-06 | H/A | `DELETE /api/projects/:pid/edges/:eid` | 200 |
-| EDGE-07 | H/A | `POST /api/projects/:pid/edges/batch-create` (v0.5.10, up to 500) | 201 or 207 |
+| EDGE-07 | H/A | `POST /api/projects/:pid/edges/batch-create` (v0.5.10, up to 500) | 201 or 207. **v0.5.15:** items with `waypoints == nil` are normalised to `[]` so the `edges.waypoints JSONB NOT NULL DEFAULT '[]'` constraint never aborts the whole tx. |
 | EDGE-08 | H/A | `POST /api/projects/:pid/edges/batch-delete` | 200 or 207 |
 | EDGE-09 | H/A | depends_on edge created on FAIL-status source | waterfall triggers downstream cascade |
 | EDGE-10 | H/A | blocks edge enforces directional impact analysis |
@@ -250,6 +250,7 @@ has an ID so E2E tests, manual QA, and bug reports can reference precisely.
 | HEALTH-01 | S | `GET /api/health` (or `/health`) DB up | 200 `{status:"ok", version, db:"ok", migrationVersion, migrationsApplied, uptime}` |
 | HEALTH-02 | S | DB ping fails | 503 with `dbError:"db ping failed"` (no DSN leak) |
 | HEALTH-03 | S | `schema_migrations` table missing/unreadable | 200 `degraded`, `dbError:"schema_migrations unreadable"` |
+| HEALTH-04 | S | Any `/api/*` response (v0.5.15+) | Echo middleware stamps `X-Thask-Server-Version: <semver>` header on every reply; CLI telemetry records it as `backend_version`. Static and non-API routes are excluded. |
 
 ---
 
@@ -259,7 +260,7 @@ has an ID so E2E tests, manual QA, and bug reports can reference precisely.
 
 | ID | Actor | Scenario | Expected |
 |---|---|---|---|
-| CLI-01 | C | `thask --version` | stdout `thask v0.5.13 (<sha>)`, exit 0 |
+| CLI-01 | C | `thask --version` | stdout `thask v0.5.15 (<sha>)`, exit 0 |
 | CLI-02 | C | `thask -v` | same as CLI-01 |
 | CLI-03 | C | `thask version` (subcmd) | same output |
 | CLI-04 | C | `thask --help` | usage info, exit 0 |
@@ -338,6 +339,25 @@ For each: `--url` `--token` `-p` `--team` `-f` `--pretty` `-q` flags compose.
 |---|---|---|---|
 | CLI-46 | C | `thask login` | loopback flow as in AUTH-18~26 |
 | CLI-47 | C | `thask login --force` | replaces existing token |
+
+### 10.8 Local-first telemetry (v0.5.15+)
+
+Backing file: `~/.thask/events.jsonl` (append-only, single explicit `purge` rewrites via temp file + `os.Rename`). Bodies are opt-in via `capture_payloads`; redaction is applied at write time. See [SYS-10](#13-background--system) for the write path.
+
+| ID | Actor | Scenario | Expected |
+|---|---|---|---|
+| CLI-48 | C | `thask usage` | 30-day summary: invocation count, success %, p50/p95 latency, top commands, backends |
+| CLI-49 | C | `thask usage top --limit 5 --since "1 week ago"` | command / count / avg-ms / ok% table for the window |
+| CLI-50 | C | `thask usage errors` | failure funnel grouped by `error_class` (auth / network / timeout / server / usage / other) |
+| CLI-51 | C | `thask reflog -n 20 [--source mcp\|--errors-only\|--since "yesterday"]` | most-recent invocations in time-reverse order |
+| CLI-52 | C | `thask history` | alias for `reflog` |
+| CLI-53 | C | `thask reflog --show <id-prefix>` | pretty-printed full event (any kind) by ULID prefix |
+| CLI-54 | C | `thask reflog search "<q>"` | `bytes.Contains` grep over raw lines, pretty-prints matches |
+| CLI-55 | C | `thask telemetry status` | collection state, payload opt-in flag, install_id, data dir |
+| CLI-56 | C | `thask telemetry show schema\|last` | event schema + redaction policy, or most-recent raw event |
+| CLI-57 | C | `thask telemetry config set capture_payloads <bool>` | flips opt-in flag, emits 1 `config_change` event |
+| CLI-58 | C | `thask telemetry disable` then any command × N | exactly 1 `config_change` row recorded (the disable itself), then 0 events on subsequent runs while the tombstone exists; `enable` lifts it |
+| CLI-59 | C | `thask telemetry purge --before "30 days ago" \| --all \| --payloads-only` | atomic rewrite via temp file + `os.Rename`; only path outside append-only invariant |
 
 ---
 
@@ -430,6 +450,7 @@ Each MCP tool is invoked via `thask mcp serve` stdio + JSON-RPC `tools/call`.
 | SYS-07 | S | Capture worker | Playwright Chromium loads `/capture?...&token=...`, snapshots PNG/SVG, posts back |
 | SYS-08 | S | sqlc generate | `make sqlc-gen` regenerates `backend/internal/dbgen/`; idempotent (re-run produces zero diff) |
 | SYS-09 | S | sqlc compile-check | `make sqlc-check` validates queries against migrations without writing files |
+| SYS-10 | C | **CLI telemetry write path (v0.5.15+).** Each CLI invocation → `cli/internal/telemetry/log.go Log()` → POSIX `O_APPEND` write under 4 KB to `~/.thask/events.jsonl` (multi-process safe via PIPE_BUF atomicity). Redaction (`--token`, `Authorization: Bearer`, URL credentials, JWT, Cookie, `thsk_`-prefixed strings) runs at marshal time. Failure modes — missing dir, permission denied, disk full, internal panic — are swallowed via `defer recover()` so the CLI's exit code is unaffected. | One row appended (or zero if tombstone exists / unrecoverable I/O); CLI behaviour unchanged regardless. |
 
 ---
 
@@ -454,7 +475,7 @@ Each MCP tool is invoked via `thask mcp serve` stdio + JSON-RPC `tools/call`.
 | ERR-15 | Audit | Permission denial recorded | audit_log entry `action=write_denied` |
 | ERR-16 | DB | Connection pool exhausted | 503 (handler returns "service unavailable") |
 | ERR-17 | DB | unique constraint violation | 409 |
-| ERR-18 | CLI | Unknown flag | human stderr + exit 2 (v0.5.14+) |
+| ERR-18 | CLI | Usage errors: unknown flag / unknown command / wrong arg count (`accepts N arg(s)`, `flag needs an argument`, `requires at least`, `accepts at most`, `accepts no arg(s)`) / pflag `strconv.*` parse failures | human stderr + exit 2 (v0.5.14 introduced, v0.5.15 widened the matcher) |
 | ERR-19 | CLI | Runtime auth fail | JSON stderr + exit 1 |
 | ERR-20 | MCP | Tool input schema fails validation | JSON-RPC error response with details |
 | ERR-21 | MCP | Backend unreachable from MCP context | JSON-RPC error mapping HTTP status |

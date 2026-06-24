@@ -22,7 +22,7 @@ gate `/api/*` still reach it.
 // 200 OK — fully healthy
 {
   "status": "ok",
-  "version": "0.5.12",
+  "version": "0.5.15",
   "db": "ok",
   "migrationVersion": 10,
   "migrationsApplied": 10,
@@ -32,7 +32,7 @@ gate `/api/*` still reach it.
 // 503 Service Unavailable — DB ping failed
 {
   "status": "down",
-  "version": "0.5.12",
+  "version": "0.5.15",
   "db": "error",
   "dbError": "context deadline exceeded",
   "migrationVersion": 0,
@@ -43,7 +43,7 @@ gate `/api/*` still reach it.
 // 200 OK — DB reachable but schema_migrations table missing
 {
   "status": "degraded",
-  "version": "0.5.12",
+  "version": "0.5.15",
   "db": "ok",
   "dbError": "schema_migrations unreadable: ...",
   "uptime": "5s"
@@ -842,6 +842,7 @@ Returns project and team counts for the authenticated user.
 | V1BodyLimit | `/api/v1/*` | Rejects request bodies over 1MB |
 | Idempotency | `/api/v1/*` (mutations) | Deduplicates requests via Idempotency-Key header |
 | External CORS | `/api/v1/*` | Configurable origin allowlist for external consumers |
+| ServerVersion | `/api/*` | Stamps `X-Thask-Server-Version: <semver>` on every response so the CLI can record `backend_version` in its local telemetry (v0.5.15+) |
 
 ---
 

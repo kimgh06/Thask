@@ -15,6 +15,11 @@ thask init
 thask node list --pretty
 thask impact --node <nodeId>
 thask mcp serve  # Start MCP server for Claude Code / Cursor / Codex
+
+# Inspect your own CLI usage (v0.5.15+, local-only — no upload)
+thask usage              # 30-day summary
+thask reflog -n 20       # alias: thask history
+thask telemetry status   # what's collected + opt-in state
 ```
 
 Build from source instead:
@@ -33,9 +38,12 @@ go build -o thask ./cmd/thask
 ```
 cmd/thask/          Entry point
 internal/
-  cmd/              Cobra commands (node, edge, team, project, graph, impact, etc.)
-  mcp/              MCP server (stdio protocol, 12 tools)
+  cmd/              Cobra commands (node, edge, team, project, graph, impact, telemetry, usage, reflog, etc.)
+  mcp/              MCP server (stdio protocol, 24 tools)
   client/           HTTP client for backend API
-  config/           Config file management (~/.config/thask/)
+  config/           Config file management (~/.thask/config.json)
   output/           Output formatting (JSON, table, quiet)
+  telemetry/        Local-first event log (~/.thask/events.jsonl) — v0.5.15+
+  scan/             Go codebase dependency scanner
+  update/           Background update-check
 ```

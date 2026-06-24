@@ -106,7 +106,7 @@ contract.
 | **Runtime / API** | auth failure, 4xx/5xx from backend, network error, validation failure from the server | `stderr`, JSON: `{"error":"..."}` | `1` (or whatever `client.ExitCode` maps the error to) |
 
 Why the split: a first-time user typing `thask --version` should get
-`thask v0.5.13 (...)` not `{"error":"unknown flag"}`. But a script running
+`thask v0.5.15 (...)` not `{"error":"unknown flag"}`. But a script running
 `thask node create ...` and parsing `.error` to retry should keep getting
 JSON. The match is by error message prefix — `unknown flag`, `unknown
 command`, `unknown shorthand flag`, `flag provided but not defined`,
@@ -184,7 +184,8 @@ thask login                                       # browser flow
 
 **Not yet supported:** SSH / headless / CI sessions (no browser available) —
 fall back to the manual `thask config set token <key>` flow for those.
-A device-code flag (`--device`) is planned for v0.5.12+.
+A device-code flag (`--device`) is on the roadmap; no committed release yet —
+file an issue if you need it.
 
 ---
 
@@ -1026,7 +1027,7 @@ thask version
 
 Output:
 ```
-Thask v0.1.0 (commit: abc123def456)
+Thask v0.5.15 (commit: abc123def456)
 ```
 
 ---

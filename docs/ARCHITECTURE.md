@@ -7,10 +7,13 @@ Thask uses a **monorepo with separate backend, frontend, and CLI** services. The
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  CLI (Go + Cobra)                                        │
-│  thask node · thask edge · thask graph · thask impact    │
+│  thask node · edge · graph · impact · usage · reflog · telemetry  │
 ├──────────────────────────────────────────────────────────┤
 │  MCP Server (stdio)                                      │
-│  16 tools · thask.node.* · thask.edge.* · thask.graph.* · thask.scan.* · thask.guide  │
+│  24 tools · thask.node.* · thask.edge.* · thask.graph.* · thask.scan.* · thask.guide  │
+├──────────────────────────────────────────────────────────┤
+│  Local State (~/.thask/, v0.5.15+)                       │
+│  config.json · events.jsonl (append-only) · payloads/ (opt-in)  │
 ╠══════════════════════════════════════════════════════════╣
 │  Frontend (SvelteKit + Svelte 5)                         │
 │  CytoscapeCanvas · GraphToolbar · NodeDetailPanel · ...  │
@@ -91,13 +94,25 @@ cli/
 ├── cmd/thask/
 │   └── main.go                    # CLI entrypoint
 ├── internal/
-│   ├── cmd/                       # Cobra commands (node, edge, team, etc.)
+│   ├── cmd/                       # Cobra commands (node, edge, team, telemetry, usage, reflog, ...)
 │   ├── mcp/                       # MCP server (stdio, 24 tools incl. provenance + bulk)
-│   ├── client/                    # HTTP client for backend API
-│   ├── config/                    # Config file (~/.config/thask/)
-│   └── output/                    # Output formatting (JSON, table, quiet)
+│   ├── client/                    # HTTP client for backend API (records HTTP outcome → telemetry)
+│   ├── config/                    # Config file (~/.thask/config.json)
+│   ├── output/                    # Output formatting (JSON, table, quiet)
+│   ├── telemetry/                 # Local-first event log (~/.thask/events.jsonl) — v0.5.15+
+│   ├── scan/                      # Go codebase dependency scanner
+│   └── update/                    # Background self-update check
 ├── go.mod
 └── go.sum
+
+# CLI runtime state (per-user, never tracked in git)
+~/.thask/
+├── config.json                    # URL, token, default project/team
+├── events.jsonl                   # Append-only telemetry log (v0.5.15+)
+├── payloads/                      # Opt-in raw request/response blobs (0600 each)
+├── telemetry.json                 # install_id, capture_payloads, first_run_at
+├── telemetry-tombstone            # Presence = telemetry disabled
+└── uploaded.jsonl                 # Reserved for Phase 14 prod-upload ledger
 
 backend/
 ├── cmd/server/
