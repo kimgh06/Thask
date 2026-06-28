@@ -198,14 +198,24 @@ export function routeGrid8(startPoint: Point, goalPoint: Point, obstacles: Obsta
 	const maxExpansions = options.maxExpansions ?? 80_000;
 	const bendPenalty = options.bendPenalty ?? 0.03;
 	const backtrackPenalty = options.backtrackPenalty ?? 0.01;
-	const start = toCell(startPoint, gridSize);
-	const goal = toCell(goalPoint, gridSize);
-	const blocked = buildBlockedCells(obstacles, gridSize, start, goal);
 
-	const minX = Math.min(start.x, goal.x, ...obstacles.map((r) => Math.floor(r.x1 / gridSize))) - paddingCells;
-	const maxX = Math.max(start.x, goal.x, ...obstacles.map((r) => Math.ceil(r.x2 / gridSize))) + paddingCells;
-	const minY = Math.min(start.y, goal.y, ...obstacles.map((r) => Math.floor(r.y1 / gridSize))) - paddingCells;
-	const maxY = Math.max(start.y, goal.y, ...obstacles.map((r) => Math.ceil(r.y2 / gridSize))) + paddingCells;
+	// Translation-invariant ("relative") routing: pin the grid to the start anchor instead of
+	// the world origin by routing in start-relative coordinates. When a group moves, start/goal/
+	// obstacles all shift by the same delta, so the relative geometry — and thus the path — is
+	// unchanged. A world-absolute grid re-phases every endpoint on a sub-grid move, which made
+	// the edges visibly wiggle as the group dragged. We shift inputs by -anchor, route, then add
+	// the anchor back to the output points.
+	const ax = startPoint.x;
+	const ay = startPoint.y;
+	const obs = obstacles.map((r) => ({ x1: r.x1 - ax, y1: r.y1 - ay, x2: r.x2 - ax, y2: r.y2 - ay }));
+	const start = toCell({ x: 0, y: 0 }, gridSize);
+	const goal = toCell({ x: goalPoint.x - ax, y: goalPoint.y - ay }, gridSize);
+	const blocked = buildBlockedCells(obs, gridSize, start, goal);
+
+	const minX = Math.min(start.x, goal.x, ...obs.map((r) => Math.floor(r.x1 / gridSize))) - paddingCells;
+	const maxX = Math.max(start.x, goal.x, ...obs.map((r) => Math.ceil(r.x2 / gridSize))) + paddingCells;
+	const minY = Math.min(start.y, goal.y, ...obs.map((r) => Math.floor(r.y1 / gridSize))) - paddingCells;
+	const maxY = Math.max(start.y, goal.y, ...obs.map((r) => Math.ceil(r.y2 / gridSize))) + paddingCells;
 
 	const open = new MinHeap<QueueItem>();
 	const cameFrom = new Map<string, string>();
@@ -225,7 +235,10 @@ export function routeGrid8(startPoint: Point, goalPoint: Point, obstacles: Obsta
 		const currentG = gScore.get(currentKey);
 		if (currentG === undefined) continue;
 		if (current.x === goal.x && current.y === goal.y) {
-			return reconstruct(cameFrom, currentKey).map((cell) => toPoint(cell, gridSize));
+			return reconstruct(cameFrom, currentKey).map((cell) => {
+				const p = toPoint(cell, gridSize);
+				return { x: p.x + ax, y: p.y + ay };
+			});
 		}
 
 		expansions += 1;
