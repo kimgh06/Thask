@@ -21,7 +21,6 @@ export interface RoutedEdgePath {
 
 const ROUTE_SCRATCH_KEY = '_thaskRoute';
 const NODE_AVOIDANCE_MARGIN = 18;
-const MAX_AVOIDANCE_PASSES = 80;
 const DIRECTION_EPS = 0.75;
 const ROUTING_GRID_SIZE = 24;
 const OBSTACLE_BUCKET_SIZE = 240;
@@ -29,6 +28,7 @@ const LARGE_GRAPH_NODE_THRESHOLD = 50;
 const NORMAL_GRID_MAX_EXPANSIONS = 30_000;
 const LARGE_GRID_MAX_EXPANSIONS = 12_000;
 const FAST_ROUTE_MIN_INTERVAL_MS = 32;
+const FAST_ROUTE_FRAME_BUDGET_MS = 6; // per-frame A* budget during drag; leftovers ride next tick
 
 interface Rect {
 	x1: number;
@@ -138,22 +138,6 @@ function segmentIntersectsRect(from: Point, to: Point, rect: Rect): boolean {
 	);
 }
 
-function pathLength(points: Point[]): number {
-	let total = 0;
-	for (let i = 0; i < points.length - 1; i += 1) total += distance(points[i], points[i + 1]);
-	return total;
-}
-
-function countObstacleHits(points: Point[], obstacles: Rect[]): number {
-	let hits = 0;
-	for (let i = 0; i < points.length - 1; i += 1) {
-		for (const obstacle of obstacles) {
-			if (segmentIntersectsRect(points[i], points[i + 1], obstacle)) hits += 1;
-		}
-	}
-	return hits;
-}
-
 function rectBucketKeys(rect: Pick<Rect, 'x1' | 'y1' | 'x2' | 'y2'>): string[] {
 	const keys: string[] = [];
 	const startX = Math.floor(rect.x1 / OBSTACLE_BUCKET_SIZE);
@@ -206,38 +190,6 @@ function shouldUseGridRoute(
 	return false;
 }
 
-function isDescendantOf(node: cytoscape.NodeSingular, maybeAncestorId: string): boolean {
-	let parentId = node.data('parentId') as string | null | undefined;
-	const seen = new Set<string>();
-	while (parentId) {
-		if (parentId === maybeAncestorId) return true;
-		if (seen.has(parentId)) return false;
-		seen.add(parentId);
-		const parent = node.cy().getElementById(parentId);
-		parentId = parent?.data('parentId') as string | null | undefined;
-	}
-	return false;
-}
-
-function shouldAvoidNode(
-	node: cytoscape.NodeSingular,
-	source: cytoscape.NodeSingular,
-	target: cytoscape.NodeSingular,
-): boolean {
-	if (!node.data('nodeType')) return false;
-	if (node.id() === source.id() || node.id() === target.id()) return false;
-
-	const isGroup = node.data('nodeType') === 'GROUP';
-	if (!isGroup) return true;
-
-	if (node.hasClass('group-collapsed')) return true;
-
-	// Expanded groups are visual containers. Avoiding their whole interior would
-	// force huge detours and is the main source of false positives in diagnostics.
-	if (isDescendantOf(source, node.id()) || isDescendantOf(target, node.id())) return false;
-	return false;
-}
-
 function nodeObstacle(node: cytoscape.NodeSingular): Rect {
 	const box = node.boundingBox({
 		includeLabels: true,
@@ -278,70 +230,6 @@ function buildObstacles(
 	return obstacleIndex.rects.filter((rect) => rect.nodeId !== sourceId && rect.nodeId !== targetId);
 }
 
-function detourCandidates(from: Point, to: Point, rect: Rect): Point[][] {
-	const lanes = [
-		[
-			{ x: from.x, y: rect.y1 },
-			{ x: to.x, y: rect.y1 },
-		],
-		[
-			{ x: from.x, y: rect.y2 },
-			{ x: to.x, y: rect.y2 },
-		],
-		[
-			{ x: rect.x1, y: from.y },
-			{ x: rect.x1, y: to.y },
-		],
-		[
-			{ x: rect.x2, y: from.y },
-			{ x: rect.x2, y: to.y },
-		],
-	];
-
-	const cornerLanes = [
-		[
-			{ x: rect.x1, y: from.y },
-			{ x: rect.x1, y: rect.y1 },
-			{ x: to.x, y: rect.y1 },
-		],
-		[
-			{ x: rect.x2, y: from.y },
-			{ x: rect.x2, y: rect.y1 },
-			{ x: to.x, y: rect.y1 },
-		],
-		[
-			{ x: rect.x1, y: from.y },
-			{ x: rect.x1, y: rect.y2 },
-			{ x: to.x, y: rect.y2 },
-		],
-		[
-			{ x: rect.x2, y: from.y },
-			{ x: rect.x2, y: rect.y2 },
-			{ x: to.x, y: rect.y2 },
-		],
-	];
-
-	return [...lanes, ...cornerLanes];
-}
-
-function chooseDetour(from: Point, to: Point, rect: Rect, obstacles: Rect[]): Point[] {
-	let best: Point[] | null = null;
-	let bestScore = Number.POSITIVE_INFINITY;
-
-	for (const candidate of detourCandidates(from, to, rect)) {
-		const points = [from, ...candidate, to];
-		const sameRectHits = countObstacleHits(points, [rect]);
-		const allHits = countObstacleHits(points, obstacles);
-		const score = sameRectHits * 1_000_000 + allHits * 10_000 + pathLength(points);
-		if (score < bestScore) {
-			bestScore = score;
-			best = candidate;
-		}
-	}
-
-	return best ?? [];
-}
-
 function removeConsecutiveDuplicates(points: Point[]): Point[] {
 	return points.filter((point, index) => {
 		if (index === 0) return true;
@@ -363,98 +251,6 @@ function snapPolylineTo8Dir(points: Point[]): Point[] {
 	}
 
 	return removeConsecutiveDuplicates(snapped);
-}
-
-function isDiagonalSegment(from: Point, to: Point): boolean {
-	const dx = Math.abs(to.x - from.x);
-	const dy = Math.abs(to.y - from.y);
-	return dx > DIRECTION_EPS && dy > DIRECTION_EPS && Math.abs(dx - dy) <= DIRECTION_EPS;
-}
-
-function smoothDiagonalDoglegs(points: Point[]): Point[] {
-	let routed = removeConsecutiveDuplicates(points);
-
-	for (let pass = 0; pass < 4; pass += 1) {
-		let changed = false;
-		const next: Point[] = [routed[0]];
-
-		for (let i = 1; i < routed.length - 2; i += 1) {
-			const prev = routed[i - 1];
-			const bend = routed[i];
-			const lane = routed[i + 1];
-			const after = routed[i + 2];
-
-			if (!isDiagonalSegment(prev, bend)) {
-				next.push(bend);
-				continue;
-			}
-
-			const horizontalDogleg =
-				Math.abs(bend.y - lane.y) <= DIRECTION_EPS &&
-				Math.abs(lane.x - after.x) <= DIRECTION_EPS;
-			if (horizontalDogleg) {
-				const signY = Math.sign(bend.y - prev.y) || 1;
-				const moved = {
-					x: lane.x,
-					y: prev.y + signY * Math.abs(lane.x - prev.x),
-				};
-				next.push(moved);
-				changed = true;
-				continue;
-			}
-
-			const verticalDogleg =
-				Math.abs(bend.x - lane.x) <= DIRECTION_EPS &&
-				Math.abs(lane.y - after.y) <= DIRECTION_EPS;
-			if (verticalDogleg) {
-				const signX = Math.sign(bend.x - prev.x) || 1;
-				const moved = {
-					x: prev.x + signX * Math.abs(lane.y - prev.y),
-					y: lane.y,
-				};
-				next.push(moved);
-				changed = true;
-				continue;
-			}
-
-			next.push(bend);
-		}
-
-		next.push(...routed.slice(Math.max(1, routed.length - 2)));
-		routed = snapPolylineTo8Dir(next);
-		if (!changed) break;
-	}
-
-	return routed;
-}
-
-function avoidNodeObstacles(points: Point[], obstacles: Rect[]): Point[] {
-	let routed = removeConsecutiveDuplicates(points);
-
-	for (let pass = 0; pass < MAX_AVOIDANCE_PASSES; pass += 1) {
-		let changed = false;
-
-		for (let i = 0; i < routed.length - 1 && !changed; i += 1) {
-			const from = routed[i];
-			const to = routed[i + 1];
-			const obstacle = obstacles.find((rect) => segmentIntersectsRect(from, to, rect));
-			if (!obstacle) continue;
-
-			const detour = chooseDetour(from, to, obstacle, obstacles);
-			if (detour.length === 0) continue;
-
-			routed = removeConsecutiveDuplicates([
-				...routed.slice(0, i + 1),
-				...detour,
-				...routed.slice(i + 1),
-			]);
-			changed = true;
-		}
-
-		if (!changed) break;
-	}
-
-	return routed;
 }
 
 function buildSegments(edgeId: string, points: Point[]): RoutedSegment[] {
@@ -573,8 +369,11 @@ function endpointOffset(node: cytoscape.NodeSingular, from: Point, to: Point): E
 	} else if (Math.abs(dy) <= DIRECTION_EPS) {
 		offset = { x: sx * halfW, y: 0 };
 	} else {
-		const d = Math.min(halfW, halfH);
-		offset = { x: sx * d, y: sy * d };
+		// Diagonal approach: attach to the dominant-axis face (a perpendicular hit), never a
+		// corner. Corner attachment on a rounded-rectangle node leaves the arrowhead floating
+		// off the visible border and pointing askew.
+		if (Math.abs(dx) >= Math.abs(dy)) offset = { x: sx * halfW, y: 0 };
+		else offset = { x: 0, y: sy * halfH };
 	}
 
 	const center = node.position();
@@ -619,6 +418,39 @@ export function getStoredRoutes(cy: cytoscape.Core): RoutedEdgePath[] {
 		if (edge.data('routePending')) return;
 		const route = getStoredRoute(edge);
 		if (route) routes.push(route);
+	});
+	return routes;
+}
+
+/**
+ * Build routes from the edge's CURRENT rendered geometry (live model coords), not the stored
+ * scratch route. The stored route only refreshes when routing runs (throttled + budgeted), so it
+ * lags the visible edge during a drag — the bridge overlay reading it would show stale, "bobbing"
+ * arcs. sourceEndpoint/segmentPoints/targetEndpoint track every frame as nodes move, so crossings
+ * built from them stay glued to what's actually drawn.
+ */
+export function getLiveRoutes(cy: cytoscape.Core): RoutedEdgePath[] {
+	const routes: RoutedEdgePath[] = [];
+	cy.edges().forEach((edge) => {
+		if (edge.data('routePending') || edge.hidden()) return;
+		const src = edge.sourceEndpoint();
+		const tgt = edge.targetEndpoint();
+		if (!src || !tgt) return;
+		const mids =
+			edge.style('curve-style') === 'segments' &&
+			typeof (edge as unknown as { segmentPoints?: () => Point[] }).segmentPoints === 'function'
+				? (edge as unknown as { segmentPoints: () => Point[] }).segmentPoints()
+				: [];
+		const points: Point[] = [
+			{ x: src.x, y: src.y },
+			...mids.map((p) => ({ x: p.x, y: p.y })),
+			{ x: tgt.x, y: tgt.y },
+		];
+		const deduped = points.filter(
+			(p, i) => i === 0 || Math.abs(p.x - points[i - 1].x) > 0.01 || Math.abs(p.y - points[i - 1].y) > 0.01,
+		);
+		if (deduped.length < 2) return;
+		routes.push({ edgeId: edge.id(), points: deduped, segments: buildSegments(edge.id(), deduped) });
 	});
 	return routes;
 }
@@ -732,23 +564,33 @@ export function applyDynamicRouting(cy: cytoscape.Core, options: DynamicRoutingO
 		const offset = total > 1 ? (idx - (total - 1) / 2) * 12 : 0;
 		const shiftedRoutePoints = snapPolylineTo8Dir(buildShiftedRoutePoints(src, tgt, wps, offset));
 			const roughRoutePoints = shiftedRoutePoints;
-			const { sourceEndpoint, targetEndpoint } = routeEndpoints(edge, roughRoutePoints);
+			// First pass: endpoints from the rough straight route — used ONLY as A* start/goal anchors.
+			const anchors = routeEndpoints(edge, roughRoutePoints);
 			const routeWithGrid = useGrid && obstacleIndex
 				? shouldUseGridRoute(roughRoutePoints, obstacleIndex, srcId, tgtId)
 				: false;
 			const obstacles = routeWithGrid && obstacleIndex ? buildObstacles(obstacleIndex, srcId, tgtId) : [];
 		const gridRoutePoints = routeWithGrid
-			? routeGrid8(sourceEndpoint.point, targetEndpoint.point, obstacles, {
+			? routeGrid8(anchors.sourceEndpoint.point, anchors.targetEndpoint.point, obstacles, {
 					gridSize: ROUTING_GRID_SIZE,
 					maxExpansions,
 				})
 			: null;
-		const fallbackRoutePoints = gridRoutePoints
-			? null
-			: routeWithGrid
-				? smoothDiagonalDoglegs(snapPolylineTo8Dir(avoidNodeObstacles(shiftedRoutePoints, obstacles)))
-				: roughRoutePoints;
-		const innerRoutePoints = gridRoutePoints ?? fallbackRoutePoints ?? roughRoutePoints;
+		// One routing logic: grid A* is the sole obstacle-avoidance path. If A* finds no
+		// route (rare — only past maxExpansions), fall straight back to the 8-dir line.
+		const innerRoutePoints = gridRoutePoints ?? roughRoutePoints;
+		// Root fix: recompute attachment from the ACTUAL routed geometry (post-avoidance), so the
+		// arrow meets the face the line truly enters — not the pre-avoidance straight guess. When
+		// A* detours and arrives from a different side, the old endpoints (from rough) left the
+		// arrowhead anchored to the wrong side / a corner. Direction is taken from the node CENTER
+		// to the adjacent routed waypoint (not the corner anchor A* used), so the face matches the
+		// side the route truly comes from.
+		const sourceEndpoint = innerRoutePoints.length >= 2
+			? endpointOffset(edge.source(), edge.source().position(), innerRoutePoints[1])
+			: anchors.sourceEndpoint;
+		const targetEndpoint = innerRoutePoints.length >= 2
+			? endpointOffset(edge.target(), edge.target().position(), innerRoutePoints[innerRoutePoints.length - 2])
+			: anchors.targetEndpoint;
 		const visibleRoutePoints = snapPolylineTo8Dir([
 			sourceEndpoint.point,
 			...innerRoutePoints.slice(1, -1),
@@ -799,6 +641,7 @@ export function attachDynamicRouting(cy: cytoscape.Core, options: DynamicRouting
 	let pendingSettledEdgeIds = new Set<string>();
 	let pendingSettledNodeIds = new Set<string>();
 	const GRID_CHUNK_SIZE = 8;
+	const SETTLE_ROUTE_UNIT = 2; // edges per deadline check during idle settle routing
 	const isSuspended = () => options.isRoutingSuspended?.() ?? false;
 	const requestIdle = (callback: () => void): { type: 'idle' | 'timeout'; id: number } => {
 		const win = window as Window & {
@@ -859,15 +702,25 @@ export function attachDynamicRouting(cy: cytoscape.Core, options: DynamicRouting
 			: NORMAL_GRID_MAX_EXPANSIONS;
 		let index = 0;
 
-		function step() {
+		// Process edges while the idle callback still has frame budget, then yield.
+		// Ignoring the deadline (plowing a fixed 8-edge chunk to completion) is what
+		// caused the ~58ms hitch on settle — one callback ran all 8 edges' A* synchronously,
+		// blocking the paint. Honouring timeRemaining() spreads the A* across idle slots.
+		function step(deadline?: IdleDeadline) {
 			if (isSuspended()) {
 				chunkHandle = null;
 				chunkHandleType = null;
 				return;
 			}
-			const chunk = new Set(ids.slice(index, index + GRID_CHUNK_SIZE));
-			index += GRID_CHUNK_SIZE;
-			if (chunk.size > 0) applyDynamicRouting(cy, { useGrid: true, edgeIds: chunk, obstacleIndex, maxExpansions });
+			const idle = !!deadline && typeof deadline.timeRemaining === 'function';
+			// Small unit so we re-check the deadline often. A whole GRID_CHUNK_SIZE before the
+			// first check would already overrun the frame — that was the bug.
+			const unit = idle ? SETTLE_ROUTE_UNIT : GRID_CHUNK_SIZE;
+			do {
+				const chunk = new Set(ids.slice(index, index + unit));
+				index += unit;
+				if (chunk.size > 0) applyDynamicRouting(cy, { useGrid: true, edgeIds: chunk, obstacleIndex, maxExpansions });
+			} while (index < ids.length && idle && deadline!.timeRemaining() > 2);
 			if (index < ids.length) {
 				const handle = requestIdle(step);
 				chunkHandle = handle.id;
@@ -903,7 +756,27 @@ export function attachDynamicRouting(cy: cytoscape.Core, options: DynamicRouting
 			lastFastRouteAt = performance.now();
 			const edgeIds = collectPendingFastEdgeIds();
 			if (edgeIds.size === 0) return;
-			applyDynamicRouting(cy, { useGrid: true, edgeIds });
+			// One drawing standard: grid A* obstacle avoidance, drag AND settle alike — edges
+			// never change shape between the two states. A* is too heavy to run all moved edges
+			// per frame (100ms+ spikes when crossing nodes), so we spend at most a frame budget
+			// here and defer the rest to the next tick. Same maxExpansions as settle → identical
+			// paths; settle (idle) just re-runs the same A* as the authoritative final pass.
+			const ids = [...edgeIds];
+			const obstacleIndex = buildObstacleIndex(cy);
+			const maxExpansions = cy.nodes('[nodeType]').length >= LARGE_GRAPH_NODE_THRESHOLD
+				? LARGE_GRID_MAX_EXPANSIONS
+				: NORMAL_GRID_MAX_EXPANSIONS;
+			const t0 = performance.now();
+			let i = 0;
+			while (i < ids.length) {
+				applyDynamicRouting(cy, { useGrid: true, edgeIds: new Set([ids[i]]), obstacleIndex, maxExpansions });
+				i++;
+				if (performance.now() - t0 > FAST_ROUTE_FRAME_BUDGET_MS) break;
+			}
+			if (i < ids.length) {
+				for (; i < ids.length; i++) pendingFastEdgeIds.add(ids[i]);
+				scheduleRouting(); // finish leftovers next tick
+			}
 		});
 	}
 
