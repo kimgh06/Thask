@@ -393,8 +393,27 @@
 		const cleanupBridgeOverlay = attachEdgeBridgeOverlay(cy);
 		cleanups.push({ cleanup: cleanupBridgeOverlay });
 
-		// Zoom tracking
-		cy.on('pan zoom', () => { onZoomChange?.(cy!.zoom()); });
+		// Zoom tracking + dot-grid follows pan/zoom.
+		// Pan = transform only (GPU-composited, no repaint). Grid is periodic, so we
+		// wrap translate within one tile — visually identical, never exposes an edge.
+		// backgroundSize (the only repaint) changes on zoom, which is far rarer than pan.
+		let lastBgTile = -1;
+		const syncBgGrid = () => {
+			if (!cy) return;
+			const z = cy.zoom(), p = cy.pan();
+			const tile = 24 * z;
+			if (tile !== lastBgTile) {
+				lastBgTile = tile;
+				bgEl.style.backgroundSize = `${tile}px ${tile}px`;
+				const m = Math.ceil(tile) + 4;
+				bgEl.style.inset = `${-m}px`;
+			}
+			const tx = (((p.x % tile) + tile) % tile) - tile;
+			const ty = (((p.y % tile) + tile) % tile) - tile;
+			bgEl.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+		};
+		syncBgGrid();
+		cy.on('pan zoom', () => { onZoomChange?.(cy!.zoom()); syncBgGrid(); });
 
 		// Mouse position tracking
 		cy.on('mousemove', (e) => { lastMouseModelPos = e.position; });
@@ -445,10 +464,13 @@
 	});
 
 	let portOverlay: HTMLDivElement;
+	let bgEl: HTMLDivElement;
 </script>
 
-<div class="relative h-full w-full overflow-hidden cytoscape-canvas-bg" style="min-height: 400px">
-	<div bind:this={container} class="h-full w-full" class:pan-mode={panMode}></div>
+<div class="relative h-full w-full overflow-hidden" style="min-height: 400px; background-color: var(--color-bg)">
+	<!-- Dot grid: dedicated layer, moved via GPU transform on pan (no repaint) -->
+	<div bind:this={bgEl} class="dot-grid-layer"></div>
+	<div bind:this={container} class="relative h-full w-full" class:pan-mode={panMode}></div>
 	<!-- Port overlay for edge creation — 8 dots around hovered node -->
 	<div
 		bind:this={portOverlay}

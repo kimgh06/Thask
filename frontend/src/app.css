@@ -56,3 +56,15 @@ body {
 	background-image: radial-gradient(circle, var(--color-border-subtle) 1px, transparent 1px);
 	background-size: 24px 24px;
 }
+
+/* Pan/zoom-following dot grid layer (CytoscapeCanvas). Moved via GPU transform,
+   so panning never repaints the gradient. Sits behind the canvas container. */
+.dot-grid-layer {
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	pointer-events: none;
+	background-image: radial-gradient(circle, var(--color-border-subtle) 1px, transparent 1px);
+	background-size: 24px 24px;
+	will-change: transform;
+}
