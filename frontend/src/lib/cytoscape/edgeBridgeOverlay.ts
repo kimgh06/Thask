@@ -1,5 +1,5 @@
 import type cytoscape from 'cytoscape';
-import { getStoredRoutes, type Point, type RoutedEdgePath, type RoutedSegment } from '$lib/cytoscape/edgeRouter';
+import { getLiveRoutes, type Point, type RoutedEdgePath, type RoutedSegment } from '$lib/cytoscape/edgeRouter';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const BRIDGE_RADIUS = 10;
@@ -31,8 +31,6 @@ interface SegmentIntersection {
 }
 
 interface BridgeDisplayOptions {
-	hideAll: boolean;
-	showSoftBypass: boolean;
 	radius: number;
 	opacity: number;
 	softRadius: number;
@@ -59,8 +57,6 @@ function clamp(min: number, value: number, max: number): number {
 function bridgeDisplayOptions(zoom: number): BridgeDisplayOptions {
 	if (zoom < 0.45) {
 		return {
-			hideAll: false,
-			showSoftBypass: true,
 			radius: clamp(1.6, BRIDGE_RADIUS * zoom * 0.72, 3.4),
 			opacity: clamp(0.42, zoom * 1.35, 0.62),
 			softRadius: clamp(1.2, BRIDGE_RADIUS * zoom * 0.52, 2.4),
@@ -69,8 +65,6 @@ function bridgeDisplayOptions(zoom: number): BridgeDisplayOptions {
 	}
 	if (zoom < 0.65) {
 		return {
-			hideAll: false,
-			showSoftBypass: true,
 			radius: clamp(2.6, BRIDGE_RADIUS * zoom * 0.85, 5.4),
 			opacity: 0.72,
 			softRadius: clamp(1.8, BRIDGE_RADIUS * zoom * 0.62, 4),
@@ -79,8 +73,6 @@ function bridgeDisplayOptions(zoom: number): BridgeDisplayOptions {
 	}
 	if (zoom < 0.9) {
 		return {
-			hideAll: false,
-			showSoftBypass: true,
 			radius: clamp(4, BRIDGE_RADIUS * zoom, 8),
 			opacity: 0.84,
 			softRadius: clamp(3.2, BRIDGE_RADIUS * zoom * 0.78, 7),
@@ -88,8 +80,6 @@ function bridgeDisplayOptions(zoom: number): BridgeDisplayOptions {
 		};
 	}
 	return {
-		hideAll: false,
-		showSoftBypass: true,
 		radius: BRIDGE_RADIUS,
 		opacity: 1,
 		softRadius: BRIDGE_RADIUS,
@@ -261,8 +251,6 @@ function buildBridgeCrossings(
 	routes: RoutedEdgePath[],
 	options: BridgeDisplayOptions,
 ): BridgeCrossing[] {
-	if (options.hideAll) return [];
-
 	const allSegments = routes.flatMap((route) => route.segments);
 	const boundsCache = allSegments.map(segmentBounds);
 	const bucketKeys = boundsCache.map(segmentBucketKeys);
@@ -309,7 +297,6 @@ function buildBridgeCrossings(
 
 				const chosen = chooseCrossingStyle(left, right);
 				if (!chosen) continue;
-				if (chosen.style === 'soft-bypass' && !options.showSoftBypass) continue;
 
 				const intersection = segmentIntersection(left, right);
 				if (!intersection) continue;
@@ -468,7 +455,7 @@ export function attachEdgeBridgeOverlay(cy: cytoscape.Core): () => void {
 
 	function getCachedRoutes(): RoutedEdgePath[] {
 		if (routesDirty) {
-			cachedRoutes = getStoredRoutes(cy);
+			cachedRoutes = getLiveRoutes(cy);
 			routesDirty = false;
 		}
 		return cachedRoutes;
@@ -498,6 +485,11 @@ export function attachEdgeBridgeOverlay(cy: cytoscape.Core): () => void {
 	resizeObserver.observe(host);
 	cy.on('layoutstop', markRoutesDirty);
 	cy.on('add remove data', markRoutesDirty);
+	// Track node drags so the bridge arcs move with the edges instead of lagging. Relative
+	// routing keeps segmentDistances invariant during a drag, so the 'data' event no longer
+	// fires every frame — without this the arcs would freeze in place mid-drag. position fires
+	// per moved node but scheduleRender is rAF-coalesced to one render per frame.
+	cy.on('position', 'node', markRoutesDirty);
 	cy.on('thask:filter', scheduleRender);
 	cy.on('pan zoom', scheduleRender);
 
@@ -506,6 +498,7 @@ export function attachEdgeBridgeOverlay(cy: cytoscape.Core): () => void {
 	return () => {
 		cy.off('layoutstop', markRoutesDirty);
 		cy.off('add remove data', markRoutesDirty);
+		cy.off('position', 'node', markRoutesDirty);
 		cy.off('thask:filter', scheduleRender);
 		cy.off('pan zoom', scheduleRender);
 		resizeObserver.disconnect();
