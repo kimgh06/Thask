@@ -157,6 +157,17 @@ export function attachGroupDragHandlers(
 		pendingCursorPos = null;
 		const node = evt.target as cytoscape.NodeSingular;
 
+		// Snap dropped position(s) to the routing grid (24px). Edge avoidance rasterises
+		// obstacles onto this grid, so off-grid positions re-phase against it and routes wiggle
+		// when a node/group later moves. Grid-aligned positions keep every move in-phase.
+		const GRID = 24;
+		const snapToGrid = (n: cytoscape.NodeSingular) => {
+			const p = n.position();
+			n.position({ x: Math.round(p.x / GRID) * GRID, y: Math.round(p.y / GRID) * GRID });
+		};
+		snapToGrid(node);
+		if (node.data('nodeType') === 'GROUP') getDescendantNodes(cy, node.id()).forEach(snapToGrid);
+
 		// Drop on group: update parentId (with cycle prevention)
 		const oldParentId = (node.data('parentId') as string | null) ?? null;
 		let newParentId = currentDropTarget;
