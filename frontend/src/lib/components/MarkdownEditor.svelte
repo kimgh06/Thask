@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Eye, Pencil } from 'lucide-svelte';
+	import { tick } from 'svelte';
+	import { Check, Pencil, Bold, Code, SquareCode, List, Heading2, Link } from 'lucide-svelte';
 	import { renderMarkdown } from '$lib/markdown';
 
 	interface Props {
@@ -12,15 +13,63 @@
 	let { value = $bindable(), onsave, readonly = false, placeholder = '' }: Props = $props();
 
 	let editing = $state(false);
+	let textareaEl = $state<HTMLTextAreaElement | undefined>();
 
 	function handleBlur() {
 		onsave(value);
 		editing = false;
 	}
 
+	function handleKeydown(e: KeyboardEvent) {
+		// ⌘/Ctrl + Enter saves and exits to preview
+		if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+			e.preventDefault();
+			onsave(value);
+			editing = false;
+		}
+	}
+
 	function startEditing() {
 		if (readonly) return;
 		editing = true;
+	}
+
+	// --- Markdown authoring helpers -------------------------------------------
+	// Buttons use onmousedown+preventDefault so the textarea keeps focus (no blur/save).
+	async function restoreSelection(start: number, end: number) {
+		await tick();
+		textareaEl?.focus();
+		textareaEl?.setSelectionRange(start, end);
+	}
+
+	function wrapSelection(before: string, after = before) {
+		const ta = textareaEl;
+		if (!ta) return;
+		const s = ta.selectionStart;
+		const e = ta.selectionEnd;
+		const sel = value.slice(s, e);
+		value = value.slice(0, s) + before + sel + after + value.slice(e);
+		restoreSelection(s + before.length, e + before.length);
+	}
+
+	function prefixLine(prefix: string) {
+		const ta = textareaEl;
+		if (!ta) return;
+		const s = ta.selectionStart;
+		const lineStart = value.lastIndexOf('\n', s - 1) + 1;
+		value = value.slice(0, lineStart) + prefix + value.slice(lineStart);
+		restoreSelection(s + prefix.length, ta.selectionEnd + prefix.length);
+	}
+
+	function codeBlock() {
+		const ta = textareaEl;
+		if (!ta) return;
+		const s = ta.selectionStart;
+		const e = ta.selectionEnd;
+		const sel = value.slice(s, e) || 'schema';
+		const block = `\n\`\`\`\n${sel}\n\`\`\`\n`;
+		value = value.slice(0, s) + block + value.slice(e);
+		restoreSelection(s + 5, s + 5 + sel.length); // inside the fence, over the selection
 	}
 
 	let rendered = $derived(value ? renderMarkdown(value) : '');
@@ -29,17 +78,28 @@
 <div class="md-editor">
 	{#if editing}
 		<div class="md-toolbar">
+			<div class="md-format">
+				<button class="md-toggle" title="Heading" onmousedown={(e) => e.preventDefault()} onclick={() => prefixLine('## ')}><Heading2 size={12} /></button>
+				<button class="md-toggle" title="Bold" onmousedown={(e) => e.preventDefault()} onclick={() => wrapSelection('**')}><Bold size={12} /></button>
+				<button class="md-toggle" title="Inline code" onmousedown={(e) => e.preventDefault()} onclick={() => wrapSelection('`')}><Code size={12} /></button>
+				<button class="md-toggle" title="Code block" onmousedown={(e) => e.preventDefault()} onclick={codeBlock}><SquareCode size={12} /></button>
+				<button class="md-toggle" title="List" onmousedown={(e) => e.preventDefault()} onclick={() => prefixLine('- ')}><List size={12} /></button>
+				<button class="md-toggle" title="Link" onmousedown={(e) => e.preventDefault()} onclick={() => wrapSelection('[', '](url)')}><Link size={12} /></button>
+			</div>
 			<button
-				class="md-toggle"
-				onclick={() => { editing = false; }}
-				title="Preview"
+				class="md-done"
+				onmousedown={(e) => e.preventDefault()}
+				onclick={() => { onsave(value); editing = false; }}
+				title="Save & preview (⌘/Ctrl + Enter)"
 			>
-				<Eye size={12} />
+				<Check size={12} /> Done
 			</button>
 		</div>
 		<textarea
+			bind:this={textareaEl}
 			bind:value
 			onblur={handleBlur}
+			onkeydown={handleKeydown}
 			{placeholder}
 			rows="6"
 			class="md-textarea"
@@ -81,8 +141,14 @@
 
 	.md-toolbar {
 		display: flex;
-		justify-content: flex-end;
+		justify-content: space-between;
+		align-items: center;
 		margin-bottom: 4px;
+	}
+
+	.md-format {
+		display: flex;
+		gap: 3px;
 	}
 
 	.md-toggle {
@@ -109,13 +175,34 @@
 		cursor: default;
 	}
 
+	.md-done {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		height: 24px;
+		padding: 0 10px;
+		border-radius: 4px;
+		font-size: 11px;
+		font-weight: 600;
+		border: 1px solid var(--color-accent-muted, var(--color-border));
+		background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+		color: var(--color-accent-hover, var(--color-text));
+		cursor: pointer;
+		transition: background 0.15s, border-color 0.15s;
+	}
+
+	.md-done:hover {
+		background: color-mix(in srgb, var(--color-accent) 24%, var(--color-surface));
+		border-color: var(--color-accent);
+	}
+
 	.md-textarea {
 		width: 100%;
 		padding: 8px 12px;
 		border-radius: 8px;
-		font-size: 12px;
+		font-size: 14px;
 		font-family: 'JetBrains Mono', monospace;
-		line-height: 1.6;
+		line-height: 1.7;
 		outline: none;
 		resize: vertical;
 		background: var(--color-bg);
@@ -142,11 +229,15 @@
 
 	/* Markdown rendered output */
 	.markdown-body {
-		font-size: 12px;
-		line-height: 1.6;
+		font-size: 14px;
+		line-height: 1.75;
 		color: var(--color-text);
 		cursor: text;
 		padding: 4px 0;
+		/* Long unbroken tokens (e.g. {sellerId?,canvas:{screens[]}}) wrap cleanly in the
+		   narrow side panel instead of overflowing or breaking mid-glyph. */
+		overflow-wrap: anywhere;
+		word-break: break-word;
 	}
 
 	.markdown-body :global(h1),
@@ -168,10 +259,13 @@
 
 	.markdown-body :global(code) {
 		font-family: 'JetBrains Mono', monospace;
-		background: var(--color-bg);
-		padding: 0.15em 0.35em;
+		background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg));
+		border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
+		color: var(--color-accent-hover, var(--color-text));
+		padding: 0.1em 0.35em;
 		border-radius: 4px;
 		font-size: 0.9em;
+		white-space: nowrap;
 	}
 
 	.markdown-body :global(pre) {
