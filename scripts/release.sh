@@ -74,8 +74,28 @@ with open('Formula/thask.rb', 'w') as f:
 print(f'  Updated Formula/thask.rb to v{version}')
 PYEOF
 
-git add Formula/thask.rb
-git commit -m "chore: update Homebrew formula to ${VERSION}"
+# ── 3b. Sync plugin.json + marketing/server.json so releases stop drifting.
+#       Both were stale for 9+ releases (plugin.json frozen at v0.5.7,
+#       marketing/server.json lagged the npm package). Bump in-place; the
+#       Homebrew commit below sweeps them up alongside Formula/thask.rb.
+echo ""
+echo "=== Syncing plugin.json + marketing/server.json to ${VERSION_NUM} ==="
+( cd plugin/thask-claudecode && ./scripts/sync-version.sh "${VERSION_NUM}" )
+python3 - "${VERSION_NUM}" << 'PYEOF'
+import sys, re
+version = sys.argv[1]
+path = 'marketing/server.json'
+with open(path) as f:
+    content = f.read()
+# Both occurrences (top-level + package) follow the same `"version": "X.Y.Z"` shape.
+content = re.sub(r'"version": "[^"]*"', f'"version": "{version}"', content)
+with open(path, 'w') as f:
+    f.write(content)
+print(f'  Updated {path} to {version}')
+PYEOF
+
+git add Formula/thask.rb plugin/thask-claudecode/.claude-plugin/plugin.json marketing/server.json
+git commit -m "chore: sync Homebrew formula + plugin.json + server.json to ${VERSION}"
 if git rev-parse "${VERSION}" >/dev/null 2>&1; then
   echo "  Tag ${VERSION} already exists, skipping tag creation"
 else
