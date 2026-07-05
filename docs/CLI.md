@@ -637,7 +637,7 @@ thask n u 550e8400-e29b-41d4-a716-446655440000 --parent none        # remove fro
 |---|---|
 | `--title` | New title |
 | `--status` | New status: PASS, FAIL, IN\_PROGRESS, BLOCKED |
-| `--type` | New type: FLOW, BRANCH, TASK, BUG, API, UI, GROUP |
+| `--type` | New type: FLOW, BRANCH, TASK, BUG, API, UI, GROUP, REQUIREMENT, DECISION, EXPERIMENT, PERSON (v0.6.0) |
 | `--description` | New description |
 | `--tags` | Comma-separated tags |
 | `--parent` | Parent GROUP node ID, or `none` to unparent |
@@ -657,6 +657,19 @@ Update status for multiple nodes at once.
 
 ```bash
 thask node batch-status --ids "550e8400-e29b-41d4-a716-446655440000,550e8400-e29b-41d4-a716-446655440001" --status PASS
+```
+
+### node batch-update --file \<path\> (v0.5.16+)
+
+Apply up to 200 partial node updates in one call. Reads a JSON array from
+`--file` (or stdin when `--file` is `-` or empty) and PATCHes
+`/api/projects/:pid/nodes/batch-update`. Each element must include `id`.
+Returns 200 on full success or 207 Multi-Status when some items skip
+(per-item reason in `skipped[]`).
+
+```bash
+echo '[{"id":"...","status":"PASS"},{"id":"...","title":"Renamed"}]' | thask node batch-update
+thask node batch-update --file ./updates.json
 ```
 
 ---
@@ -685,7 +698,8 @@ Output (table):
 
 Create an edge between two nodes. Requires `--source` and `--target`.
 
-Edge types: `depends_on`, `blocks`, `related`, `parent_child`, `triggers`
+Edge types (base): `depends_on`, `blocks`, `related`, `parent_child`, `triggers`
+Edge types (v0.6.0 Knowledge OS): `realizes`, `conflicts`, `drives`, `supersedes`, `tests`, `produced`, `owns`, `decided`, `reported`
 
 ```bash
 thask edge create --source 550e8400-e29b-41d4-a716-446655440000 --target 550e8400-e29b-41d4-a716-446655440001 --type depends_on
@@ -721,6 +735,52 @@ Delete an edge.
 thask edge delete 550e8400-e29b-41d4-a716-446655440000
 thask e rm 550e8400-e29b-41d4-a716-446655440000
 ```
+
+### edge batch-create --file \<path\> (v0.5.16+)
+
+Create up to 500 edges in one call. JSON array on stdin or `--file`.
+
+```bash
+echo '[{"sourceId":"...","targetId":"...","edgeType":"depends_on"}]' | thask edge batch-create
+thask edge batch-create --file ./edges.json
+```
+
+Returns 201 on full success or 207 Multi-Status when some items skip
+(per-item reason in `skipped[]`). Items with `waypoints == nil` are
+normalised to `[]` server-side (v0.5.15 fix).
+
+### edge batch-delete --file \<path\> (v0.5.16+)
+
+Delete up to 500 edges in one call. JSON array of edge IDs.
+
+```bash
+echo '["edge-id-1","edge-id-2"]' | thask edge batch-delete
+```
+
+---
+
+## suggestions (alias: sug, v0.5.16+)
+
+Review and decide agent-proposed node changes (`thask.node.suggest_update`
+queue). Backend enforces `actor_kind=user_interactive` on the decide path —
+agent API keys are rejected so a human stays in the loop.
+
+### suggestions list | ls
+
+```bash
+thask suggestions list                          # pending by default (server choice)
+thask suggestions list --status pending --limit 20
+thask suggestions list --status accepted
+```
+
+### suggestions decide \<suggestionId\> --accept | --reject [--reason \<text\>]
+
+```bash
+thask suggestions decide 550e8400-... --accept --reason "Matches code"
+thask suggestions decide 550e8400-... --reject --reason "Hallucinated import"
+```
+
+`--accept` and `--reject` are mutually exclusive; exactly one is required.
 
 ---
 

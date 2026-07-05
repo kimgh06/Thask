@@ -117,7 +117,7 @@ Restart Cursor after adding the configuration.
 
 ## Available Tools
 
-The MCP server exposes 24 tools organized into 7 categories.
+The MCP server exposes 25 tools organized into 7 categories.
 
 ### Node Tools
 
@@ -126,7 +126,7 @@ The MCP server exposes 24 tools organized into 7 categories.
 | `thask.node.list` | List nodes in a project | `projectId` | `type`, `status` |
 | `thask.node.create` | Create a new node | `projectId`, `type`, `title` | `description`, `status`, `tags`, `positionX`, `positionY` |
 | `thask.node.get` | Get node details, connected edges, and history | `projectId`, `nodeId` | — |
-| `thask.node.update` | Update node fields | `projectId`, `nodeId` | `title`, `status`, `type`, `description`, `tags`, `parentId`, `assigneeId` |
+| `thask.node.update` | Update node fields | `projectId`, `nodeId` | `title`, `status`, `type`, `description`, `tags`, `parentId`, `assigneeId`, `lifecycleState` (v0.6.0) |
 | `thask.node.delete` | Delete a node | `projectId`, `nodeId` | — |
 | `thask.node.batch_status` | Batch update status for multiple nodes | `projectId`, `ids`, `status` | — |
 | `thask.node.batch_update` | Partial-update up to 200 nodes in one call (atomic on permission / cycle) | `projectId`, `updates[]` | — |
@@ -143,6 +143,7 @@ The MCP server exposes 24 tools organized into 7 categories.
 |---|---|---|---|
 | `thask.edge.list` | List all edges in a project | `projectId` | — |
 | `thask.edge.create` | Create a relationship between nodes | `projectId`, `sourceId`, `targetId` | `edgeType`, `label` |
+| `thask.edge.update` | Update an edge in place (server `COALESCE` semantics — unsupplied fields keep current value). v0.5.16+ | `projectId`, `edgeId` | `edgeType`, `label`, `sourcePort`, `targetPort`, `waypoints`, `metadata` (v0.6.0) |
 | `thask.edge.delete` | Delete an edge | `projectId`, `edgeId` | — |
 | `thask.edge.batch_create` | Insert up to 500 edges in one call (skip reasons: self_reference, duplicate, invalid_endpoint) | `projectId`, `edges[]` | — |
 | `thask.edge.batch_delete` | Delete up to 500 edges by id (skip reason: not_found) | `projectId`, `edgeIds[]` | — |
@@ -190,14 +191,26 @@ Every `tools/call` dispatch through `thask mcp serve` appends an `mcp_call` even
 
 ## Enum Values
 
-### Node Types
-`FLOW`, `BRANCH`, `TASK`, `BUG`, `API`, `UI`, `GROUP`
+### Node Types (11 as of v0.6.0)
+`FLOW`, `BRANCH`, `TASK`, `BUG`, `API`, `UI`, `GROUP`,
+`REQUIREMENT`, `DECISION`, `EXPERIMENT`, `PERSON`
 
 ### Node Statuses
 `PASS`, `FAIL`, `IN_PROGRESS`, `BLOCKED`
 
-### Edge Types
-`depends_on`, `blocks`, `related`, `parent_child`, `triggers`
+### Node Lifecycle State (v0.6.0)
+Free-form text on `node.update {lifecycleState: "..."}`. Orthogonal to
+`status`. Server auto-updates `lifecycle_state_changed_at` on any write.
+Conventional values: REQUIREMENT `DRAFT` / `APPROVED` / `IMPLEMENTED`;
+DECISION `PROPOSED` / `DECIDED` / `SUPERSEDED`; EXPERIMENT `PLANNED` /
+`RUNNING` / `CONCLUDED`; PERSON `ACTIVE` / `INACTIVE`.
+
+### Edge Types (14 as of v0.6.0)
+Original: `depends_on`, `blocks`, `related`, `parent_child`, `triggers`.
+v0.6.0 additions: `realizes`, `conflicts`, `drives`, `supersedes`,
+`tests`, `produced`, `owns`, `decided`, `reported`. See
+[ARCHITECTURE.md > Node / Edge Catalog](./ARCHITECTURE.md#node--edge-catalog)
+for semantics.
 
 ### Import Modes
 `replace` (overwrite existing graph), `merge` (add alongside existing)

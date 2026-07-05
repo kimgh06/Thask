@@ -6,7 +6,7 @@ This file holds **project-level conventions** that the canonical guide does not 
 ## Release tracking convention
 
 When a new version of Thask is published to npm / GitHub, record it in the prod
-Thask graph (project `a9116af4-d6d1-416f-8c40-de31be0f5f49`) using this pattern:
+Thask graph (project `32919acf-2a6f-4249-819f-e5bc153246aa`) using this pattern:
 
 1. Create a `TASK` node titled `Release vX.Y.Z`, status `PASS`, tag `release`.
    Description = the matching `CHANGELOG.md` section (full markdown, including npm + GitHub Release links at top).

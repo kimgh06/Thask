@@ -10,6 +10,15 @@
 <br />
 Map what depends on what, then let Claude Code / Cursor / Codex query it through MCP — with provenance guards so agents can't silently land hallucinated descriptions on your graph.
 
+> **v0.6.0 — Knowledge OS Foundation.** Thask now models the full project
+> memory, not just execution deps: 4 new first-class entity types
+> (`REQUIREMENT`, `DECISION`, `EXPERIMENT`, `PERSON`) alongside the original
+> 7, 9 new relationship verbs (`realizes`, `supersedes`, `decided`,
+> `produced`, `owns`, `reported`, `drives`, `tests`, `conflicts`), a domain
+> `lifecycleState` orthogonal to `status`, and per-node comments,
+> attachments, and canonical project tags. Same 25 MCP tools — the new
+> capabilities ride on wider enums plus two additive fields.
+
 <br />
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -78,7 +87,7 @@ Spreadsheets lose context. Linear issue trackers hide relationships. **Thask map
 
 ### Interactive Graph Editor
 
-Drag-and-drop nodes with **7 types** — Flow, Branch, Task, Bug, API, UI, and Group. Connect them by hovering and dragging the edge handle. Auto-layout with the fCOSE force-directed algorithm.
+Drag-and-drop nodes with **11 types** — Flow, Branch, Task, Bug, API, UI, Group, plus the v0.6.0 Knowledge OS entities Requirement, Decision, Experiment, and Person. Connect them by hovering and dragging the edge handle. Auto-layout with the fCOSE force-directed algorithm.
 
 ### QA Impact Mode
 
@@ -98,11 +107,11 @@ Slide-out panel with full editing — title, description (with markdown renderin
 
 ### Edge Relationships
 
-Five edge types with distinct colors: `depends_on`, `blocks`, `related`, `parent_child`, `triggers`. Draggable waypoints for edge routing. Click any edge to change its type or delete it.
+Fourteen edge types with distinct colors: the base five (`depends_on`, `blocks`, `related`, `parent_child`, `triggers`) plus the v0.6.0 Knowledge OS verbs (`realizes`, `conflicts`, `drives`, `supersedes`, `tests`, `produced`, `owns`, `decided`, `reported`). Every edge also carries a JSONB `metadata` bag — `supersedes` records `{reason}`, `produced` records `{outcome_summary}`, etc. Draggable waypoints for edge routing. Click any edge to change its type or delete it.
 
 ### CLI & MCP Integration
 
-Full CLI for terminal workflows (`npm install -g @thask-org/cli`). 24 MCP tools for AI agent integration — Claude Code and Cursor can query and modify your graph directly. One-step browser login (`thask login`), in-place upgrades (`thask self-update`). [CLI Reference](docs/CLI.md) · [MCP Guide](docs/MCP.md)
+Full CLI for terminal workflows (`npm install -g @thask-org/cli`). 25 MCP tools for AI agent integration — Claude Code and Cursor can query and modify your graph directly. One-step browser login (`thask login`), in-place upgrades (`thask self-update`). [CLI Reference](docs/CLI.md) · [MCP Guide](docs/MCP.md)
 
 ### Per-Key Permissions & Provenance (v0.5.9+)
 
@@ -372,9 +381,11 @@ Users ──< TeamMembers >── Teams ──< Projects ──< Nodes ──< N
                                        └──< ProjectMembers >── Users
 ```
 
-**Node types:** `FLOW` `BRANCH` `TASK` `BUG` `API` `UI` `GROUP`
+**Node types:** `FLOW` `BRANCH` `TASK` `BUG` `API` `UI` `GROUP` `REQUIREMENT` `DECISION` `EXPERIMENT` `PERSON`
 **Node statuses:** `PASS` `FAIL` `IN_PROGRESS` `BLOCKED`
-**Edge types:** `depends_on` `blocks` `related` `parent_child` `triggers`
+**Node lifecycle state (v0.6.0):** free-form text, orthogonal to `status`. Used for REQUIREMENT/DECISION/EXPERIMENT/PERSON (e.g. `APPROVED`, `RUNNING`, `DECIDED`, `ACTIVE`).
+**Edge types:** `depends_on` `blocks` `related` `parent_child` `triggers` `realizes` `conflicts` `drives` `supersedes` `tests` `produced` `owns` `decided` `reported`
+**Side tables (v0.6.0):** `node_comments`, `node_attachments`, `project_tags`
 
 ---
 
@@ -393,6 +404,8 @@ Users ──< TeamMembers >── Teams ──< Projects ──< Nodes ──< N
 | `CAPTURE_TIMEOUT_SECONDS` | Capture worker request timeout | `30` |
 | `V1_ALLOWED_ORIGINS` | Comma-separated CORS origins for `/api/v1/` | `*` |
 | `MAX_REQUEST_BODY_BYTES` | Max request body size for v1 routes (bytes) | `1048576` (1MB) |
+| `THASK_ATTACHMENT_DIR` | Root directory for v0.6.0 node attachments. Empty = attachments disabled (upload endpoint returns 503). | — |
+| `THASK_ATTACHMENT_MAX_BYTES` | Max single-file size for attachment upload | `10485760` (10MB) |
 
 ### Frontend (`frontend/.env`)
 
@@ -562,13 +575,22 @@ The full surface — `make` is the canonical entrypoint for dev, build, test, an
 - [x] **v0.5.10** — Bulk endpoints (`node.batch_update`, `edge.batch_*`) with HTTP 207 partial-success; `thask self-update`
 - [x] **v0.5.11** — `thask login` browser-based authentication; URL auto-normalization
 
+### v0.6 — Knowledge OS Foundation (Done)
+- [x] **v0.6.0** — 4 new node types (`REQUIREMENT`, `DECISION`, `EXPERIMENT`, `PERSON`)
+- [x] **v0.6.0** — 9 new edge verbs (`realizes`, `conflicts`, `drives`, `supersedes`, `tests`, `produced`, `owns`, `decided`, `reported`)
+- [x] **v0.6.0** — Domain lifecycle state field (orthogonal to `status`)
+- [x] **v0.6.0** — Per-edge JSONB `metadata`
+- [x] **v0.6.0** — Threaded node comments (`node_comments`)
+- [x] **v0.6.0** — Per-node file attachments (`node_attachments` + `THASK_ATTACHMENT_DIR` volume)
+- [x] **v0.6.0** — Canonical project tags (`project_tags`)
+- [x] **v0.6.0** — Per-project API key scoping
+
 ### Future
 - [ ] Graph version snapshots & diffing
 - [ ] Node lifecycle analytics (time-in-status, bottleneck detection)
 - [ ] Webhook triggers on graph changes
 - [ ] GitHub repo sync (auto-update graph on push)
 - [ ] Slack / Discord notifications
-- [ ] Comment threads on nodes
 - [ ] Mobile responsive layout
 - [ ] Self-hosted SSO (SAML / OIDC)
 

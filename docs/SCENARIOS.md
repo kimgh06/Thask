@@ -12,7 +12,7 @@ has an ID so E2E tests, manual QA, and bug reports can reference precisely.
 - Scenarios are positive-path **and** known failure modes.
 - `→` means "expected outcome / observable result".
 
-**Date of last full audit:** 2026-06-22 (v0.5.15 release).
+**Date of last full audit:** 2026-07-04 (v0.6.0 release).
 
 ---
 
@@ -324,6 +324,11 @@ For each: `--url` `--token` `-p` `--team` `-f` `--pretty` `-q` flags compose.
 | CLI-40 | `thask graph capture` | local capture worker invocation |
 | CLI-41 | `thask impact --node ...` | `/impact?nodeId=` |
 | CLI-42 | `thask scan --path ./...` | local scanner (Go/TS) → `/graph/import` merge |
+| CLI-60 | `thask edge batch-create --file ./edges.json` (v0.5.16) | `POST /edges/batch-create`, 201 or 207 |
+| CLI-61 | `thask edge batch-delete --file ./ids.json` (v0.5.16) | `POST /edges/batch-delete`, 200 or 207 |
+| CLI-62 | `thask node batch-update --file ./updates.json` (v0.5.16) | `PATCH /nodes/batch-update`, 200 or 207 |
+| CLI-63 | `thask suggestions list [--status pending\|accepted\|rejected] [--limit N]` (v0.5.16) | `GET /suggestions[?status=&limit=]` |
+| CLI-64 | `thask suggestions decide <id> --accept\|--reject [--reason ...]` (v0.5.16) | `PATCH /suggestions/:sid` with `{status,reason?}`; server enforces actor_kind=user_interactive — agent keys 403 |
 
 ### 10.6 MCP serve
 
@@ -361,7 +366,7 @@ Backing file: `~/.thask/events.jsonl` (append-only, single explicit `purge` rewr
 
 ---
 
-## 11. MCP tools (24)
+## 11. MCP tools (25)
 
 Each MCP tool is invoked via `thask mcp serve` stdio + JSON-RPC `tools/call`.
 
@@ -380,6 +385,7 @@ Each MCP tool is invoked via `thask mcp serve` stdio + JSON-RPC `tools/call`.
 | MCP-11 | `thask.edge.list` | `GET /edges` | |
 | MCP-12 | `thask.edge.create` | `POST /edges` | |
 | MCP-13 | `thask.edge.delete` | `DELETE /edges/:eid` | |
+| MCP-25 | `thask.edge.update` | `PATCH /edges/:eid` (v0.5.16) | server COALESCE — unsupplied fields kept |
 | MCP-14 | `thask.edge.batch_create` | `POST /edges/batch-create` (v0.5.10) | up to 500 |
 | MCP-15 | `thask.edge.batch_delete` | `POST /edges/batch-delete` | up to 500 |
 | MCP-16 | `thask.graph.get` | `GET /graph` | full nodes+edges payload |
@@ -497,6 +503,91 @@ Cross-cutting invariants every mutation must satisfy:
 | PROV-05 | `audit_log.batch_id` groups multi-item operations | NODE-19~24, EDGE-07~08 |
 | PROV-06 | Suggestion accept's `audit_log.user_id` = decider's user_id, NOT proposer | SUGG-03 enforced server-side |
 | PROV-07 | Verify action sets `last_verified_at/by/commit` and writes `audit_log.action=verified` | NODE-26 |
+
+---
+
+## 17. Knowledge OS Foundation (v0.6.0)
+
+The v0.6.0 release adds four first-class entity types and three side tables
+without introducing new MCP tools — enum widening + additive fields on
+`node.update` / `edge.update` handle everything. Scenarios below reuse the
+`NODE-` / `EDGE-` prefixes for lookups but are tagged `v0.6.0`.
+
+### 17.1 New entity types
+
+| ID | Actor | Scenario | Expected |
+|---|---|---|---|
+| KOS-01 | H/A | `POST /api/projects/:pid/nodes` with `{type:"REQUIREMENT", title, lifecycleState:"DRAFT"}` | 201, `type` accepted, `lifecycle_state_changed_at` stamped |
+| KOS-02 | H/A | Same with `type:"DECISION"` / `"EXPERIMENT"` / `"PERSON"` | 201 (v0.6.0 enum values) |
+| KOS-03 | H/A | `PATCH /nodes/:nid` with `{lifecycleState:"APPROVED"}` on a REQUIREMENT | 200, `lifecycle_state_changed_at = now()` |
+| KOS-04 | H/A | `PATCH /nodes/:nid` re-writing the same `lifecycleState` | still bumps `lifecycle_state_changed_at` (v0.6.0 unconditional; `IS DISTINCT FROM` optimisation planned for v0.6.1) |
+| KOS-05 | H/A | Frontend NodeDetailView on REQUIREMENT/DECISION/EXPERIMENT/PERSON | Lifecycle state text input renders; other types hide it |
+
+### 17.2 New edge verbs + metadata
+
+| ID | Actor | Scenario | Expected |
+|---|---|---|---|
+| KOS-06 | H/A | `POST /edges` with `{edgeType:"supersedes", metadata:{"reason":"conflicts with DEC-42"}}` | 201, metadata JSONB persisted |
+| KOS-07 | H/A | `POST /edges` with any of `realizes`, `conflicts`, `drives`, `tests`, `produced`, `owns`, `decided`, `reported` | 201 (v0.6.0 enum values) |
+| KOS-08 | H/A | `PATCH /edges/:eid` with `{metadata:{"outcome_summary":"..."}}` alone | 200; COALESCE means other fields untouched |
+| KOS-09 | H/A | `MCP thask.edge.update {metadata: {...}}` | Same as HTTP; matches wider enum on `edgeType` |
+
+### 17.3 Threaded comments
+
+| ID | Actor | Scenario | Expected |
+|---|---|---|---|
+| KOS-10 | H | `POST /nodes/:nid/comments` with `{body:"..."}` | 201, `authorId` = caller |
+| KOS-11 | H | `POST /nodes/:nid/comments` with `{body:"...", parentId:"<comment-uuid>"}` | 201, threaded reply |
+| KOS-12 | H | `GET /nodes/:nid/comments` | 200 chronological list |
+| KOS-13 | H | `PATCH /comments/:cid` as author | 200, body updated |
+| KOS-14 | H | `PATCH /comments/:cid` as non-author | 404 (author-scoped write) |
+| KOS-15 | H | `POST /comments/:cid/resolve` | 200, `resolvedAt`/`resolvedBy` set, row retained |
+| KOS-16 | H | `DELETE /comments/:cid` as author | 200 |
+| KOS-17 | A | Agent posts comment (`meta` classification) | 201 with default agent-key permissions |
+
+### 17.4 Attachments
+
+| ID | Actor | Scenario | Expected |
+|---|---|---|---|
+| KOS-18 | H | `POST /nodes/:nid/attachments` (multipart, `file` field) with `THASK_ATTACHMENT_DIR` set | 201, file at `{dir}/{projectId}/{hex}-{name}`, SHA256 stored |
+| KOS-19 | H | Same with `THASK_ATTACHMENT_DIR=""` (default) | 503 "Attachments disabled: THASK_ATTACHMENT_DIR unset" |
+| KOS-20 | H | Upload larger than `THASK_ATTACHMENT_MAX_BYTES` (default 10 MB) | 413 |
+| KOS-21 | H | `GET /attachments/:aid` | 200 file stream, `Content-Disposition: inline; filename=...` |
+| KOS-22 | H | `GET /attachments/:aid` with tampered `storageKey` in DB pointing outside `attachmentDir` | 403 (path-traversal guard) |
+| KOS-23 | H | `DELETE /attachments/:aid` | 200; DB row removed first, then blob unlinked (leak on unlink failure is acceptable) |
+| KOS-24 | H | Delete project → attachments cascade | rows deleted, blobs remain on disk (cleanup by ops) |
+
+### 17.5 Project tags
+
+| ID | Actor | Scenario | Expected |
+|---|---|---|---|
+| KOS-25 | H | `GET /tags` | 200 array of `{tag, color, description, createdBy}` |
+| KOS-26 | H | `PUT /tags/backend` with `{color:"#D97706", description:"..."}` | 200, idempotent upsert on `(projectId, tag)` |
+| KOS-27 | H | `DELETE /tags/backend` | 200; existing `nodes.tags[]` values untouched — palette entry only |
+
+### 17.6 API-key project scope
+
+| ID | Actor | Scenario | Expected |
+|---|---|---|---|
+| KOS-28 | H | `POST /api/auth/api-keys` with `{projectId:"X"}` | 201, key scope stored |
+| KOS-29 | A | Use scoped key against `/api/projects/X/...` | 200 |
+| KOS-30 | A | Use scoped key against `/api/projects/Y/...` (X ≠ Y) | 403 (ProjectAccess middleware) |
+| KOS-31 | H | `POST /api/auth/api-keys` with no `projectId` | 201, user-scope key (all projects the user can access, unchanged) |
+
+### 17.7 node_history deprecation
+
+| ID | Actor | Scenario | Expected |
+|---|---|---|---|
+| KOS-32 | S | `PATCH /nodes/:nid` on v0.6.0 | 0 rows written to `node_history`, 1+ rows in `audit_log` |
+| KOS-33 | H | Activity feed | still renders from mixed source (`audit_log` + legacy `node_history` reads) — no user-visible regression |
+| KOS-34 | S | v0.7.0 upgrade | `node_history` table DROP planned; any external tooling must migrate to `audit_log` before then |
+
+### 17.8 End-to-end lifecycle
+
+| ID | Actor | Scenario | Expected |
+|---|---|---|---|
+| KOS-35 | H/A | Create REQUIREMENT (`DRAFT`) → linked TASK via `realizes` → EXPERIMENT `produced` DECISION → PERSON `owns` REQUIREMENT | Full v0.6.0 vocabulary exercised; `thask.graph.get` returns all types + all edges; layout(dagre) still succeeds |
+| KOS-36 | A | Agent walks a project's KOS-35 graph and reports "which requirements are still DRAFT" | Filter `nodes` by `type=REQUIREMENT AND lifecycle_state='DRAFT'` — no MCP tool change needed |
 
 ---
 

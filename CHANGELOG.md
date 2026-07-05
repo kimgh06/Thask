@@ -6,6 +6,172 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-04
+
+**"Knowledge OS Foundation."** Thask stops being a graph-only tool and becomes
+a persistent project memory platform: four new first-class entity types
+(REQUIREMENT / DECISION / EXPERIMENT / PERSON), nine new relationship types
+that model the actual verbs teams use ("realizes", "supersedes", "decided",
+"produced"), a domain lifecycle field orthogonal to `status`, and three
+adjacent side tables (comments, attachments, project tags) that turn every
+node into a thread and every project into a scoped filestore. No new MCP
+tools this release — every capability rides on the existing `node.*` /
+`edge.*` surface with expanded enums plus two additive fields.
+
+### Added
+- **Node types +4**: `REQUIREMENT`, `DECISION`, `EXPERIMENT`, `PERSON`. Frontend
+  color/shape/label wired in `frontend/src/lib/{types,constants}.ts`. Node
+  detail panel exposes a Lifecycle state text input for these four types
+  (`frontend/src/lib/components/panel/NodeDetailView.svelte`).
+- **Edge types +9**: `realizes`, `conflicts`, `drives`, `supersedes`, `tests`,
+  `produced`, `owns`, `decided`, `reported`. Coloured + labeled in the
+  frontend; enum-extended in `POST /api/projects/:pid/edges` and MCP
+  `edge.create` / `edge.update`.
+- **Node lifecycle fields**: `nodes.lifecycle_state TEXT NULL` +
+  `nodes.lifecycle_state_changed_at TIMESTAMPTZ`. Orthogonal to `status` —
+  `status` stays QA/execution (`PASS`/`FAIL`/`IN_PROGRESS`/`BLOCKED`), the
+  new field carries domain phase (e.g. REQUIREMENT `APPROVED`, EXPERIMENT
+  `RUNNING`, DECISION `DECIDED`, PERSON `ACTIVE`). Server bumps
+  `lifecycle_state_changed_at = now()` on every write to the field, so a
+  simple diff query answers "which requirements moved this week".
+- **Edge metadata**: `edges.metadata JSONB NOT NULL DEFAULT '{}'`. Feeds the
+  new edge-verb semantics — `supersedes` carries `{reason}`, `produced`
+  carries `{outcome_summary}`, etc. Reachable from MCP via
+  `edge.update {metadata}`.
+- **`node_comments`, `node_attachments`, `project_tags` tables + handlers.**
+  - Threaded comments: `GET /nodes/:nodeId/comments`,
+    `POST /nodes/:nodeId/comments`, `PATCH /comments/:commentId`,
+    `POST /comments/:commentId/resolve`, `DELETE /comments/:commentId`.
+    Optional `parent_id` yields flat or nested threads; `resolved_at` +
+    `resolved_by` mark closed threads without deletion. Author-scoped
+    edit/delete on the write side.
+  - Attachments: `GET /nodes/:nodeId/attachments`,
+    `POST /nodes/:nodeId/attachments` (multipart), `GET /attachments/:id`
+    (streams the file with sanitized path resolution), `DELETE
+    /attachments/:id`. Storage sharded by project (`{projectId}/{rand}-{safeName}`),
+    SHA256 stored per row, blob deletion follows DB deletion.
+  - Project tags: `GET /tags`, `PUT /tags/:tag`, `DELETE /tags/:tag`.
+    Canonical metadata for the free-form `nodes.tags[]` — color, description,
+    creator. `nodes.tags[]` stays the storage-of-truth on nodes; this table
+    layers a project-scoped palette on top.
+- **API keys can be project-scoped.** `POST /api/auth/api-keys` accepts
+  optional `projectId`. When set, `ProjectAccess` middleware 403s if the key
+  is used against a different project. `NULL` = user-scoped (existing
+  behavior). Backend context exposes `ContextAPIKeyProjectID` for handlers
+  that need it.
+- **`THASK_ATTACHMENT_DIR` + `THASK_ATTACHMENT_MAX_BYTES` env vars.** Empty
+  `THASK_ATTACHMENT_DIR` (default) leaves attachments disabled — upload
+  returns `503 "Attachments disabled: THASK_ATTACHMENT_DIR unset"`.
+  `THASK_ATTACHMENT_MAX_BYTES` defaults to 10 MB. `docker-compose.yml`
+  mounts a `thask-attachments` named volume at `/data/attachments`.
+
+### Changed
+- **MCP tool signatures widened, no new tools.** `node.list` / `node.create` /
+  `node.update` `type` enum gains the 4 new entity types; `edge.create` /
+  `edge.update` `edgeType` enum gains the 9 new relationships. `node.update`
+  gains optional `lifecycleState`; `edge.update` gains optional `metadata`.
+  Tool count stays 25 (`marketing/server.json` unchanged).
+- **`ProjectAccess` middleware verifies API-key project scope.** A key
+  minted with `projectId=X` accessing `/api/projects/Y/*` gets 403 before
+  the handler runs.
+- **`nodeRepo.Update` stamps `lifecycle_state_changed_at`** whenever
+  `lifecycle_state` appears in the update fields. Currently unconditional
+  (bumps even on idempotent identity writes); `IS DISTINCT FROM` optimisation
+  planned for v0.6.1.
+- **CLI/MCP `guide` output refreshed** with the new node/edge type tables so
+  agents starting a fresh session immediately see the v0.6.0 vocabulary.
+
+### Deprecated
+- **`node_history` writes stopped.** `HistoryRepo.Create` and
+  `BatchCreateStatusChanges` are now no-ops (`audit_log` is the single source
+  of truth going forward). The table itself is retained through v0.6.x for
+  read compatibility (activity feed, older reports) and will be `DROP`ped in
+  **v0.7.0**. Any external tooling querying `node_history` should migrate to
+  `audit_log` this release.
+- **History-tab reads redirected to `audit_log`.** `HistoryFindByProjectID` and
+  `HistoryFindByNodeID` (backing the frontend History tab and the Activity
+  feed) now `SELECT ... FROM audit_log WHERE entity_type = 'node'` with a LEFT
+  JOIN on `users` for `display_name`. Pre-v0.6.0 rows are covered by migration
+  010's backfill, so users see one continuous timeline with no gap. Waterfall
+  status propagation now emits per-node `audit_log` rows tagged
+  `trigger = 'waterfall'` with a shared `batch_id` (was silent under the
+  interim no-op path).
+
+### Fixed (pre-release code review)
+Two rounds of adversarial review before the release cut. Every finding
+either fixed here or explicitly deferred with a follow-up ticket.
+
+- **Round 1 — 10 findings.** IDOR on attachment download (project_id not
+  compared against URL scope), XSS via `Content-Disposition: inline` + MIME
+  sniff (now `attachment; filename=...` + `X-Content-Type-Options: nosniff`
+  + `Content-Security-Policy: sandbox`), cross-project comment/attachment
+  insertion on unrelated nodes (now guarded by `verifyNodeInProject`), five
+  Knowledge OS mutation handlers missing `audit.RequirePermission`
+  (Update/Resolve/Delete comment, Upsert/Delete tag, DeleteAttachment),
+  API-key self-escalation on `/api/auth/api-keys` and team routes
+  (`middleware.RejectScopedKey()` now blocks project-scoped keys), Edge
+  Update's 3-statement non-transactional path (`EdgeRepo.UpdateAll`
+  consolidates to a single COALESCE UPDATE), and NodeHistoryEntry.Action
+  loosened to `string` since audit_log carries actions outside the
+  HistoryAction enum.
+- **Round 2 — 6 findings.** graph.import node RETURNING clause was still
+  missing 11 v0.6.0 columns (lifecycle_state, description_source,
+  created_by, field_provenance, ...); the placeholder converter test that
+  was `t.Skip`-ed is now a live reflection-based check that constructs a
+  fully-populated sentinel dbgen row per converter and asserts every
+  model.Node field survived the mapping — this closes
+  `feedback_sql_scan_safety` from both the SELECT-list and converter
+  sides. `CommentUpdateBody` gained the `project_id` filter that Resolve
+  and Delete already had (B-4 scope enforcement). `/api/projects/summary`
+  moved under `accountRoutes` so project-scoped keys can't enumerate
+  cross-project cardinality. `UpdateEdgeRequest.Metadata` switched to
+  `json.RawMessage` so callers can distinguish "field omitted" from
+  "explicit null" (`null` is clamped to `{}` since edges.metadata is
+  NOT NULL).
+- **Repository-package regression test.**
+  `TestNodeReadPaths_IncludeAllPersistedFields` +
+  `TestNodeConverters_PropagateAllFields` in
+  `backend/internal/repository/node_columns_test.go` are the standing
+  guard for future column additions on `nodes`.
+- **Round-3 review fixes (R1–R5).** `getOldValue` /
+  `mutationKindForNodeField` in `node_helpers.go` now handle
+  `lifecycle_state` — audit trail records the old value, and lifecycle
+  transitions gate on `write_semantic` (not `write_meta`) since they
+  carry domain-level meaning (REQUIREMENT ACCEPTED, DECISION APPROVED).
+  `EdgeHandler.Update` now calls `c.Validate(&req)` alongside `Bind`, so
+  enum / port / label constraints reject at the DTO layer instead of
+  surfacing as opaque Postgres 500s. `UpdateEdgeRequest.Waypoints`
+  matches `Metadata`'s `json.RawMessage` tri-state (nil = omit,
+  `"null"` = clear → `[]`, else replace) — the same silent-drop class
+  the v0.6.0 metadata fix caught, now also closed for waypoints.
+  `POST /api/auth/api-keys` verifies the caller has access to the
+  requested `projectId` before minting a scoped key, closing the
+  inbound gap that mirrored `RejectScopedKey`.
+
+### Known Issues
+
+- **Idempotent lifecycle writes bump the timestamp.** `NodeRepo.Update`
+  stamps `lifecycle_state_changed_at = now()` whenever `lifecycle_state`
+  appears in the field map, even when the value is unchanged. Dashboards
+  reading "time in current state" reset on any unrelated PATCH that
+  round-trips the field. Workaround: read transition history from
+  `audit_log` instead of `lifecycle_state_changed_at`. Planned fix in
+  v0.6.1 (`WHERE lifecycle_state IS DISTINCT FROM $N`, or handler-side
+  compare-then-set).
+
+## [0.5.16] - 2026-06-24
+
+### Added
+- **CLI/MCP parity sweep — 4 commands.**
+  - `thask edge batch-create` and `thask edge batch-delete` (CLI) now mirror the existing MCP tools, closing the asymmetry where bulk edge ops were agent-only. Both read a JSON array from `--file` (or stdin when `--file` is `-` or empty) and POST to the same v0.5.10 batch endpoints.
+  - `thask node batch-update` (CLI) mirrors `thask.node.batch_update`. Up to 200 partial updates per call, JSON array on stdin / `--file`.
+  - `thask.edge.update` (MCP) mirrors the long-standing `thask edge update` CLI command. Optional fields `edgeType`, `label`, `sourcePort`, `targetPort`, `waypoints` — server `COALESCE` semantics so the unsupplied fields keep their current value.
+- **`thask suggestions list` / `thask suggestions decide <id>` (CLI).** Closes the inverse gap where suggestions were MCP-only: a human reviewer can now triage the agent-proposed change queue from the terminal. `--accept` / `--reject` flags are mutually exclusive; `--reason` is recorded on the decision row. Backend enforces `actor_kind=user_interactive` so this command works only with a session or non-agent API key.
+
+### Notes
+- MCP tool count rises 24 → 25 (`thask.edge.update`).
+- All four additions are additive. No backend migrations. No breaking change.
+
 ## [0.5.15] - 2026-06-22
 
 ### Added

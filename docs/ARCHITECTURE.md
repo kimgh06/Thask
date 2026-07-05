@@ -10,7 +10,7 @@ Thask uses a **monorepo with separate backend, frontend, and CLI** services. The
 │  thask node · edge · graph · impact · usage · reflog · telemetry  │
 ├──────────────────────────────────────────────────────────┤
 │  MCP Server (stdio)                                      │
-│  24 tools · thask.node.* · thask.edge.* · thask.graph.* · thask.scan.* · thask.guide  │
+│  25 tools · thask.node.* · thask.edge.* · thask.graph.* · thask.scan.* · thask.guide  │
 ├──────────────────────────────────────────────────────────┤
 │  Local State (~/.thask/, v0.5.15+)                       │
 │  config.json · events.jsonl (append-only) · payloads/ (opt-in)  │
@@ -81,7 +81,7 @@ Svelte 5 Stores                   API Client
                   ▼
    ┌──────────────────────────────────────────┐
    │         PostgreSQL 17                   │
-   │  9 tables, 5 enums, 12+ indexes        │
+   │  12 tables, 5 enums, 15+ indexes       │
    └──────────────────────────────────────────┘
 ```
 
@@ -95,7 +95,7 @@ cli/
 │   └── main.go                    # CLI entrypoint
 ├── internal/
 │   ├── cmd/                       # Cobra commands (node, edge, team, telemetry, usage, reflog, ...)
-│   ├── mcp/                       # MCP server (stdio, 24 tools incl. provenance + bulk)
+│   ├── mcp/                       # MCP server (stdio, 25 tools incl. provenance + bulk)
 │   ├── client/                    # HTTP client for backend API (records HTTP outcome → telemetry)
 │   ├── config/                    # Config file (~/.thask/config.json)
 │   ├── output/                    # Output formatting (JSON, table, quiet)
@@ -171,7 +171,9 @@ backend/
 │   ├── 007_node_provenance.sql    # nodes: description_source, last_verified_*, field_provenance
 │   ├── 008_api_key_kind.sql       # api_keys: kind enum + permissions JSONB
 │   ├── 009_suggestions.sql        # node_suggestions queue
-│   └── 010_backfill_audit_from_history.sql  # one-time backfill
+│   ├── 010_backfill_audit_from_history.sql  # one-time backfill
+│   ├── 011_nodes_created_by.sql             # nodes.created_by + backfill from history
+│   └── 012_v060_knowledge_os.sql            # v0.6.0 Knowledge OS: 4 node types, 9 edge types, lifecycle_state, edges.metadata, node_comments, node_attachments, project_tags, api_keys.project_id
 ├── Dockerfile                     # Multi-stage build (golang:1.23 → alpine:3.20)
 ├── go.mod
 └── go.sum
@@ -242,7 +244,10 @@ JSONB columns (`nodes.metadata`, `nodes.field_provenance`, `edges.metadata`, `au
 | `ProjectMemberRepo` | Per-project member CRUD, list with user join |
 | `NodeRepo` | Node CRUD, batch positions, filtered queries, status updates, provenance snapshot writes (`UpdateDescriptionProvenance`, `MarkVerified`) |
 | `EdgeRepo` | Edge CRUD, find connected edges, `Pool()` accessor for tx-from-handler batch writes |
-| `HistoryRepo` | Legacy node_history (read-only after v0.5.9; new writes go to `AuditRepo`) |
+| `HistoryRepo` | Legacy node_history — reads only (v0.6.0 dropped all writes; table retained for backward-compat, DROP planned in v0.7.0) |
+| `CommentRepo` | v0.6.0 threaded node comments (`node_comments`) — list / create / update / resolve / delete |
+| `AttachmentRepo` | v0.6.0 per-node file metadata (`node_attachments`); blob storage handled by the handler under `THASK_ATTACHMENT_DIR` |
+| `ProjectTagRepo` | v0.6.0 canonical project-scoped tag palette (`project_tags`) |
 | `APIKeyRepo` | API key storage incl. `kind` + `permissions` JSONB (v0.5.9) |
 | `AuditRepo` | `audit_log` insert + `ListByEntity` for the new 6-dimension provenance trail |
 | `SuggestionRepo` | `node_suggestions` queue: Create, ListPending, Decide, SupersedePendingForNode |
@@ -351,6 +356,7 @@ Every API route verifies:
 2. Team membership for the project (`ProjectAccess` middleware — centralized, not duplicated)
 3. Minimum role (if required) via `RequireRole` middleware (owner, admin, member, viewer)
 4. **(v0.5.9+)** Per-key `permissions` flag for the touched field's `mutation_kind`, via `audit.RequirePermission()` inside the handler
+5. **(v0.6.0+)** If the API key was minted with `projectId=X`, `ProjectAccess` middleware 403s any request against a different project. NULL scope keeps the pre-v0.6.0 behavior (all of the user's projects).
 
 ### Permission gate & suggestion queue (v0.5.9+)
 
@@ -391,6 +397,91 @@ The deciding human becomes the author of record on the node — the agent
 that originally proposed is credited only in `audit_log.metadata`. This
 is the design knob that prevents "agent writes → human rubber-stamps →
 graph fills with confidently-wrong content" loops.
+
+---
+
+## Node / Edge Catalog
+
+### Node types (11 as of v0.6.0)
+
+| Type | Purpose | Notes |
+|---|---|---|
+| `FLOW` | End-to-end user or system flow | Original set (v0.1) |
+| `BRANCH` | Conditional split | Original set |
+| `TASK` | Unit of work | Original set |
+| `BUG` | Defect / incident | Original set |
+| `API` | API endpoint / contract | Original set |
+| `UI` | Screen / component | Original set |
+| `GROUP` | Container for compound layout | Original set |
+| `REQUIREMENT` | Product / spec requirement | v0.6.0 Knowledge OS |
+| `DECISION` | Architecture / product decision | v0.6.0 Knowledge OS |
+| `EXPERIMENT` | Time-boxed test / A/B / spike | v0.6.0 Knowledge OS |
+| `PERSON` | Owner / stakeholder / responsible individual | v0.6.0 Knowledge OS |
+
+### Node status vs. lifecycle state (v0.6.0)
+
+`status` and `lifecycle_state` are **orthogonal** and both stay on every node:
+
+- `status` (existing enum: `PASS` / `FAIL` / `IN_PROGRESS` / `BLOCKED`) — QA
+  / execution state. Waterfall propagation consumes this.
+- `lifecycle_state` (new, free-form `TEXT NULL`) — domain phase specific to
+  entity type. Examples: REQUIREMENT `DRAFT` → `APPROVED` → `IMPLEMENTED`;
+  EXPERIMENT `PLANNED` → `RUNNING` → `CONCLUDED`; DECISION `PROPOSED` →
+  `DECIDED` → `SUPERSEDED`; PERSON `ACTIVE` / `INACTIVE`. The server writes
+  `lifecycle_state_changed_at = now()` whenever this field is updated, so a
+  simple diff query answers "which requirements advanced this week".
+
+Legacy types (`FLOW`, `TASK`, `BUG`, `API`, `UI`, `GROUP`, `BRANCH`) leave
+`lifecycle_state = NULL` — the frontend Lifecycle state input only renders
+for the four Knowledge OS types.
+
+### Edge types (14 as of v0.6.0)
+
+| Type | Semantic |
+|---|---|
+| `depends_on` | Source needs target — waterfall propagation follows this |
+| `blocks` | Source prevents target — impact analysis follows this |
+| `related` | Weak association (default) |
+| `parent_child` | Legacy compound-graph link (superseded by `parent_id`) |
+| `triggers` | Source causes target |
+| `realizes` (v0.6.0) | Node implements a REQUIREMENT / DECISION |
+| `conflicts` (v0.6.0) | Two nodes are mutually incompatible |
+| `drives` (v0.6.0) | Motivating force (e.g. PERSON `drives` REQUIREMENT) |
+| `supersedes` (v0.6.0) | New replaces old (metadata `{reason}`) |
+| `tests` (v0.6.0) | Source verifies target (TEST → CODE) |
+| `produced` (v0.6.0) | EXPERIMENT produced DECISION / FINDING (metadata `{outcome_summary}`) |
+| `owns` (v0.6.0) | PERSON owns node |
+| `decided` (v0.6.0) | DECISION concluded a TASK / FLOW |
+| `reported` (v0.6.0) | PERSON reported BUG |
+
+Every edge carries `metadata JSONB NOT NULL DEFAULT '{}'` (v0.6.0). MCP
+`edge.update` exposes it directly.
+
+### Adjacent tables (v0.6.0)
+
+- `node_comments` — threaded discussion per node (`parent_id` self-reference).
+  Author-scoped edit/delete on the write side; `resolved_at`/`resolved_by`
+  close threads without deletion.
+- `node_attachments` — per-node files, backed by `THASK_ATTACHMENT_DIR` on
+  local FS today (MinIO/S3 planned). SHA256 stored per row; storage sharded
+  by `{projectId}/{rand}-{safeName}`.
+- `project_tags` — canonical metadata for the free-form `nodes.tags[]`
+  strings (color, description, creator). `nodes.tags[]` remains the source
+  of truth for what tags a given node carries; this table just decorates
+  known tags at the project level.
+
+### API-key project scoping (v0.6.0)
+
+`api_keys.project_id` (nullable) constrains a key to one project. NULL
+retains v0.5.x behavior (all of the user's projects). `ProjectAccess`
+middleware verifies the header and 403s on mismatch.
+
+### `node_history` deprecation
+
+Writes to `node_history` stopped in v0.6.0 — `HistoryRepo.Create` /
+`BatchCreateStatusChanges` are no-ops. `audit_log` is now the single source
+of truth. The table is retained through v0.6.x for read compatibility
+(activity feed, older reports) and will be DROP'd in v0.7.0.
 
 ---
 

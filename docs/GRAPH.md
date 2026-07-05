@@ -17,6 +17,10 @@ Frontend: SvelteKit + Svelte 5 components.
 | API | barrel | green `#5ea87a` | API endpoint |
 | UI | ellipse | orange `#d4915a` | UI component / screen |
 | GROUP | round-rectangle (dashed) | gray `#7c7570` | Container for grouping nodes |
+| REQUIREMENT | round-rectangle | teal `#4a9fb0` | Product / user requirement (v0.6.0). Lifecycle: PROPOSED → ACCEPTED → IN_PROGRESS → DELIVERED → DEPRECATED |
+| DECISION | diamond | amber `#c9942e` | Architecture decision record (v0.6.0). Lifecycle: PROPOSED → APPROVED → SUPERSEDED → REVERSED |
+| EXPERIMENT | octagon | violet `#9370c4` | Hypothesis-driven probe (v0.6.0). Lifecycle: PROPOSED → RUNNING → COMPLETED → ABANDONED |
+| PERSON | ellipse | warm neutral `#c48a4d` | Owner / decider / reporter (v0.6.0). Graph-visible so `BLOCKED → owns⁻¹ → PERSON` traversal works |
 
 ## Node Statuses
 
@@ -27,6 +31,8 @@ Frontend: SvelteKit + Svelte 5 components.
 | IN_PROGRESS | yellow | light yellow | Currently being worked on |
 | BLOCKED | gray | light gray | Blocked by dependency |
 
+**Lifecycle state (v0.6.0)** — a second, orthogonal state field on `REQUIREMENT`/`DECISION`/`EXPERIMENT`/`PERSON`. `status` tracks operational progress (PASS/FAIL/IN_PROGRESS/BLOCKED); `lifecycle_state` tracks domain phase (e.g. DECISION `APPROVED`). Server auto-stamps `lifecycle_state_changed_at` on every write to the field.
+
 ## Edge Types
 
 | Type | Color | Style | Description |
@@ -36,6 +42,17 @@ Frontend: SvelteKit + Svelte 5 components.
 | triggers | yellow-gold `#e2b340` | solid | A triggers B |
 | related | gray `#7c7570` | solid | General relation |
 | parent_child | blue `#7ca3c4` | dashed | Parent-child hierarchy |
+| realizes | teal `#4a9fb0` | solid | TASK → REQUIREMENT (v0.6.0) |
+| conflicts | red `#e05252` | dashed | REQUIREMENT ↔ REQUIREMENT (v0.6.0) |
+| drives | amber `#c9942e` | solid | DECISION → TASK / API / UI (v0.6.0) |
+| supersedes | amber `#c9942e` | dashed | DECISION → DECISION (v0.6.0). metadata: `{reason}` |
+| tests | violet `#9370c4` | solid | EXPERIMENT → REQUIREMENT / DECISION (v0.6.0) |
+| produced | violet `#9370c4` | solid | EXPERIMENT → BUG / TASK (v0.6.0). metadata: `{outcome_summary}` |
+| owns | warm neutral `#c48a4d` | solid | PERSON → TASK / API / UI / REQUIREMENT (v0.6.0) |
+| decided | warm neutral `#c48a4d` | solid | PERSON → DECISION (v0.6.0) |
+| reported | warm neutral `#c48a4d` | solid | PERSON → BUG (v0.6.0) |
+
+**Edge metadata (v0.6.0)** — every edge now carries a `metadata` JSONB blob. Frontend / CLI is responsible for the per-edge-type shape; the server stores it as-is.
 
 ---
 
@@ -180,7 +197,7 @@ When a node's status changes to PASS or FAIL, the waterfall algorithm propagates
 
 ### Edge Editing
 1. Click an edge — EdgeDetailView opens in the side panel
-2. Select a new edge type from the 5 options
+2. Select a new edge type from the 14 options
 3. Edit the label (debounced auto-save)
 4. Or click delete to remove the edge
 

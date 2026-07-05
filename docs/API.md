@@ -248,7 +248,7 @@ Create an API key. Maximum 10 keys per user.
 
 ```json
 // Request
-{ "name": "CLI Token", "expiresIn": 90 }
+{ "name": "CLI Token", "expiresIn": 90, "projectId": "uuid-optional" }
 
 // Response 201
 {
@@ -257,6 +257,7 @@ Create an API key. Maximum 10 keys per user.
     "name": "CLI Token",
     "keyPrefix": "thsk_ab12345",
     "key": "thsk_ab1234567890...",
+    "projectId": "uuid-optional",
     "expiresAt": "2025-06-01T00:00:00Z",
     "createdAt": "2025-03-01T00:00:00Z"
   }
@@ -269,6 +270,7 @@ Create an API key. Maximum 10 keys per user.
 |---|---|
 | `name` | Required, 1-100 chars |
 | `expiresIn` | Optional, 1-365 days. Omit for no expiration. |
+| `projectId` | Optional (v0.6.0). Scope the key to a single project — `ProjectAccess` middleware 403s any request against a different project. Omit for user-scope (all projects the user can access). |
 
 ### GET /api/auth/api-keys
 
@@ -521,7 +523,8 @@ Updates a node. Records history for each changed field. Triggers **waterfall sta
   "description": "...",
   "assigneeId": "uuid",
   "tags": ["tag1", "tag2"],
-  "parentId": "group-uuid | null"
+  "parentId": "group-uuid | null",
+  "lifecycleState": "APPROVED"
 }
 ```
 
@@ -530,6 +533,8 @@ Updates a node. Records history for each changed field. Triggers **waterfall sta
 - `parentId: ""` (empty string) **unparents** the node; `parentId: "<uuid>"` re-parents.
 - `assigneeId: ""` (empty string) **unassigns**; `assigneeId: "<uuid>"` assigns.
 - Cycles (self-parent or descendant-as-parent) are rejected with `400`.
+- `lifecycleState` (v0.6.0) — free-form text; orthogonal to `status`. Intended for `REQUIREMENT` / `DECISION` / `EXPERIMENT` / `PERSON` types (e.g. `APPROVED`, `RUNNING`, `DECIDED`, `ACTIVE`). Server automatically sets `lifecycleStateChangedAt = now()` on any write to this field.
+- `type` (v0.6.0) — enum widens to include `REQUIREMENT` / `DECISION` / `EXPERIMENT` / `PERSON` on top of the original seven.
 
 **Permission gate (v0.5.9+):** Each touched field is classified as
 `semantic` / `structural` / `meta` and checked against the calling key's
@@ -609,12 +614,22 @@ Batch update status for multiple nodes. Requires `member` role.
 
 Constraints: no self-loops (validated server-side).
 
+`edgeType` (v0.6.0) accepts the original five (`depends_on`, `blocks`,
+`related`, `parent_child`, `triggers`) plus the nine Knowledge OS verbs
+(`realizes`, `conflicts`, `drives`, `supersedes`, `tests`, `produced`,
+`owns`, `decided`, `reported`). See [ARCHITECTURE.md > Node / Edge Catalog](ARCHITECTURE.md#node--edge-catalog).
+
 ### PATCH /api/projects/:projectId/edges/:edgeId
 
 ```json
-// Request
-{ "edgeType": "blocks", "label": "updated label" }
+// Request (all fields optional)
+{ "edgeType": "supersedes", "label": "updated label", "metadata": { "reason": "conflicted with DEC-42" } }
 ```
+
+`metadata` (v0.6.0) is a free-form JSON object attached to the edge. Used
+by the Knowledge OS verbs to carry the verb's own context —
+`supersedes` → `{ reason: "..." }`, `produced` → `{ outcome_summary: "..." }`.
+Server COALESCE semantics: unsupplied fields keep their current value.
 
 ### DELETE /api/projects/:projectId/edges/:edgeId
 
@@ -810,6 +825,184 @@ Finds changed nodes and their downstream dependencies via bidirectional BFS.
 |---|---|---|
 | `since` | 7 days ago | ISO date — nodes updated after this time |
 | `depth` | 2 | BFS depth for downstream search |
+
+---
+
+## Comments (v0.6.0)
+
+Threaded discussion attached to a node. Author-scoped edit / delete on the
+write side. Flat by default; pass `parentId` to nest a reply.
+
+### GET /api/projects/:projectId/nodes/:nodeId/comments
+
+```json
+// Response 200
+{ "data": [
+  {
+    "id": "uuid",
+    "nodeId": "uuid",
+    "projectId": "uuid",
+    "authorId": "uuid",
+    "parentId": null,
+    "body": "Looks fine, but the retry logic still assumes idempotency.",
+    "resolvedAt": null,
+    "resolvedBy": null,
+    "createdAt": "2026-07-04T10:00:00Z",
+    "updatedAt": "2026-07-04T10:00:00Z"
+  }
+] }
+```
+
+### POST /api/projects/:projectId/nodes/:nodeId/comments
+
+```json
+// Request
+{ "body": "Thread body — required", "parentId": "optional-uuid" }
+
+// Response 201
+{ "data": { "id": "uuid", ... } }
+```
+
+Permission gate: writes to comments are classified as `meta`, so agent-kind
+keys with default permissions pass.
+
+### PATCH /api/projects/:projectId/comments/:commentId
+
+Author-only edit.
+
+```json
+// Request
+{ "body": "Updated body" }
+
+// Response 200
+{ "data": { "id": "uuid", "body": "Updated body", ... } }
+```
+
+### POST /api/projects/:projectId/comments/:commentId/resolve
+
+Mark a comment (or the thread it heads) as resolved. Sets `resolvedAt` and
+`resolvedBy` without deleting the row.
+
+```json
+// Response 200
+{ "data": { "id": "uuid", "resolvedAt": "...", "resolvedBy": "uuid" } }
+```
+
+### DELETE /api/projects/:projectId/comments/:commentId
+
+Author-only delete.
+
+```json
+// Response 200
+{ "data": { "success": true } }
+```
+
+---
+
+## Attachments (v0.6.0)
+
+Per-node files. Storage backend is local FS today (`THASK_ATTACHMENT_DIR`
+env var); MinIO / S3 planned. Empty `THASK_ATTACHMENT_DIR` disables uploads
+— the endpoint returns `503`.
+
+### GET /api/projects/:projectId/nodes/:nodeId/attachments
+
+```json
+// Response 200
+{ "data": [
+  {
+    "id": "uuid",
+    "nodeId": "uuid",
+    "projectId": "uuid",
+    "filename": "spec.pdf",
+    "mimeType": "application/pdf",
+    "sizeBytes": 128512,
+    "storageKey": "<projectId>/<hex>-spec.pdf",
+    "sha256": "<hex64>",
+    "uploadedBy": "uuid",
+    "createdAt": "2026-07-04T10:00:00Z"
+  }
+] }
+```
+
+### POST /api/projects/:projectId/nodes/:nodeId/attachments
+
+`multipart/form-data` upload with a single `file` field.
+
+```bash
+curl -F "file=@./spec.pdf" \
+  -H "Authorization: Bearer thsk_..." \
+  http://localhost:7244/api/projects/<pid>/nodes/<nid>/attachments
+```
+
+Response 201: the attachment row (same shape as list).
+
+Response 413 if file exceeds `THASK_ATTACHMENT_MAX_BYTES` (default 10 MB).
+Response 503 if `THASK_ATTACHMENT_DIR` is unset.
+
+### GET /api/projects/:projectId/attachments/:attachmentId
+
+Streams the file bytes with `Content-Disposition: inline; filename="..."`
+and the stored MIME type. Path-traversal safe (stored key rejected if the
+resolved path escapes `THASK_ATTACHMENT_DIR`).
+
+### DELETE /api/projects/:projectId/attachments/:attachmentId
+
+Deletes the row and then removes the blob from disk. If the DB delete
+succeeds but the file remove fails, the blob leaks (logged) — the row
+being gone is the source of truth.
+
+```json
+// Response 200
+{ "data": { "success": true } }
+```
+
+---
+
+## Project Tags (v0.6.0)
+
+Canonical decoration for the free-form `nodes.tags[]` strings — colour and
+description per tag, per project. `nodes.tags[]` remains the storage of
+truth for which tags a given node carries; this table just decorates
+project-known tags with metadata.
+
+### GET /api/projects/:projectId/tags
+
+```json
+// Response 200
+{ "data": [
+  {
+    "projectId": "uuid",
+    "tag": "backend",
+    "color": "#D97706",
+    "description": "Server-side change",
+    "createdAt": "2026-07-04T10:00:00Z",
+    "createdBy": "uuid"
+  }
+] }
+```
+
+### PUT /api/projects/:projectId/tags/:tag
+
+Upsert (idempotent on `(projectId, tag)`).
+
+```json
+// Request
+{ "color": "#D97706", "description": "Server-side change" }
+
+// Response 200
+{ "data": { "projectId": "uuid", "tag": "backend", "color": "#D97706", ... } }
+```
+
+### DELETE /api/projects/:projectId/tags/:tag
+
+Removes the palette entry. Existing `nodes.tags[]` values are untouched
+(the tag still exists on nodes, it just loses its decoration).
+
+```json
+// Response 200
+{ "data": { "success": true } }
+```
 
 ---
 

@@ -6,13 +6,13 @@
     "url": "https://github.com/kimgh06/Thask",
     "source": "github"
   },
-  "version": "0.5.14",
+  "version": "0.6.0",
   "websiteUrl": "https://thask.kimgh06.com",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@thask-org/cli",
-      "version": "0.5.14",
+      "version": "0.6.0",
       "transport": {
         "type": "stdio"
       },
@@ -45,7 +45,7 @@
   ],
   "_meta": {
     "io.modelcontextprotocol.registry/publisher-provided": {
-      "tool_count": 24,
+      "tool_count": 25,
       "categories": ["development", "graph", "code-intelligence", "dependency-analysis"],
       "tags": [
         "dependency-graph",

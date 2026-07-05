@@ -81,9 +81,11 @@ thask guide
 ```
 
 The output is prepended to the session as additional context, so the agent knows:
-- The 24 MCP tools and their parameters (incl. v0.5.9 suggestion queue, v0.5.10 bulk endpoints, v0.5.11 login flow)
-- Node/edge type conventions (FLOW, BRANCH, TASK, BUG, API, UI, GROUP)
+- The 25 MCP tools and their parameters (incl. v0.5.9 suggestion queue, v0.5.10 bulk endpoints, v0.5.11 login flow, v0.5.16 edge.update + CLI parity, v0.6.0 Knowledge OS types and lifecycle state)
+- Node type conventions — 11 as of v0.6.0: `FLOW`, `BRANCH`, `TASK`, `BUG`, `API`, `UI`, `GROUP`, plus `REQUIREMENT`, `DECISION`, `EXPERIMENT`, `PERSON`
+- Edge type conventions — 14 as of v0.6.0: `depends_on`, `blocks`, `related`, `parent_child`, `triggers`, plus `realizes`, `conflicts`, `drives`, `supersedes`, `tests`, `produced`, `owns`, `decided`, `reported`
 - Status enum (PASS, FAIL, IN_PROGRESS, BLOCKED) — agents won't try invalid values like `TODO`
+- Lifecycle state (v0.6.0) — free-form text on the four Knowledge OS types, orthogonal to `status`
 - Recommended workflows (impact analysis, batch updates, suggest-then-verify)
 - Known pitfalls (incl. why agent-kind keys can't write descriptions directly)
 
@@ -91,12 +93,12 @@ If the CLI isn't installed or configured, the hook exits cleanly with no output.
 
 ### MCP server registration
 
-`.mcp.json` registers `thask mcp serve` so Claude Code spawns the Thask MCP server automatically. This exposes 24 tools to the agent:
+`.mcp.json` registers `thask mcp serve` so Claude Code spawns the Thask MCP server automatically. This exposes 25 tools to the agent:
 
 | Category | Tools |
 |----------|-------|
 | Node | `list`, `create`, `get`, `update`, `delete`, `batch_status`, `batch_update`, `suggest_update`, `verify` |
-| Edge | `list`, `create`, `delete`, `batch_create`, `batch_delete` |
+| Edge | `list`, `create`, `update`, `delete`, `batch_create`, `batch_delete` |
 | Graph | `get`, `import`, `layout`, `analyze` |
 | Analysis | `impact.analyze`, `scan.run` |
 | Suggestions | `list`, `decide` |
@@ -112,7 +114,7 @@ See [MCP.md](MCP.md) for tool-level details.
 
 ## Versioning
 
-The plugin version is locked to the CLI version (single source of truth: git tag). After tagging a CLI release:
+The plugin version is locked to the CLI version (single source of truth: git tag). Current release: **v0.6.0** (`plugin/thask-claudecode/.claude-plugin/plugin.json`). After tagging a CLI release:
 
 ```bash
 cd plugin/thask-claudecode
@@ -126,7 +128,7 @@ This bumps `.claude-plugin/plugin.json` to match `git describe --tags`.
 After installing, in a new Claude Code session:
 
 1. The session context should contain a `## Thask project context` block at the top with the 138-line guide
-2. The tool list should include `mcp__thask__*` entries (24 tools)
+2. The tool list should include `mcp__thask__*` entries (25 tools)
 3. Asking the agent "what Thask projects do I have?" should produce a `thask.project.list`-style call
 
 **One-shot check from the terminal:** `thask doctor` walks the full stack

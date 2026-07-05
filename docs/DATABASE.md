@@ -33,8 +33,11 @@ Users ◄──── Sessions
 ```sql
 team_role:      owner | admin | member | viewer
 node_type:      FLOW | BRANCH | TASK | BUG | API | UI | GROUP
+                | REQUIREMENT | DECISION | EXPERIMENT | PERSON       -- v0.6.0
 node_status:    PASS | FAIL | IN_PROGRESS | BLOCKED
 edge_type:      depends_on | blocks | related | parent_child | triggers
+                | realizes | conflicts | drives | supersedes         -- v0.6.0
+                | tests | produced | owns | decided | reported       -- v0.6.0
 history_action: created | updated | deleted | status_changed
 ```
 
@@ -155,6 +158,13 @@ Indexes:
 - `idx_edges_target (target_id)`
 
 ### node_history
+
+**Deprecated in v0.6.0.** Writes to this table stopped in v0.6.0 —
+`HistoryRepo.Create` and `BatchCreateStatusChanges` are now no-ops.
+`audit_log` is the single source of truth going forward. The table remains
+readable for the v0.6.x cycle to keep the activity feed and legacy reports
+working, and will be `DROP`ped in **v0.7.0**. External tooling should
+migrate to `audit_log`.
 
 | Column | Type | Constraints |
 |---|---|---|
@@ -328,3 +338,103 @@ One-time `INSERT INTO audit_log SELECT FROM node_history` to preserve historical
 writes. Pre-migration rows carry `actor_kind='user_interactive'`, NULL channel
 fields, and `metadata.backfilled_from='node_history'`. Re-running is a no-op
 because the migration short-circuits when `audit_log` is non-empty.
+
+### Node authorship (migration 011)
+
+`nodes.created_by UUID` (FK → users, `ON DELETE SET NULL`) added and
+backfilled from the earliest `node_history` row with `action='created'`.
+Index `idx_nodes_created_by` supports the eventual `?author=<uuid>` filter.
+See v0.5.13 CHANGELOG for the deploy lock-window note.
+
+---
+
+## Knowledge OS Foundation (Migration 012)
+
+v0.6.0 bundles four ENUM extensions, three new tables, and three added
+columns in a single migration.
+
+### ENUM extensions
+
+- `node_type` gains `REQUIREMENT`, `DECISION`, `EXPERIMENT`, `PERSON`.
+- `edge_type` gains `realizes`, `conflicts`, `drives`, `supersedes`,
+  `tests`, `produced`, `owns`, `decided`, `reported`.
+
+Existing rows unaffected — the new values are additive.
+
+### Added columns
+
+| Table | Column | Type | Purpose |
+|---|---|---|---|
+| `nodes` | `lifecycle_state` | `TEXT NULL` | Domain phase, orthogonal to `status`. Free-form text. |
+| `nodes` | `lifecycle_state_changed_at` | `TIMESTAMPTZ NULL` | Server bumps this whenever `lifecycle_state` is written. |
+| `edges` | `metadata` | `JSONB NOT NULL DEFAULT '{}'` | Verb-specific context (e.g. `supersedes → {reason}`). |
+| `api_keys` | `project_id` | `UUID NULL REFERENCES projects(id) ON DELETE CASCADE` | Scope a key to a single project. NULL = user-scope (pre-v0.6.0 behavior). |
+
+### `node_comments`
+
+Threaded discussion attached to a node.
+
+| Column | Type | Constraints |
+|---|---|---|
+| `id` | UUID | PK, default `gen_random_uuid()` |
+| `node_id` | UUID | FK → `nodes(id)` ON DELETE CASCADE |
+| `project_id` | UUID | FK → `projects(id)` ON DELETE CASCADE |
+| `author_id` | UUID | FK → `users(id)` ON DELETE RESTRICT |
+| `parent_id` | UUID | FK → `node_comments(id)` ON DELETE CASCADE — self-ref for replies |
+| `body` | TEXT | NOT NULL |
+| `resolved_at` | TIMESTAMPTZ | Nullable |
+| `resolved_by` | UUID | FK → `users(id)` ON DELETE SET NULL |
+| `created_at`, `updated_at` | TIMESTAMPTZ | default `now()` |
+
+Indexes:
+- `idx_comments_node (node_id, created_at DESC)`
+- `idx_comments_project_unresolved (project_id, resolved_at) WHERE resolved_at IS NULL`
+
+### `node_attachments`
+
+Per-node file metadata; blob storage on local FS under `THASK_ATTACHMENT_DIR`
+(MinIO/S3 planned).
+
+| Column | Type | Constraints |
+|---|---|---|
+| `id` | UUID | PK, default `gen_random_uuid()` |
+| `node_id` | UUID | FK → `nodes(id)` ON DELETE CASCADE |
+| `project_id` | UUID | FK → `projects(id)` ON DELETE CASCADE |
+| `filename` | TEXT | NOT NULL |
+| `mime_type` | TEXT | NOT NULL |
+| `size_bytes` | BIGINT | NOT NULL, CHECK ≥ 0 |
+| `storage_key` | TEXT | NOT NULL UNIQUE — layout `{projectId}/{rand}-{safeName}` |
+| `sha256` | CHAR(64) | NOT NULL |
+| `uploaded_by` | UUID | FK → `users(id)` ON DELETE RESTRICT |
+| `created_at` | TIMESTAMPTZ | default `now()` |
+
+Indexes:
+- `idx_attachments_node (node_id, created_at DESC)`
+- `idx_attachments_project (project_id)`
+
+### `project_tags`
+
+Canonical decoration for the free-form `nodes.tags[]` values.
+
+| Column | Type | Constraints |
+|---|---|---|
+| `project_id` | UUID | FK → `projects(id)` ON DELETE CASCADE, PK part |
+| `tag` | TEXT | NOT NULL, CHECK length 1..64, PK part |
+| `color` | TEXT | Nullable |
+| `description` | TEXT | Nullable |
+| `created_at` | TIMESTAMPTZ | default `now()` |
+| `created_by` | UUID | FK → `users(id)` ON DELETE SET NULL |
+
+Composite primary key `(project_id, tag)` — one canonical row per tag per
+project. `nodes.tags[]` remains the source of truth for which tags a node
+carries; this table just decorates known tags.
+
+### `api_keys.project_id` scope
+
+`ProjectAccess` middleware verifies: if the incoming API key has
+`project_id = X`, requests against `/api/projects/Y/*` where `X != Y`
+return `403`. NULL scope keeps the pre-v0.6.0 behavior (all projects the
+user can access).
+
+Indexes:
+- `idx_api_keys_project (project_id) WHERE project_id IS NOT NULL`

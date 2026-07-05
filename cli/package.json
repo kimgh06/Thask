@@ -1,6 +1,6 @@
 {
   "name": "@thask-org/cli",
-  "version": "0.5.15",
+  "version": "0.6.0",
   "mcpName": "io.github.kimgh06/thask",
   "description": "Graph-based dependency visualization CLI for AI-assisted development",
   "license": "MIT",
