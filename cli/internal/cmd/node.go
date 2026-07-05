@@ -212,6 +212,38 @@ var nodeDeleteCmd = &cobra.Command{
 	},
 }
 
+var nodeBatchUpdateCmd = &cobra.Command{
+	Use:   "batch-update",
+	Short: "Update up to 200 nodes in one call (reads JSON array from --file or stdin)",
+	Long: `Reads a JSON array of partial node updates from --file (or stdin when --file
+is "-" or empty) and PATCHes /api/projects/:pid/nodes/batch-update. Returns
+200 or 207 Multi-Status when any items skip (per-item skipped[] reason).
+
+Each element must include "id" plus the fields to change. Example:
+  [{"id":"...","status":"PASS"}, {"id":"...","title":"Renamed"}, ...]`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		pid := resolveProject()
+		if pid == "" {
+			return fmt.Errorf("--project or THASK_PROJECT required")
+		}
+		file, _ := cmd.Flags().GetString("file")
+		raw, err := readJSONInput(file)
+		if err != nil {
+			return err
+		}
+		var updates []map[string]any
+		if err := json.Unmarshal(raw, &updates); err != nil {
+			return fmt.Errorf("expected JSON array of node updates: %w", err)
+		}
+		data, err := apiClient.Patch("/api/projects/"+pid+"/nodes/batch-update", map[string]any{"updates": updates})
+		if err != nil {
+			return err
+		}
+		output.JSON(data)
+		return nil
+	},
+}
+
 var nodeBatchStatusCmd = &cobra.Command{
 	Use:   "batch-status",
 	Short: "Batch update node status",
@@ -263,10 +295,13 @@ func init() {
 	_ = nodeBatchStatusCmd.MarkFlagRequired("ids")
 	_ = nodeBatchStatusCmd.MarkFlagRequired("status")
 
+	nodeBatchUpdateCmd.Flags().String("file", "", "Path to JSON array of node updates, or '-' / empty for stdin")
+
 	nodeCmd.AddCommand(nodeListCmd)
 	nodeCmd.AddCommand(nodeGetCmd)
 	nodeCmd.AddCommand(nodeCreateCmd)
 	nodeCmd.AddCommand(nodeUpdateCmd)
 	nodeCmd.AddCommand(nodeDeleteCmd)
 	nodeCmd.AddCommand(nodeBatchStatusCmd)
+	nodeCmd.AddCommand(nodeBatchUpdateCmd)
 }

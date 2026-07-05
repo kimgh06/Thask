@@ -24,6 +24,7 @@ var handlers = map[string]ToolHandler{
 	"thask.node.batch_status": handleNodeBatchStatus,
 	"thask.edge.list":         handleEdgeList,
 	"thask.edge.create":       handleEdgeCreate,
+	"thask.edge.update":       handleEdgeUpdate,
 	"thask.edge.delete":       handleEdgeDelete,
 	"thask.graph.get":         handleGraphGet,
 	"thask.graph.import":      handleGraphImport,
@@ -148,10 +149,10 @@ func handleNodeUpdate(c *client.Client, args map[string]any) (any, error) {
 	if v, ok := args["tags"]; ok {
 		body["tags"] = v
 	}
-	// parentId/assigneeId are pointer-typed on the backend so "" means
-	// unparent/unassign while omission means "leave as-is". Pass through
-	// only when the agent included the key.
-	for _, k := range []string{"parentId", "assigneeId"} {
+	// parentId/assigneeId/lifecycleState are pointer-typed on the backend so
+	// "" means unparent/unassign/clear while omission means "leave as-is".
+	// Pass through only when the agent included the key.
+	for _, k := range []string{"parentId", "assigneeId", "lifecycleState"} {
 		if v, ok := args[k]; ok {
 			body[k] = v
 		}
@@ -188,6 +189,31 @@ func handleEdgeCreate(c *client.Client, args map[string]any) (any, error) {
 		body["label"] = v
 	}
 	return c.Post("/api/projects/"+pid+"/edges", body)
+}
+
+func handleEdgeUpdate(c *client.Client, args map[string]any) (any, error) {
+	pid := str(args, "projectId")
+	eid := str(args, "edgeId")
+	body := map[string]any{}
+	if v := str(args, "edgeType"); v != "" {
+		body["edgeType"] = v
+	}
+	if v := str(args, "label"); v != "" {
+		body["label"] = v
+	}
+	if v := str(args, "sourcePort"); v != "" {
+		body["sourcePort"] = v
+	}
+	if v := str(args, "targetPort"); v != "" {
+		body["targetPort"] = v
+	}
+	if v, ok := args["waypoints"]; ok {
+		body["waypoints"] = v
+	}
+	if v, ok := args["metadata"]; ok {
+		body["metadata"] = v
+	}
+	return c.Patch("/api/projects/"+pid+"/edges/"+eid, body)
 }
 
 func handleEdgeDelete(c *client.Client, args map[string]any) (any, error) {

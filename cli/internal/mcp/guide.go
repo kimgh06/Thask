@@ -53,15 +53,19 @@ should create, update, and query Thask graphs via MCP tools or CLI.
 
 ## Node Types — when to use each
 
-| Type   | Use for                                  |
-|--------|------------------------------------------|
-| TASK   | Work items, to-dos, implementation tasks |
-| FLOW   | User journeys, product flows             |
-| BUG    | Defects, issues                          |
-| API    | REST/GraphQL endpoints                   |
-| UI     | Frontend pages, components               |
-| BRANCH | Conditional decisions, if/else           |
-| GROUP  | Logical container (folder-like grouping) |
+| Type        | Use for                                                     |
+|-------------|-------------------------------------------------------------|
+| TASK        | Work items, to-dos, implementation tasks                    |
+| FLOW        | User journeys, product flows                                |
+| BUG         | Defects, issues                                             |
+| API         | REST/GraphQL endpoints                                      |
+| UI          | Frontend pages, components                                  |
+| BRANCH      | Conditional decisions, if/else                              |
+| GROUP       | Logical container (folder-like grouping)                    |
+| REQUIREMENT | Product / user requirement (v0.6.0). Lifecycle: PROPOSED → ACCEPTED → IN_PROGRESS → DELIVERED → DEPRECATED |
+| DECISION    | Architecture decision record (v0.6.0). Lifecycle: PROPOSED → APPROVED → SUPERSEDED → REVERSED. metadata: alternatives_considered, trade_offs |
+| EXPERIMENT  | Hypothesis-driven probe (v0.6.0). Lifecycle: PROPOSED → RUNNING → COMPLETED → ABANDONED. metadata: hypothesis, success_criteria, outcome |
+| PERSON      | Owner / decider / reporter (v0.6.0). Distinct from users; graph-visible so BLOCKED → owns⁻¹ → PERSON traversal works |
 
 ## Statuses
 
@@ -83,6 +87,15 @@ should create, update, and query Thask graphs via MCP tools or CLI.
 | triggers     | source STARTS target               | "Payment Complete" triggers "Send Receipt"   |
 | related      | general association (no direction) | "Search UI" related "Filter UI"              |
 | parent_child | hierarchy (rarely used — prefer GROUP parentId) |                                   |
+| realizes     | TASK → REQUIREMENT (v0.6.0)        | "Impl OAuth" realizes "SSO Requirement"      |
+| conflicts    | REQUIREMENT ↔ REQUIREMENT (v0.6.0) | "Fast checkout" conflicts "Full KYC"         |
+| drives       | DECISION → TASK/API/UI (v0.6.0)    | "Use Postgres" drives "Migrate from Mongo"   |
+| supersedes   | DECISION → DECISION (v0.6.0)       | "REST for v2 API" supersedes "gRPC for v1"   |
+| tests        | EXPERIMENT → REQUIREMENT/DECISION  | "A/B pricing test" tests "Freemium pricing"  |
+| produced     | EXPERIMENT → BUG/TASK (v0.6.0)     | "Latency probe" produced "Cache regression"  |
+| owns         | PERSON → TASK/API/UI/REQUIREMENT   | "Kim" owns "Checkout module"                 |
+| decided      | PERSON → DECISION (v0.6.0)         | "Kim" decided "Postgres over Mongo"          |
+| reported     | PERSON → BUG (v0.6.0)              | "Alice" reported "Session leak on logout"    |
 
 ---
 

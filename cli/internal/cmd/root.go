@@ -123,6 +123,7 @@ func init() {
 	rootCmd.AddCommand(telemetryCmd)
 	rootCmd.AddCommand(usageCmd)
 	rootCmd.AddCommand(reflogCmd)
+	rootCmd.AddCommand(suggestionsCmd)
 }
 
 // usageErrorPrefixes match Cobra's flag-parser / unknown-command / arg-count

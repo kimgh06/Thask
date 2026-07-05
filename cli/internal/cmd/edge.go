@@ -3,10 +3,21 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/thask/cli/internal/output"
 )
+
+// readJSONInput returns the raw bytes of a JSON document supplied via --file
+// (or stdin when file is "-" or empty). Shared by the batch-style commands.
+func readJSONInput(file string) ([]byte, error) {
+	if file == "" || file == "-" {
+		return io.ReadAll(os.Stdin)
+	}
+	return os.ReadFile(file)
+}
 
 var edgeCmd = &cobra.Command{
 	Use:     "edge",
@@ -130,6 +141,64 @@ var edgeUpdateCmd = &cobra.Command{
 	},
 }
 
+var edgeBatchCreateCmd = &cobra.Command{
+	Use:   "batch-create",
+	Short: "Create up to 500 edges in one call (reads JSON array from --file or stdin)",
+	Long: `Reads a JSON array of edges from --file (or stdin if --file is "-") and POSTs
+to /api/projects/:pid/edges/batch-create. Returns 201 on full success or 207
+Multi-Status when some items are skipped (per-item reason in skipped[]).
+
+Example payload:
+  [{"sourceId":"...","targetId":"...","edgeType":"depends_on"}, ...]`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		pid := resolveProject()
+		if pid == "" {
+			return fmt.Errorf("--project or THASK_PROJECT required")
+		}
+		file, _ := cmd.Flags().GetString("file")
+		raw, err := readJSONInput(file)
+		if err != nil {
+			return err
+		}
+		var edges []map[string]any
+		if err := json.Unmarshal(raw, &edges); err != nil {
+			return fmt.Errorf("expected JSON array of edges: %w", err)
+		}
+		data, err := apiClient.Post("/api/projects/"+pid+"/edges/batch-create", map[string]any{"edges": edges})
+		if err != nil {
+			return err
+		}
+		output.JSON(data)
+		return nil
+	},
+}
+
+var edgeBatchDeleteCmd = &cobra.Command{
+	Use:   "batch-delete",
+	Short: "Delete up to 500 edges in one call (reads JSON array of IDs from --file or stdin)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		pid := resolveProject()
+		if pid == "" {
+			return fmt.Errorf("--project or THASK_PROJECT required")
+		}
+		file, _ := cmd.Flags().GetString("file")
+		raw, err := readJSONInput(file)
+		if err != nil {
+			return err
+		}
+		var ids []string
+		if err := json.Unmarshal(raw, &ids); err != nil {
+			return fmt.Errorf("expected JSON array of edge IDs: %w", err)
+		}
+		data, err := apiClient.Post("/api/projects/"+pid+"/edges/batch-delete", map[string]any{"edgeIds": ids})
+		if err != nil {
+			return err
+		}
+		output.JSON(data)
+		return nil
+	},
+}
+
 var edgeDeleteCmd = &cobra.Command{
 	Use:     "delete <edgeId>",
 	Aliases: []string{"d", "rm"},
@@ -164,8 +233,13 @@ func init() {
 	edgeUpdateCmd.Flags().String("type", "", "New edge type")
 	edgeUpdateCmd.Flags().String("label", "", "New label")
 
+	edgeBatchCreateCmd.Flags().String("file", "", "Path to JSON array of edges, or '-' / empty for stdin")
+	edgeBatchDeleteCmd.Flags().String("file", "", "Path to JSON array of edge IDs, or '-' / empty for stdin")
+
 	edgeCmd.AddCommand(edgeListCmd)
 	edgeCmd.AddCommand(edgeCreateCmd)
 	edgeCmd.AddCommand(edgeUpdateCmd)
 	edgeCmd.AddCommand(edgeDeleteCmd)
+	edgeCmd.AddCommand(edgeBatchCreateCmd)
+	edgeCmd.AddCommand(edgeBatchDeleteCmd)
 }
