@@ -25,9 +25,9 @@ func (q *Queries) APIKeyCountByUserID(ctx context.Context, userID string) (int64
 
 const aPIKeyCreate = `-- name: APIKeyCreate :one
 
-INSERT INTO api_keys (user_id, name, key_prefix, key_hash, kind, permissions, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, user_id, name, key_prefix, kind, permissions, last_used_at, expires_at, created_at
+INSERT INTO api_keys (user_id, name, key_prefix, key_hash, kind, permissions, expires_at, project_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, user_id, name, key_prefix, kind, permissions, project_id, last_used_at, expires_at, created_at
 `
 
 type APIKeyCreateParams struct {
@@ -38,6 +38,7 @@ type APIKeyCreateParams struct {
 	Kind        string                  `db:"kind" json:"kind"`
 	Permissions model.APIKeyPermissions `db:"permissions" json:"permissions"`
 	ExpiresAt   *time.Time              `db:"expires_at" json:"expires_at"`
+	ProjectID   *string                 `db:"project_id" json:"project_id"`
 }
 
 type APIKeyCreateRow struct {
@@ -47,6 +48,7 @@ type APIKeyCreateRow struct {
 	KeyPrefix   string                  `db:"key_prefix" json:"key_prefix"`
 	Kind        string                  `db:"kind" json:"kind"`
 	Permissions model.APIKeyPermissions `db:"permissions" json:"permissions"`
+	ProjectID   *string                 `db:"project_id" json:"project_id"`
 	LastUsedAt  *time.Time              `db:"last_used_at" json:"last_used_at"`
 	ExpiresAt   *time.Time              `db:"expires_at" json:"expires_at"`
 	CreatedAt   time.Time               `db:"created_at" json:"created_at"`
@@ -67,6 +69,7 @@ func (q *Queries) APIKeyCreate(ctx context.Context, arg APIKeyCreateParams) (API
 		arg.Kind,
 		arg.Permissions,
 		arg.ExpiresAt,
+		arg.ProjectID,
 	)
 	var i APIKeyCreateRow
 	err := row.Scan(
@@ -76,6 +79,7 @@ func (q *Queries) APIKeyCreate(ctx context.Context, arg APIKeyCreateParams) (API
 		&i.KeyPrefix,
 		&i.Kind,
 		&i.Permissions,
+		&i.ProjectID,
 		&i.LastUsedAt,
 		&i.ExpiresAt,
 		&i.CreatedAt,
@@ -101,7 +105,7 @@ func (q *Queries) APIKeyDelete(ctx context.Context, arg APIKeyDeleteParams) (int
 }
 
 const aPIKeyFindByUserID = `-- name: APIKeyFindByUserID :many
-SELECT id, user_id, name, key_prefix, kind, permissions, last_used_at, expires_at, created_at
+SELECT id, user_id, name, key_prefix, kind, permissions, project_id, last_used_at, expires_at, created_at
 FROM api_keys
 WHERE user_id = $1
 ORDER BY created_at DESC
@@ -114,6 +118,7 @@ type APIKeyFindByUserIDRow struct {
 	KeyPrefix   string                  `db:"key_prefix" json:"key_prefix"`
 	Kind        string                  `db:"kind" json:"kind"`
 	Permissions model.APIKeyPermissions `db:"permissions" json:"permissions"`
+	ProjectID   *string                 `db:"project_id" json:"project_id"`
 	LastUsedAt  *time.Time              `db:"last_used_at" json:"last_used_at"`
 	ExpiresAt   *time.Time              `db:"expires_at" json:"expires_at"`
 	CreatedAt   time.Time               `db:"created_at" json:"created_at"`
@@ -135,6 +140,7 @@ func (q *Queries) APIKeyFindByUserID(ctx context.Context, userID string) ([]APIK
 			&i.KeyPrefix,
 			&i.Kind,
 			&i.Permissions,
+			&i.ProjectID,
 			&i.LastUsedAt,
 			&i.ExpiresAt,
 			&i.CreatedAt,

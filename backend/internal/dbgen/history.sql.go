@@ -17,13 +17,13 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
 type HistoryCreateParams struct {
-	NodeID    string      `db:"node_id" json:"node_id"`
-	ProjectID string      `db:"project_id" json:"project_id"`
-	UserID    string      `db:"user_id" json:"user_id"`
-	Action    interface{} `db:"action" json:"action"`
-	FieldName *string     `db:"field_name" json:"field_name"`
-	OldValue  *string     `db:"old_value" json:"old_value"`
-	NewValue  *string     `db:"new_value" json:"new_value"`
+	NodeID    string  `db:"node_id" json:"node_id"`
+	ProjectID string  `db:"project_id" json:"project_id"`
+	UserID    string  `db:"user_id" json:"user_id"`
+	Action    string  `db:"action" json:"action"`
+	FieldName *string `db:"field_name" json:"field_name"`
+	OldValue  *string `db:"old_value" json:"old_value"`
+	NewValue  *string `db:"new_value" json:"new_value"`
 }
 
 // ============================================================================
@@ -46,31 +46,32 @@ func (q *Queries) HistoryCreate(ctx context.Context, arg HistoryCreateParams) er
 }
 
 const historyFindByNodeID = `-- name: HistoryFindByNodeID :many
-SELECT nh.id, nh.action, nh.field_name, nh.old_value, nh.new_value, nh.created_at, u.display_name
-FROM node_history nh
-INNER JOIN users u ON nh.user_id = u.id
-WHERE nh.node_id = $1
-ORDER BY nh.created_at DESC
+SELECT a.id, a.action, a.field_name, a.old_value, a.new_value, a.created_at,
+       COALESCE(u.display_name, '')::text AS display_name
+FROM audit_log a
+LEFT JOIN users u ON u.id = a.user_id
+WHERE a.entity_id = $1 AND a.entity_type = 'node'
+ORDER BY a.created_at DESC
 LIMIT $2
 `
 
 type HistoryFindByNodeIDParams struct {
-	NodeID string `db:"node_id" json:"node_id"`
-	Limit  int32  `db:"limit" json:"limit"`
+	EntityID *string `db:"entity_id" json:"entity_id"`
+	Limit    int32   `db:"limit" json:"limit"`
 }
 
 type HistoryFindByNodeIDRow struct {
-	ID          string      `db:"id" json:"id"`
-	Action      interface{} `db:"action" json:"action"`
-	FieldName   *string     `db:"field_name" json:"field_name"`
-	OldValue    *string     `db:"old_value" json:"old_value"`
-	NewValue    *string     `db:"new_value" json:"new_value"`
-	CreatedAt   time.Time   `db:"created_at" json:"created_at"`
-	DisplayName string      `db:"display_name" json:"display_name"`
+	ID          string    `db:"id" json:"id"`
+	Action      string    `db:"action" json:"action"`
+	FieldName   *string   `db:"field_name" json:"field_name"`
+	OldValue    *string   `db:"old_value" json:"old_value"`
+	NewValue    *string   `db:"new_value" json:"new_value"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+	DisplayName string    `db:"display_name" json:"display_name"`
 }
 
 func (q *Queries) HistoryFindByNodeID(ctx context.Context, arg HistoryFindByNodeIDParams) ([]HistoryFindByNodeIDRow, error) {
-	rows, err := q.db.Query(ctx, historyFindByNodeID, arg.NodeID, arg.Limit)
+	rows, err := q.db.Query(ctx, historyFindByNodeID, arg.EntityID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -98,11 +99,13 @@ func (q *Queries) HistoryFindByNodeID(ctx context.Context, arg HistoryFindByNode
 }
 
 const historyFindByProjectID = `-- name: HistoryFindByProjectID :many
-SELECT nh.id, nh.action, nh.field_name, nh.old_value, nh.new_value, nh.created_at, u.display_name
-FROM node_history nh
-INNER JOIN users u ON nh.user_id = u.id
-WHERE nh.project_id = $1
-ORDER BY nh.created_at DESC
+
+SELECT a.id, a.action, a.field_name, a.old_value, a.new_value, a.created_at,
+       COALESCE(u.display_name, '')::text AS display_name
+FROM audit_log a
+LEFT JOIN users u ON u.id = a.user_id
+WHERE a.project_id = $1 AND a.entity_type = 'node'
+ORDER BY a.created_at DESC
 LIMIT $2
 `
 
@@ -112,15 +115,21 @@ type HistoryFindByProjectIDParams struct {
 }
 
 type HistoryFindByProjectIDRow struct {
-	ID          string      `db:"id" json:"id"`
-	Action      interface{} `db:"action" json:"action"`
-	FieldName   *string     `db:"field_name" json:"field_name"`
-	OldValue    *string     `db:"old_value" json:"old_value"`
-	NewValue    *string     `db:"new_value" json:"new_value"`
-	CreatedAt   time.Time   `db:"created_at" json:"created_at"`
-	DisplayName string      `db:"display_name" json:"display_name"`
+	ID          string    `db:"id" json:"id"`
+	Action      string    `db:"action" json:"action"`
+	FieldName   *string   `db:"field_name" json:"field_name"`
+	OldValue    *string   `db:"old_value" json:"old_value"`
+	NewValue    *string   `db:"new_value" json:"new_value"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+	DisplayName string    `db:"display_name" json:"display_name"`
 }
 
+// v0.6.0: reads now come from audit_log (node_history is deprecated and its
+// writes were disabled in v0.6.0). Migration 010 backfilled every prior
+// node_history row into audit_log, so callers see one continuous timeline
+// covering both pre- and post-v0.6.0 activity without stitching two tables.
+// Only node entity events are surfaced here — edges/projects/graph events
+// live in their own audit views.
 func (q *Queries) HistoryFindByProjectID(ctx context.Context, arg HistoryFindByProjectIDParams) ([]HistoryFindByProjectIDRow, error) {
 	rows, err := q.db.Query(ctx, historyFindByProjectID, arg.ProjectID, arg.Limit)
 	if err != nil {

@@ -34,6 +34,10 @@ func getOldValue(n *model.Node, field string) *string {
 		if n.ParentID != nil {
 			v = *n.ParentID
 		}
+	case "lifecycle_state":
+		if n.LifecycleState != nil {
+			v = *n.LifecycleState
+		}
 	default:
 		return nil
 	}
@@ -43,12 +47,13 @@ func getOldValue(n *model.Node, field string) *string {
 // mutationKindForNodeField maps a node field to the permission class that
 // gates writes to it. Keep in sync with audit.MutationKind constants.
 //
-//	semantic    — claims about reality (description, "why" content)
+//	semantic    — claims about reality (description, "why" content, lifecycle
+//	              transitions like REQUIREMENT ACCEPTED / DECISION APPROVED)
 //	structural  — graph topology / typing (type, parent_id)
 //	meta        — operational state (status, position, tags, assignee)
 func mutationKindForNodeField(field string) string {
 	switch field {
-	case "description":
+	case "description", "lifecycle_state":
 		return audit.MutationSemantic
 	case "type", "parent_id":
 		return audit.MutationStructural

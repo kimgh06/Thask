@@ -18,6 +18,13 @@ type Config struct {
 	CaptureTimeoutSeconds int
 	V1AllowedOrigins      []string
 	MaxRequestBodyBytes   int64
+
+	// v0.6.0 B-2 attachments (filesystem backend). AttachmentDir is where
+	// bytes land inside the container; the docker-compose file mounts a
+	// named volume there so uploads survive restarts. Empty AttachmentDir
+	// disables the feature at the handler layer.
+	AttachmentDir      string
+	AttachmentMaxBytes int64
 }
 
 func Load() *Config {
@@ -49,6 +56,13 @@ func Load() *Config {
 		}
 	}
 
+	attMax := int64(10 * 1024 * 1024) // 10 MB default
+	if v := os.Getenv("THASK_ATTACHMENT_MAX_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			attMax = n
+		}
+	}
+
 	return &Config{
 		DatabaseURL:           getEnv("DATABASE_URL", "postgresql://thask:thask_dev_password@localhost:7242/thask"),
 		SessionSecret:         getEnv("SESSION_SECRET", "change-me-to-a-random-64-char-string"),
@@ -59,6 +73,8 @@ func Load() *Config {
 		CaptureTimeoutSeconds: captureTimeout,
 		V1AllowedOrigins:      allowedOrigins,
 		MaxRequestBodyBytes:   maxBody,
+		AttachmentDir:         getEnv("THASK_ATTACHMENT_DIR", ""),
+		AttachmentMaxBytes:    attMax,
 	}
 }
 

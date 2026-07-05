@@ -2,8 +2,6 @@ package repository
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/thask/backend/internal/dbgen"
@@ -20,32 +18,19 @@ func NewHistoryRepo(pool *pgxpool.Pool) *HistoryRepo {
 	return &HistoryRepo{pool: pool, q: dbgen.New(pool)}
 }
 
+// Create used to INSERT into node_history. As of v0.6.0 (A-2) it is a no-op:
+// audit_log is the sole write target for provenance, and node_history is
+// dropping in v0.7.0. Signature is kept so handlers don't churn; callers can
+// keep their `_ = h.historyRepo.Create(...)` fire-and-forget sites and the
+// audit logger picks up the semantics via mutation_kind.
 func (r *HistoryRepo) Create(ctx context.Context, nodeID, projectID, userID string, action model.HistoryAction, fieldName, oldValue, newValue *string) error {
-	return r.q.HistoryCreate(ctx, dbgen.HistoryCreateParams{
-		NodeID:    nodeID,
-		ProjectID: projectID,
-		UserID:    userID,
-		Action:    action,
-		FieldName: fieldName,
-		OldValue:  oldValue,
-		NewValue:  newValue,
-	})
+	return nil
 }
 
-// BatchCreateStatusChanges uses a dynamic multi-row INSERT and stays as raw pgx.
+// BatchCreateStatusChanges was a raw-pgx multi-row INSERT into node_history.
+// Same deprecation as Create — retained as no-op until v0.7.0 removes the
+// call sites.
 func (r *HistoryRepo) BatchCreateStatusChanges(ctx context.Context, projectID, userID string, changes []service.StatusChange) {
-	if len(changes) == 0 {
-		return
-	}
-	values := make([]string, len(changes))
-	args := []any{projectID, userID, string(model.HistoryActionStatusChanged), "status"}
-	for i, wc := range changes {
-		base := len(args)
-		values[i] = fmt.Sprintf("($%d, $1, $2, $3, $4, $%d, $%d)", base+1, base+2, base+3)
-		args = append(args, wc.NodeID, string(wc.OldStatus), string(wc.NewStatus))
-	}
-	query := `INSERT INTO node_history (node_id, project_id, user_id, action, field_name, old_value, new_value) VALUES ` + strings.Join(values, ", ")
-	r.pool.Exec(ctx, query, args...)
 }
 
 func (r *HistoryRepo) FindByProjectID(ctx context.Context, projectID string, limit int) ([]model.NodeHistoryEntry, error) {
@@ -60,7 +45,7 @@ func (r *HistoryRepo) FindByProjectID(ctx context.Context, projectID string, lim
 	for i, row := range rows {
 		entries[i] = model.NodeHistoryEntry{
 			ID:        row.ID,
-			Action:    historyActionFromIface(row.Action),
+			Action:    row.Action,
 			FieldName: row.FieldName,
 			OldValue:  row.OldValue,
 			NewValue:  row.NewValue,
@@ -73,8 +58,8 @@ func (r *HistoryRepo) FindByProjectID(ctx context.Context, projectID string, lim
 
 func (r *HistoryRepo) FindByNodeID(ctx context.Context, nodeID string, limit int) ([]model.NodeHistoryEntry, error) {
 	rows, err := r.q.HistoryFindByNodeID(ctx, dbgen.HistoryFindByNodeIDParams{
-		NodeID: nodeID,
-		Limit:  int32(limit),
+		EntityID: &nodeID,
+		Limit:    int32(limit),
 	})
 	if err != nil {
 		return nil, err
@@ -83,7 +68,7 @@ func (r *HistoryRepo) FindByNodeID(ctx context.Context, nodeID string, limit int
 	for i, row := range rows {
 		entries[i] = model.NodeHistoryEntry{
 			ID:        row.ID,
-			Action:    historyActionFromIface(row.Action),
+			Action:    row.Action,
 			FieldName: row.FieldName,
 			OldValue:  row.OldValue,
 			NewValue:  row.NewValue,
@@ -94,15 +79,3 @@ func (r *HistoryRepo) FindByNodeID(ctx context.Context, nodeID string, limit int
 	return entries, nil
 }
 
-// historyActionFromIface converts the interface{} returned by sqlc for the
-// history_action enum column to model.HistoryAction.
-func historyActionFromIface(v interface{}) model.HistoryAction {
-	switch s := v.(type) {
-	case string:
-		return model.HistoryAction(s)
-	case []byte:
-		return model.HistoryAction(s)
-	default:
-		return model.HistoryAction(fmt.Sprintf("%v", v))
-	}
-}

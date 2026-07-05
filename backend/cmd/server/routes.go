@@ -25,6 +25,7 @@ type Handlers struct {
 	Event         *handler.EventHandler
 	Activity      *handler.ActivityHandler
 	Suggestion    *handler.SuggestionHandler
+	KnowledgeOS   *handler.KnowledgeOSHandler
 	Health        *handler.HealthHandler
 }
 
@@ -48,18 +49,26 @@ func RegisterRoutes(e *echo.Echo, h Handlers, sessionRepo *repository.SessionRep
 	// Auth routes (protected)
 	authed := e.Group("", middleware.Auth(sessionRepo, apiKeyRepo))
 
-	authed.GET("/api/auth/me", h.Auth.Me)
-	authed.POST("/api/auth/logout", h.Auth.Logout)
-	authed.POST("/api/auth/api-keys", h.APIKey.Create)
-	authed.GET("/api/auth/api-keys", h.APIKey.List)
-	authed.DELETE("/api/auth/api-keys/:keyId", h.APIKey.Delete)
+	// A project-scoped API key (api_keys.project_id != NULL) must not reach
+	// account / team routes — otherwise it could mint an unscoped key or
+	// modify unrelated teams (self-escalation). Cookie-auth calls have no
+	// scope set and pass through freely.
+	accountRoutes := authed.Group("", middleware.RejectScopedKey())
+
+	accountRoutes.GET("/api/auth/me", h.Auth.Me)
+	accountRoutes.POST("/api/auth/logout", h.Auth.Logout)
+	accountRoutes.POST("/api/auth/api-keys", h.APIKey.Create)
+	accountRoutes.GET("/api/auth/api-keys", h.APIKey.List)
+	accountRoutes.DELETE("/api/auth/api-keys/:keyId", h.APIKey.Delete)
 
 	// Teams (no team context needed)
-	authed.GET("/api/teams", h.Team.List)
-	authed.POST("/api/teams", h.Team.Create)
+	accountRoutes.GET("/api/teams", h.Team.List)
+	accountRoutes.POST("/api/teams", h.Team.Create)
 
-	// Team-scoped routes (TeamAccess resolves slug + role)
-	teamGroup := authed.Group("/api/teams/:teamSlug", middleware.TeamAccess(teamRepo))
+	// Team-scoped routes (TeamAccess resolves slug + role). Also gated on
+	// RejectScopedKey — a project-scoped key has no business managing teams
+	// or minting new team members.
+	teamGroup := accountRoutes.Group("/api/teams/:teamSlug", middleware.TeamAccess(teamRepo))
 
 	// Read — all roles
 	teamGroup.GET("", h.Team.GetBySlug)
@@ -138,8 +147,28 @@ func RegisterRoutes(e *echo.Echo, h Handlers, sessionRepo *repository.SessionRep
 	projectGroup.GET("/suggestions", h.Suggestion.List)
 	projectWrite.PATCH("/suggestions/:suggestionId", h.Suggestion.Decide)
 
-	// Summary
-	authed.GET("/api/projects/summary", h.Summary.Get)
+	// v0.6.0 Knowledge OS side tables: comments, attachments, project tags.
+	if h.KnowledgeOS != nil {
+		projectGroup.GET("/nodes/:nodeId/comments", h.KnowledgeOS.ListComments)
+		projectWrite.POST("/nodes/:nodeId/comments", h.KnowledgeOS.CreateComment)
+		projectWrite.PATCH("/comments/:commentId", h.KnowledgeOS.UpdateComment)
+		projectWrite.POST("/comments/:commentId/resolve", h.KnowledgeOS.ResolveComment)
+		projectWrite.DELETE("/comments/:commentId", h.KnowledgeOS.DeleteComment)
+
+		projectGroup.GET("/nodes/:nodeId/attachments", h.KnowledgeOS.ListAttachments)
+		projectWrite.POST("/nodes/:nodeId/attachments", h.KnowledgeOS.UploadAttachment)
+		projectGroup.GET("/attachments/:attachmentId", h.KnowledgeOS.DownloadAttachment)
+		projectWrite.DELETE("/attachments/:attachmentId", h.KnowledgeOS.DeleteAttachment)
+
+		projectGroup.GET("/tags", h.KnowledgeOS.ListTags)
+		projectWrite.PUT("/tags/:tag", h.KnowledgeOS.UpsertTag)
+		projectWrite.DELETE("/tags/:tag", h.KnowledgeOS.DeleteTag)
+	}
+
+	// Summary — cross-project cardinality is account-level state, not per-project.
+	// A project-scoped API key has no business reading it (info leak of the
+	// account's project list). accountRoutes runs RejectScopedKey().
+	accountRoutes.GET("/api/projects/summary", h.Summary.Get)
 
 	// Shared (public, no auth required) — stricter rate limit for unauthenticated access
 	shared := e.Group("/api/shared/:shareToken",

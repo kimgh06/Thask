@@ -203,9 +203,27 @@ func (h *NodeHandler) Import(c echo.Context) error {
 		err := tx.QueryRow(ctx,
 			`INSERT INTO nodes (project_id, type, title, description, status, tags, position_x, position_y, width, height, created_by)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-			 RETURNING id, project_id, type, title, description, status, assignee_id, tags, metadata, parent_id, position_x, position_y, width, height, created_at, updated_at`,
+			 RETURNING id, project_id, type, title, description, status,
+			           assignee_id, tags, metadata, parent_id,
+			           position_x, position_y, width, height,
+			           created_at, updated_at,
+			           description_source, description_authored_by,
+			           description_authored_at, description_agent_model,
+			           last_verified_at, last_verified_by, last_verified_commit,
+			           field_provenance, created_by,
+			           lifecycle_state, lifecycle_state_changed_at`,
 			projectID, item.Type, item.Title, item.Description, status, tags, item.PositionX, item.PositionY, item.Width, item.Height, createdBy,
-		).Scan(&node.ID, &node.ProjectID, &node.Type, &node.Title, &node.Description, &node.Status, &node.AssigneeID, &node.Tags, &node.Metadata, &node.ParentID, &node.PositionX, &node.PositionY, &node.Width, &node.Height, &node.CreatedAt, &node.UpdatedAt)
+		).Scan(
+			&node.ID, &node.ProjectID, &node.Type, &node.Title, &node.Description, &node.Status,
+			&node.AssigneeID, &node.Tags, &node.Metadata, &node.ParentID,
+			&node.PositionX, &node.PositionY, &node.Width, &node.Height,
+			&node.CreatedAt, &node.UpdatedAt,
+			&node.DescriptionSource, &node.DescriptionAuthoredBy,
+			&node.DescriptionAuthoredAt, &node.DescriptionAgentModel,
+			&node.LastVerifiedAt, &node.LastVerifiedBy, &node.LastVerifiedCommit,
+			&node.FieldProvenance, &node.CreatedBy,
+			&node.LifecycleState, &node.LifecycleStateChangedAt,
+		)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, dto.Err(fmt.Sprintf("Failed to create node: %s", item.Title)))
 		}
@@ -252,9 +270,13 @@ func (h *NodeHandler) Import(c echo.Context) error {
 		err := tx.QueryRow(ctx,
 			`INSERT INTO edges (project_id, source_id, target_id, edge_type, label)
 			 VALUES ($1, $2, $3, $4, $5)
-			 RETURNING id, project_id, source_id, target_id, edge_type, label, created_at`,
+			 RETURNING id, project_id, source_id, target_id, edge_type, label,
+			           source_port, target_port, waypoints, metadata, created_at`,
 			projectID, srcID, tgtID, edgeType, item.Label,
-		).Scan(&edge.ID, &edge.ProjectID, &edge.SourceID, &edge.TargetID, &edge.EdgeType, &edge.Label, &edge.CreatedAt)
+		).Scan(&edge.ID, &edge.ProjectID, &edge.SourceID, &edge.TargetID,
+			&edge.EdgeType, &edge.Label,
+			&edge.SourcePort, &edge.TargetPort, &edge.Waypoints, &edge.Metadata,
+			&edge.CreatedAt)
 		if err != nil {
 			slog.Warn("import: skipping edge", "source", srcID, "target", tgtID, "error", err)
 			continue // skip duplicate or invalid edges

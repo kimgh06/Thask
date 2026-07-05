@@ -42,7 +42,7 @@ RETURNING id, project_id, type, title, description, status, assignee_id, tags,
   description_source, description_authored_by, description_authored_at,
   description_agent_model,
   last_verified_at, last_verified_by, last_verified_commit, field_provenance,
-  created_by
+  created_by, lifecycle_state, lifecycle_state_changed_at
 `
 
 type NodeCreateParams struct {
@@ -111,6 +111,8 @@ func (q *Queries) NodeCreate(ctx context.Context, arg NodeCreateParams) (Node, e
 		&i.LastVerifiedCommit,
 		&i.FieldProvenance,
 		&i.CreatedBy,
+		&i.LifecycleState,
+		&i.LifecycleStateChangedAt,
 	)
 	return i, err
 }
@@ -153,6 +155,7 @@ SELECT n.id, n.project_id, n.type, n.title, n.description, n.status,
        n.description_authored_at, n.description_agent_model,
        n.last_verified_at, n.last_verified_by, n.last_verified_commit,
        n.field_provenance, n.created_by,
+       n.lifecycle_state, n.lifecycle_state_changed_at,
        COALESCE(u.email, '')::text AS creator_email
 FROM nodes n
 LEFT JOIN users u ON u.id = n.created_by
@@ -165,32 +168,34 @@ type NodeFindByIDParams struct {
 }
 
 type NodeFindByIDRow struct {
-	ID                    string          `db:"id" json:"id"`
-	ProjectID             string          `db:"project_id" json:"project_id"`
-	Type                  string          `db:"type" json:"type"`
-	Title                 string          `db:"title" json:"title"`
-	Description           *string         `db:"description" json:"description"`
-	Status                string          `db:"status" json:"status"`
-	AssigneeID            *string         `db:"assignee_id" json:"assignee_id"`
-	Tags                  []string        `db:"tags" json:"tags"`
-	Metadata              json.RawMessage `db:"metadata" json:"metadata"`
-	ParentID              *string         `db:"parent_id" json:"parent_id"`
-	PositionX             float64         `db:"position_x" json:"position_x"`
-	PositionY             float64         `db:"position_y" json:"position_y"`
-	Width                 *float64        `db:"width" json:"width"`
-	Height                *float64        `db:"height" json:"height"`
-	CreatedAt             time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt             time.Time       `db:"updated_at" json:"updated_at"`
-	DescriptionSource     string          `db:"description_source" json:"description_source"`
-	DescriptionAuthoredBy *string         `db:"description_authored_by" json:"description_authored_by"`
-	DescriptionAuthoredAt *time.Time      `db:"description_authored_at" json:"description_authored_at"`
-	DescriptionAgentModel *string         `db:"description_agent_model" json:"description_agent_model"`
-	LastVerifiedAt        *time.Time      `db:"last_verified_at" json:"last_verified_at"`
-	LastVerifiedBy        *string         `db:"last_verified_by" json:"last_verified_by"`
-	LastVerifiedCommit    *string         `db:"last_verified_commit" json:"last_verified_commit"`
-	FieldProvenance       json.RawMessage `db:"field_provenance" json:"field_provenance"`
-	CreatedBy             *string         `db:"created_by" json:"created_by"`
-	CreatorEmail          string          `db:"creator_email" json:"creator_email"`
+	ID                      string          `db:"id" json:"id"`
+	ProjectID               string          `db:"project_id" json:"project_id"`
+	Type                    string          `db:"type" json:"type"`
+	Title                   string          `db:"title" json:"title"`
+	Description             *string         `db:"description" json:"description"`
+	Status                  string          `db:"status" json:"status"`
+	AssigneeID              *string         `db:"assignee_id" json:"assignee_id"`
+	Tags                    []string        `db:"tags" json:"tags"`
+	Metadata                json.RawMessage `db:"metadata" json:"metadata"`
+	ParentID                *string         `db:"parent_id" json:"parent_id"`
+	PositionX               float64         `db:"position_x" json:"position_x"`
+	PositionY               float64         `db:"position_y" json:"position_y"`
+	Width                   *float64        `db:"width" json:"width"`
+	Height                  *float64        `db:"height" json:"height"`
+	CreatedAt               time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt               time.Time       `db:"updated_at" json:"updated_at"`
+	DescriptionSource       string          `db:"description_source" json:"description_source"`
+	DescriptionAuthoredBy   *string         `db:"description_authored_by" json:"description_authored_by"`
+	DescriptionAuthoredAt   *time.Time      `db:"description_authored_at" json:"description_authored_at"`
+	DescriptionAgentModel   *string         `db:"description_agent_model" json:"description_agent_model"`
+	LastVerifiedAt          *time.Time      `db:"last_verified_at" json:"last_verified_at"`
+	LastVerifiedBy          *string         `db:"last_verified_by" json:"last_verified_by"`
+	LastVerifiedCommit      *string         `db:"last_verified_commit" json:"last_verified_commit"`
+	FieldProvenance         json.RawMessage `db:"field_provenance" json:"field_provenance"`
+	CreatedBy               *string         `db:"created_by" json:"created_by"`
+	LifecycleState          *string         `db:"lifecycle_state" json:"lifecycle_state"`
+	LifecycleStateChangedAt *time.Time      `db:"lifecycle_state_changed_at" json:"lifecycle_state_changed_at"`
+	CreatorEmail            string          `db:"creator_email" json:"creator_email"`
 }
 
 func (q *Queries) NodeFindByID(ctx context.Context, arg NodeFindByIDParams) (NodeFindByIDRow, error) {
@@ -222,6 +227,8 @@ func (q *Queries) NodeFindByID(ctx context.Context, arg NodeFindByIDParams) (Nod
 		&i.LastVerifiedCommit,
 		&i.FieldProvenance,
 		&i.CreatedBy,
+		&i.LifecycleState,
+		&i.LifecycleStateChangedAt,
 		&i.CreatorEmail,
 	)
 	return i, err
@@ -236,6 +243,7 @@ SELECT n.id, n.project_id, n.type, n.title, n.description, n.status,
        n.description_authored_at, n.description_agent_model,
        n.last_verified_at, n.last_verified_by, n.last_verified_commit,
        n.field_provenance, n.created_by,
+       n.lifecycle_state, n.lifecycle_state_changed_at,
        COALESCE(u.email, '')::text AS creator_email
 FROM nodes n
 LEFT JOIN users u ON u.id = n.created_by
@@ -243,32 +251,34 @@ WHERE n.id = ANY($1::uuid[])
 `
 
 type NodeFindByIDsRow struct {
-	ID                    string          `db:"id" json:"id"`
-	ProjectID             string          `db:"project_id" json:"project_id"`
-	Type                  string          `db:"type" json:"type"`
-	Title                 string          `db:"title" json:"title"`
-	Description           *string         `db:"description" json:"description"`
-	Status                string          `db:"status" json:"status"`
-	AssigneeID            *string         `db:"assignee_id" json:"assignee_id"`
-	Tags                  []string        `db:"tags" json:"tags"`
-	Metadata              json.RawMessage `db:"metadata" json:"metadata"`
-	ParentID              *string         `db:"parent_id" json:"parent_id"`
-	PositionX             float64         `db:"position_x" json:"position_x"`
-	PositionY             float64         `db:"position_y" json:"position_y"`
-	Width                 *float64        `db:"width" json:"width"`
-	Height                *float64        `db:"height" json:"height"`
-	CreatedAt             time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt             time.Time       `db:"updated_at" json:"updated_at"`
-	DescriptionSource     string          `db:"description_source" json:"description_source"`
-	DescriptionAuthoredBy *string         `db:"description_authored_by" json:"description_authored_by"`
-	DescriptionAuthoredAt *time.Time      `db:"description_authored_at" json:"description_authored_at"`
-	DescriptionAgentModel *string         `db:"description_agent_model" json:"description_agent_model"`
-	LastVerifiedAt        *time.Time      `db:"last_verified_at" json:"last_verified_at"`
-	LastVerifiedBy        *string         `db:"last_verified_by" json:"last_verified_by"`
-	LastVerifiedCommit    *string         `db:"last_verified_commit" json:"last_verified_commit"`
-	FieldProvenance       json.RawMessage `db:"field_provenance" json:"field_provenance"`
-	CreatedBy             *string         `db:"created_by" json:"created_by"`
-	CreatorEmail          string          `db:"creator_email" json:"creator_email"`
+	ID                      string          `db:"id" json:"id"`
+	ProjectID               string          `db:"project_id" json:"project_id"`
+	Type                    string          `db:"type" json:"type"`
+	Title                   string          `db:"title" json:"title"`
+	Description             *string         `db:"description" json:"description"`
+	Status                  string          `db:"status" json:"status"`
+	AssigneeID              *string         `db:"assignee_id" json:"assignee_id"`
+	Tags                    []string        `db:"tags" json:"tags"`
+	Metadata                json.RawMessage `db:"metadata" json:"metadata"`
+	ParentID                *string         `db:"parent_id" json:"parent_id"`
+	PositionX               float64         `db:"position_x" json:"position_x"`
+	PositionY               float64         `db:"position_y" json:"position_y"`
+	Width                   *float64        `db:"width" json:"width"`
+	Height                  *float64        `db:"height" json:"height"`
+	CreatedAt               time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt               time.Time       `db:"updated_at" json:"updated_at"`
+	DescriptionSource       string          `db:"description_source" json:"description_source"`
+	DescriptionAuthoredBy   *string         `db:"description_authored_by" json:"description_authored_by"`
+	DescriptionAuthoredAt   *time.Time      `db:"description_authored_at" json:"description_authored_at"`
+	DescriptionAgentModel   *string         `db:"description_agent_model" json:"description_agent_model"`
+	LastVerifiedAt          *time.Time      `db:"last_verified_at" json:"last_verified_at"`
+	LastVerifiedBy          *string         `db:"last_verified_by" json:"last_verified_by"`
+	LastVerifiedCommit      *string         `db:"last_verified_commit" json:"last_verified_commit"`
+	FieldProvenance         json.RawMessage `db:"field_provenance" json:"field_provenance"`
+	CreatedBy               *string         `db:"created_by" json:"created_by"`
+	LifecycleState          *string         `db:"lifecycle_state" json:"lifecycle_state"`
+	LifecycleStateChangedAt *time.Time      `db:"lifecycle_state_changed_at" json:"lifecycle_state_changed_at"`
+	CreatorEmail            string          `db:"creator_email" json:"creator_email"`
 }
 
 func (q *Queries) NodeFindByIDs(ctx context.Context, nodeIds []string) ([]NodeFindByIDsRow, error) {
@@ -306,6 +316,8 @@ func (q *Queries) NodeFindByIDs(ctx context.Context, nodeIds []string) ([]NodeFi
 			&i.LastVerifiedCommit,
 			&i.FieldProvenance,
 			&i.CreatedBy,
+			&i.LifecycleState,
+			&i.LifecycleStateChangedAt,
 			&i.CreatorEmail,
 		); err != nil {
 			return nil, err
@@ -327,6 +339,7 @@ SELECT n.id, n.project_id, n.type, n.title, n.description, n.status,
        n.description_authored_at, n.description_agent_model,
        n.last_verified_at, n.last_verified_by, n.last_verified_commit,
        n.field_provenance, n.created_by,
+       n.lifecycle_state, n.lifecycle_state_changed_at,
        COALESCE(u.email, '')::text AS creator_email
 FROM nodes n
 LEFT JOIN users u ON u.id = n.created_by
@@ -334,32 +347,34 @@ WHERE n.project_id = $1
 `
 
 type NodeFindByProjectIDSimpleRow struct {
-	ID                    string          `db:"id" json:"id"`
-	ProjectID             string          `db:"project_id" json:"project_id"`
-	Type                  string          `db:"type" json:"type"`
-	Title                 string          `db:"title" json:"title"`
-	Description           *string         `db:"description" json:"description"`
-	Status                string          `db:"status" json:"status"`
-	AssigneeID            *string         `db:"assignee_id" json:"assignee_id"`
-	Tags                  []string        `db:"tags" json:"tags"`
-	Metadata              json.RawMessage `db:"metadata" json:"metadata"`
-	ParentID              *string         `db:"parent_id" json:"parent_id"`
-	PositionX             float64         `db:"position_x" json:"position_x"`
-	PositionY             float64         `db:"position_y" json:"position_y"`
-	Width                 *float64        `db:"width" json:"width"`
-	Height                *float64        `db:"height" json:"height"`
-	CreatedAt             time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt             time.Time       `db:"updated_at" json:"updated_at"`
-	DescriptionSource     string          `db:"description_source" json:"description_source"`
-	DescriptionAuthoredBy *string         `db:"description_authored_by" json:"description_authored_by"`
-	DescriptionAuthoredAt *time.Time      `db:"description_authored_at" json:"description_authored_at"`
-	DescriptionAgentModel *string         `db:"description_agent_model" json:"description_agent_model"`
-	LastVerifiedAt        *time.Time      `db:"last_verified_at" json:"last_verified_at"`
-	LastVerifiedBy        *string         `db:"last_verified_by" json:"last_verified_by"`
-	LastVerifiedCommit    *string         `db:"last_verified_commit" json:"last_verified_commit"`
-	FieldProvenance       json.RawMessage `db:"field_provenance" json:"field_provenance"`
-	CreatedBy             *string         `db:"created_by" json:"created_by"`
-	CreatorEmail          string          `db:"creator_email" json:"creator_email"`
+	ID                      string          `db:"id" json:"id"`
+	ProjectID               string          `db:"project_id" json:"project_id"`
+	Type                    string          `db:"type" json:"type"`
+	Title                   string          `db:"title" json:"title"`
+	Description             *string         `db:"description" json:"description"`
+	Status                  string          `db:"status" json:"status"`
+	AssigneeID              *string         `db:"assignee_id" json:"assignee_id"`
+	Tags                    []string        `db:"tags" json:"tags"`
+	Metadata                json.RawMessage `db:"metadata" json:"metadata"`
+	ParentID                *string         `db:"parent_id" json:"parent_id"`
+	PositionX               float64         `db:"position_x" json:"position_x"`
+	PositionY               float64         `db:"position_y" json:"position_y"`
+	Width                   *float64        `db:"width" json:"width"`
+	Height                  *float64        `db:"height" json:"height"`
+	CreatedAt               time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt               time.Time       `db:"updated_at" json:"updated_at"`
+	DescriptionSource       string          `db:"description_source" json:"description_source"`
+	DescriptionAuthoredBy   *string         `db:"description_authored_by" json:"description_authored_by"`
+	DescriptionAuthoredAt   *time.Time      `db:"description_authored_at" json:"description_authored_at"`
+	DescriptionAgentModel   *string         `db:"description_agent_model" json:"description_agent_model"`
+	LastVerifiedAt          *time.Time      `db:"last_verified_at" json:"last_verified_at"`
+	LastVerifiedBy          *string         `db:"last_verified_by" json:"last_verified_by"`
+	LastVerifiedCommit      *string         `db:"last_verified_commit" json:"last_verified_commit"`
+	FieldProvenance         json.RawMessage `db:"field_provenance" json:"field_provenance"`
+	CreatedBy               *string         `db:"created_by" json:"created_by"`
+	LifecycleState          *string         `db:"lifecycle_state" json:"lifecycle_state"`
+	LifecycleStateChangedAt *time.Time      `db:"lifecycle_state_changed_at" json:"lifecycle_state_changed_at"`
+	CreatorEmail            string          `db:"creator_email" json:"creator_email"`
 }
 
 // Used when no type/status filter is requested.
@@ -398,6 +413,8 @@ func (q *Queries) NodeFindByProjectIDSimple(ctx context.Context, projectID strin
 			&i.LastVerifiedCommit,
 			&i.FieldProvenance,
 			&i.CreatedBy,
+			&i.LifecycleState,
+			&i.LifecycleStateChangedAt,
 			&i.CreatorEmail,
 		); err != nil {
 			return nil, err
@@ -419,6 +436,7 @@ SELECT n.id, n.project_id, n.type, n.title, n.description, n.status,
        n.description_authored_at, n.description_agent_model,
        n.last_verified_at, n.last_verified_by, n.last_verified_commit,
        n.field_provenance, n.created_by,
+       n.lifecycle_state, n.lifecycle_state_changed_at,
        COALESCE(u.email, '')::text AS creator_email
 FROM nodes n
 LEFT JOIN users u ON u.id = n.created_by
@@ -431,32 +449,34 @@ type NodeFindChangedSinceParams struct {
 }
 
 type NodeFindChangedSinceRow struct {
-	ID                    string          `db:"id" json:"id"`
-	ProjectID             string          `db:"project_id" json:"project_id"`
-	Type                  string          `db:"type" json:"type"`
-	Title                 string          `db:"title" json:"title"`
-	Description           *string         `db:"description" json:"description"`
-	Status                string          `db:"status" json:"status"`
-	AssigneeID            *string         `db:"assignee_id" json:"assignee_id"`
-	Tags                  []string        `db:"tags" json:"tags"`
-	Metadata              json.RawMessage `db:"metadata" json:"metadata"`
-	ParentID              *string         `db:"parent_id" json:"parent_id"`
-	PositionX             float64         `db:"position_x" json:"position_x"`
-	PositionY             float64         `db:"position_y" json:"position_y"`
-	Width                 *float64        `db:"width" json:"width"`
-	Height                *float64        `db:"height" json:"height"`
-	CreatedAt             time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt             time.Time       `db:"updated_at" json:"updated_at"`
-	DescriptionSource     string          `db:"description_source" json:"description_source"`
-	DescriptionAuthoredBy *string         `db:"description_authored_by" json:"description_authored_by"`
-	DescriptionAuthoredAt *time.Time      `db:"description_authored_at" json:"description_authored_at"`
-	DescriptionAgentModel *string         `db:"description_agent_model" json:"description_agent_model"`
-	LastVerifiedAt        *time.Time      `db:"last_verified_at" json:"last_verified_at"`
-	LastVerifiedBy        *string         `db:"last_verified_by" json:"last_verified_by"`
-	LastVerifiedCommit    *string         `db:"last_verified_commit" json:"last_verified_commit"`
-	FieldProvenance       json.RawMessage `db:"field_provenance" json:"field_provenance"`
-	CreatedBy             *string         `db:"created_by" json:"created_by"`
-	CreatorEmail          string          `db:"creator_email" json:"creator_email"`
+	ID                      string          `db:"id" json:"id"`
+	ProjectID               string          `db:"project_id" json:"project_id"`
+	Type                    string          `db:"type" json:"type"`
+	Title                   string          `db:"title" json:"title"`
+	Description             *string         `db:"description" json:"description"`
+	Status                  string          `db:"status" json:"status"`
+	AssigneeID              *string         `db:"assignee_id" json:"assignee_id"`
+	Tags                    []string        `db:"tags" json:"tags"`
+	Metadata                json.RawMessage `db:"metadata" json:"metadata"`
+	ParentID                *string         `db:"parent_id" json:"parent_id"`
+	PositionX               float64         `db:"position_x" json:"position_x"`
+	PositionY               float64         `db:"position_y" json:"position_y"`
+	Width                   *float64        `db:"width" json:"width"`
+	Height                  *float64        `db:"height" json:"height"`
+	CreatedAt               time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt               time.Time       `db:"updated_at" json:"updated_at"`
+	DescriptionSource       string          `db:"description_source" json:"description_source"`
+	DescriptionAuthoredBy   *string         `db:"description_authored_by" json:"description_authored_by"`
+	DescriptionAuthoredAt   *time.Time      `db:"description_authored_at" json:"description_authored_at"`
+	DescriptionAgentModel   *string         `db:"description_agent_model" json:"description_agent_model"`
+	LastVerifiedAt          *time.Time      `db:"last_verified_at" json:"last_verified_at"`
+	LastVerifiedBy          *string         `db:"last_verified_by" json:"last_verified_by"`
+	LastVerifiedCommit      *string         `db:"last_verified_commit" json:"last_verified_commit"`
+	FieldProvenance         json.RawMessage `db:"field_provenance" json:"field_provenance"`
+	CreatedBy               *string         `db:"created_by" json:"created_by"`
+	LifecycleState          *string         `db:"lifecycle_state" json:"lifecycle_state"`
+	LifecycleStateChangedAt *time.Time      `db:"lifecycle_state_changed_at" json:"lifecycle_state_changed_at"`
+	CreatorEmail            string          `db:"creator_email" json:"creator_email"`
 }
 
 func (q *Queries) NodeFindChangedSince(ctx context.Context, arg NodeFindChangedSinceParams) ([]NodeFindChangedSinceRow, error) {
@@ -494,6 +514,8 @@ func (q *Queries) NodeFindChangedSince(ctx context.Context, arg NodeFindChangedS
 			&i.LastVerifiedCommit,
 			&i.FieldProvenance,
 			&i.CreatedBy,
+			&i.LifecycleState,
+			&i.LifecycleStateChangedAt,
 			&i.CreatorEmail,
 		); err != nil {
 			return nil, err
@@ -515,6 +537,7 @@ SELECT n.id, n.project_id, n.type, n.title, n.description, n.status,
        n.description_authored_at, n.description_agent_model,
        n.last_verified_at, n.last_verified_by, n.last_verified_commit,
        n.field_provenance, n.created_by,
+       n.lifecycle_state, n.lifecycle_state_changed_at,
        COALESCE(u.email, '')::text AS creator_email
 FROM nodes n
 LEFT JOIN users u ON u.id = n.created_by
@@ -522,32 +545,34 @@ WHERE n.project_id = $1 AND (n.status = 'FAIL' OR n.type = 'BUG')
 `
 
 type NodeFindFailOrBugRow struct {
-	ID                    string          `db:"id" json:"id"`
-	ProjectID             string          `db:"project_id" json:"project_id"`
-	Type                  string          `db:"type" json:"type"`
-	Title                 string          `db:"title" json:"title"`
-	Description           *string         `db:"description" json:"description"`
-	Status                string          `db:"status" json:"status"`
-	AssigneeID            *string         `db:"assignee_id" json:"assignee_id"`
-	Tags                  []string        `db:"tags" json:"tags"`
-	Metadata              json.RawMessage `db:"metadata" json:"metadata"`
-	ParentID              *string         `db:"parent_id" json:"parent_id"`
-	PositionX             float64         `db:"position_x" json:"position_x"`
-	PositionY             float64         `db:"position_y" json:"position_y"`
-	Width                 *float64        `db:"width" json:"width"`
-	Height                *float64        `db:"height" json:"height"`
-	CreatedAt             time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt             time.Time       `db:"updated_at" json:"updated_at"`
-	DescriptionSource     string          `db:"description_source" json:"description_source"`
-	DescriptionAuthoredBy *string         `db:"description_authored_by" json:"description_authored_by"`
-	DescriptionAuthoredAt *time.Time      `db:"description_authored_at" json:"description_authored_at"`
-	DescriptionAgentModel *string         `db:"description_agent_model" json:"description_agent_model"`
-	LastVerifiedAt        *time.Time      `db:"last_verified_at" json:"last_verified_at"`
-	LastVerifiedBy        *string         `db:"last_verified_by" json:"last_verified_by"`
-	LastVerifiedCommit    *string         `db:"last_verified_commit" json:"last_verified_commit"`
-	FieldProvenance       json.RawMessage `db:"field_provenance" json:"field_provenance"`
-	CreatedBy             *string         `db:"created_by" json:"created_by"`
-	CreatorEmail          string          `db:"creator_email" json:"creator_email"`
+	ID                      string          `db:"id" json:"id"`
+	ProjectID               string          `db:"project_id" json:"project_id"`
+	Type                    string          `db:"type" json:"type"`
+	Title                   string          `db:"title" json:"title"`
+	Description             *string         `db:"description" json:"description"`
+	Status                  string          `db:"status" json:"status"`
+	AssigneeID              *string         `db:"assignee_id" json:"assignee_id"`
+	Tags                    []string        `db:"tags" json:"tags"`
+	Metadata                json.RawMessage `db:"metadata" json:"metadata"`
+	ParentID                *string         `db:"parent_id" json:"parent_id"`
+	PositionX               float64         `db:"position_x" json:"position_x"`
+	PositionY               float64         `db:"position_y" json:"position_y"`
+	Width                   *float64        `db:"width" json:"width"`
+	Height                  *float64        `db:"height" json:"height"`
+	CreatedAt               time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt               time.Time       `db:"updated_at" json:"updated_at"`
+	DescriptionSource       string          `db:"description_source" json:"description_source"`
+	DescriptionAuthoredBy   *string         `db:"description_authored_by" json:"description_authored_by"`
+	DescriptionAuthoredAt   *time.Time      `db:"description_authored_at" json:"description_authored_at"`
+	DescriptionAgentModel   *string         `db:"description_agent_model" json:"description_agent_model"`
+	LastVerifiedAt          *time.Time      `db:"last_verified_at" json:"last_verified_at"`
+	LastVerifiedBy          *string         `db:"last_verified_by" json:"last_verified_by"`
+	LastVerifiedCommit      *string         `db:"last_verified_commit" json:"last_verified_commit"`
+	FieldProvenance         json.RawMessage `db:"field_provenance" json:"field_provenance"`
+	CreatedBy               *string         `db:"created_by" json:"created_by"`
+	LifecycleState          *string         `db:"lifecycle_state" json:"lifecycle_state"`
+	LifecycleStateChangedAt *time.Time      `db:"lifecycle_state_changed_at" json:"lifecycle_state_changed_at"`
+	CreatorEmail            string          `db:"creator_email" json:"creator_email"`
 }
 
 func (q *Queries) NodeFindFailOrBug(ctx context.Context, projectID string) ([]NodeFindFailOrBugRow, error) {
@@ -585,6 +610,8 @@ func (q *Queries) NodeFindFailOrBug(ctx context.Context, projectID string) ([]No
 			&i.LastVerifiedCommit,
 			&i.FieldProvenance,
 			&i.CreatedBy,
+			&i.LifecycleState,
+			&i.LifecycleStateChangedAt,
 			&i.CreatorEmail,
 		); err != nil {
 			return nil, err

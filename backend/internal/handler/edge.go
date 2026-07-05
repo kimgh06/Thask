@@ -139,6 +139,9 @@ func (h *EdgeHandler) Update(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, dto.Err("Invalid request body"))
 	}
+	if err := c.Validate(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.Err(err.Error()))
+	}
 
 	ctx := c.Request().Context()
 	projectID := mw.ResolveProjectID(c)
@@ -162,17 +165,32 @@ func (h *EdgeHandler) Update(c echo.Context) error {
 		edgeType = &et
 	}
 
-	edge, err := h.edgeRepo.Update(ctx, edgeID, edgeType, req.Label)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update edge"))
+	// Cap raw JSONB payloads at 16 KiB each. Without a bound any project
+	// member can PATCH megabytes of nested JSON into edges.metadata /
+	// waypoints and OOM every subsequent list scan (v0.6.0 review P2).
+	const maxJSONBytes = 16 * 1024
+	if len(req.Metadata) > maxJSONBytes || len(req.Waypoints) > maxJSONBytes {
+		return c.JSON(http.StatusRequestEntityTooLarge, dto.Err("metadata/waypoints payload exceeds 16 KiB"))
 	}
 
-	// Update routing if provided
-	if req.SourcePort != nil || req.TargetPort != nil || req.Waypoints != nil {
-		edge, err = h.edgeRepo.UpdateRouting(ctx, edgeID, req.SourcePort, req.TargetPort, req.Waypoints)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update edge routing"))
-		}
+	// Waypoints/Metadata are json.RawMessage so we can distinguish JSON `null`
+	// (explicit clear) from an omitted field (leave the row untouched). See
+	// UpdateEdgeRequest comment. Metadata NOT NULL → clamp null to `{}`;
+	// waypoints is nullable but callers expect array shape → clamp to `[]`.
+	waypoints := req.Waypoints
+	if waypoints != nil && string(waypoints) == "null" {
+		waypoints = json.RawMessage(`[]`)
+	}
+	metadata := req.Metadata
+	if metadata != nil && string(metadata) == "null" {
+		metadata = json.RawMessage(`{}`)
+	}
+
+	// Single-statement update — base fields + routing + metadata all through
+	// COALESCE, so a partial failure can't half-apply the patch.
+	edge, err := h.edgeRepo.UpdateAll(ctx, edgeID, edgeType, req.Label, req.SourcePort, req.TargetPort, waypoints, metadata)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, dto.Err("Failed to update edge"))
 	}
 
 	h.audit.Log(c, audit.Event{

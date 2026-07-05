@@ -6,12 +6,12 @@
 -- ============================================================================
 
 -- name: APIKeyCreate :one
-INSERT INTO api_keys (user_id, name, key_prefix, key_hash, kind, permissions, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, user_id, name, key_prefix, kind, permissions, last_used_at, expires_at, created_at;
+INSERT INTO api_keys (user_id, name, key_prefix, key_hash, kind, permissions, expires_at, project_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, user_id, name, key_prefix, kind, permissions, project_id, last_used_at, expires_at, created_at;
 
 -- name: APIKeyFindByUserID :many
-SELECT id, user_id, name, key_prefix, kind, permissions, last_used_at, expires_at, created_at
+SELECT id, user_id, name, key_prefix, kind, permissions, project_id, last_used_at, expires_at, created_at
 FROM api_keys
 WHERE user_id = $1
 ORDER BY created_at DESC;

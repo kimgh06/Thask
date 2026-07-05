@@ -52,6 +52,9 @@ func main() {
 	auditRepo := repository.NewAuditRepo(pool)
 	auditLogger := audit.NewLogger(auditRepo)
 	suggestionRepo := repository.NewSuggestionRepo(pool)
+	commentRepo := repository.NewCommentRepo(pool)
+	attachmentRepo := repository.NewAttachmentRepo(pool)
+	tagRepo := repository.NewProjectTagRepo(pool)
 
 	// Event Hub
 	hub := service.NewHub()
@@ -87,10 +90,11 @@ func main() {
 		Impact:        handler.NewImpactHandler(nodeRepo, edgeRepo),
 		GraphAnalysis: handler.NewGraphAnalysisHandler(edgeRepo),
 		Summary:       handler.NewSummaryHandler(teamRepo, projectRepo),
-		APIKey:        handler.NewAPIKeyHandler(apiKeyRepo),
+		APIKey:        handler.NewAPIKeyHandler(apiKeyRepo, projectRepo, teamRepo, pmRepo),
 		Event:         handler.NewEventHandler(hub),
 		Activity:      handler.NewActivityHandler(historyRepo),
 		Suggestion:    handler.NewSuggestionHandler(suggestionRepo, nodeRepo, auditLogger),
+		KnowledgeOS:   handler.NewKnowledgeOSHandler(nodeRepo, commentRepo, attachmentRepo, tagRepo, auditLogger, cfg.AttachmentDir, cfg.AttachmentMaxBytes),
 		Health:        handler.NewHealthHandler(pool),
 	}
 

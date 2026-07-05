@@ -2,7 +2,7 @@ version: "2"
 sql:
   - engine: "postgresql"
     queries: "queries/"
-    schema: "../migrations/"
+    schema: "schema.sql"
     gen:
       go:
         package: "dbgen"
@@ -71,6 +71,9 @@ sql:
             go_type:
               type: "string"
           - db_type: "project_role"
+            go_type:
+              type: "string"
+          - db_type: "history_action"
             go_type:
               type: "string"
 

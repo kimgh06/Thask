@@ -23,6 +23,12 @@ const (
 	// V1 API key context
 	ContextAPIKeyID = "api_key_id"
 
+	// ContextAPIKeyProjectID pins the request to a single project when the
+	// authenticating API key has project_id set (v0.6.0 B-4). Empty when
+	// cookie-authenticated or when the key is user-scoped. Enforced by
+	// ProjectAccess middleware — mismatched projectId path params get 403.
+	ContextAPIKeyProjectID = "api_key_project_id"
+
 	// Provenance / audit context (migration 006~008). Populated by Auth().
 	ContextActorKind      = "actor_kind"
 	ContextPermissions    = "permissions"
@@ -84,6 +90,9 @@ func Auth(sessionRepo *repository.SessionRepo, apiKeyRepo ...*repository.APIKeyR
 						c.Set(ContextAPIKeyID, apiKey.ID)
 						c.Set(ContextActorKind, string(apiKey.Kind))
 						c.Set(ContextPermissions, apiKey.Permissions)
+						if apiKey.ProjectID != nil {
+							c.Set(ContextAPIKeyProjectID, *apiKey.ProjectID)
+						}
 						return next(c)
 					}
 					return c.JSON(http.StatusUnauthorized, dto.Err("Invalid API key"))

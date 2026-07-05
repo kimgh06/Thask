@@ -33,13 +33,17 @@ func (r TeamRole) AtLeast(min TeamRole) bool {
 type NodeType string
 
 const (
-	NodeTypeFlow   NodeType = "FLOW"
-	NodeTypeBranch NodeType = "BRANCH"
-	NodeTypeTask   NodeType = "TASK"
-	NodeTypeBug    NodeType = "BUG"
-	NodeTypeAPI    NodeType = "API"
-	NodeTypeUI     NodeType = "UI"
-	NodeTypeGroup  NodeType = "GROUP"
+	NodeTypeFlow        NodeType = "FLOW"
+	NodeTypeBranch      NodeType = "BRANCH"
+	NodeTypeTask        NodeType = "TASK"
+	NodeTypeBug         NodeType = "BUG"
+	NodeTypeAPI         NodeType = "API"
+	NodeTypeUI          NodeType = "UI"
+	NodeTypeGroup       NodeType = "GROUP"
+	NodeTypeRequirement NodeType = "REQUIREMENT"
+	NodeTypeDecision    NodeType = "DECISION"
+	NodeTypeExperiment  NodeType = "EXPERIMENT"
+	NodeTypePerson      NodeType = "PERSON"
 )
 
 type NodeStatus string
@@ -59,6 +63,19 @@ const (
 	EdgeTypeRelated     EdgeType = "related"
 	EdgeTypeParentChild EdgeType = "parent_child"
 	EdgeTypeTriggers    EdgeType = "triggers"
+
+	// v0.6.0 Knowledge OS edges. `realizes`/`conflicts` link REQUIREMENTs,
+	// `drives`/`supersedes` link DECISIONs, `tests`/`produced` link EXPERIMENTs,
+	// and `owns`/`decided`/`reported` link PERSONs to work/decisions/bugs.
+	EdgeTypeRealizes   EdgeType = "realizes"
+	EdgeTypeConflicts  EdgeType = "conflicts"
+	EdgeTypeDrives     EdgeType = "drives"
+	EdgeTypeSupersedes EdgeType = "supersedes"
+	EdgeTypeTests      EdgeType = "tests"
+	EdgeTypeProduced   EdgeType = "produced"
+	EdgeTypeOwns       EdgeType = "owns"
+	EdgeTypeDecided    EdgeType = "decided"
+	EdgeTypeReported   EdgeType = "reported"
 )
 
 type ProjectRole string

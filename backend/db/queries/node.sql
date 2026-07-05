@@ -19,7 +19,7 @@ RETURNING id, project_id, type, title, description, status, assignee_id, tags,
   description_source, description_authored_by, description_authored_at,
   description_agent_model,
   last_verified_at, last_verified_by, last_verified_commit, field_provenance,
-  created_by;
+  created_by, lifecycle_state, lifecycle_state_changed_at;
 
 -- name: NodeFindByID :one
 SELECT n.id, n.project_id, n.type, n.title, n.description, n.status,
@@ -30,6 +30,7 @@ SELECT n.id, n.project_id, n.type, n.title, n.description, n.status,
        n.description_authored_at, n.description_agent_model,
        n.last_verified_at, n.last_verified_by, n.last_verified_commit,
        n.field_provenance, n.created_by,
+       n.lifecycle_state, n.lifecycle_state_changed_at,
        COALESCE(u.email, '')::text AS creator_email
 FROM nodes n
 LEFT JOIN users u ON u.id = n.created_by
@@ -44,6 +45,7 @@ SELECT n.id, n.project_id, n.type, n.title, n.description, n.status,
        n.description_authored_at, n.description_agent_model,
        n.last_verified_at, n.last_verified_by, n.last_verified_commit,
        n.field_provenance, n.created_by,
+       n.lifecycle_state, n.lifecycle_state_changed_at,
        COALESCE(u.email, '')::text AS creator_email
 FROM nodes n
 LEFT JOIN users u ON u.id = n.created_by
@@ -58,6 +60,7 @@ SELECT n.id, n.project_id, n.type, n.title, n.description, n.status,
        n.description_authored_at, n.description_agent_model,
        n.last_verified_at, n.last_verified_by, n.last_verified_commit,
        n.field_provenance, n.created_by,
+       n.lifecycle_state, n.lifecycle_state_changed_at,
        COALESCE(u.email, '')::text AS creator_email
 FROM nodes n
 LEFT JOIN users u ON u.id = n.created_by
@@ -72,6 +75,7 @@ SELECT n.id, n.project_id, n.type, n.title, n.description, n.status,
        n.description_authored_at, n.description_agent_model,
        n.last_verified_at, n.last_verified_by, n.last_verified_commit,
        n.field_provenance, n.created_by,
+       n.lifecycle_state, n.lifecycle_state_changed_at,
        COALESCE(u.email, '')::text AS creator_email
 FROM nodes n
 LEFT JOIN users u ON u.id = n.created_by
@@ -87,6 +91,7 @@ SELECT n.id, n.project_id, n.type, n.title, n.description, n.status,
        n.description_authored_at, n.description_agent_model,
        n.last_verified_at, n.last_verified_by, n.last_verified_commit,
        n.field_provenance, n.created_by,
+       n.lifecycle_state, n.lifecycle_state_changed_at,
        COALESCE(u.email, '')::text AS creator_email
 FROM nodes n
 LEFT JOIN users u ON u.id = n.created_by

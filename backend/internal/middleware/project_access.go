@@ -15,6 +15,13 @@ func ProjectAccess(projectRepo *repository.ProjectRepo, teamRepo *repository.Tea
 			userID := GetUserID(c)
 			ctx := c.Request().Context()
 
+			// v0.6.0 B-4: enforce API key project scope. If the key was created
+			// with project_id set, refuse cross-project requests before we even
+			// touch the DB. Empty scope (cookie auth / legacy key) skips the check.
+			if scope, _ := c.Get(ContextAPIKeyProjectID).(string); scope != "" && scope != projectID {
+				return c.JSON(http.StatusForbidden, dto.Err("API key scoped to a different project"))
+			}
+
 			project, err := projectRepo.FindByID(ctx, projectID)
 			if err != nil {
 				return c.JSON(http.StatusNotFound, dto.Err("Project not found"))

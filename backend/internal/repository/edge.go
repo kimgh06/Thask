@@ -25,11 +25,13 @@ func NewEdgeRepo(pool *pgxpool.Pool) *EdgeRepo {
 func (r *EdgeRepo) Pool() *pgxpool.Pool { return r.pool }
 
 // ============================================================================
-// model.Edge converters (per sqlc-generated row type).
+// model.Edge converters. All static queries now return the shared dbgen.Edge
+// row (v0.6.0: edges.metadata forced RETURNING to cover every column, which
+// makes sqlc collapse the per-query row structs into the model type).
 // waypoints is []byte (JSONB) in dbgen rows; model.Edge uses `any`.
 // ============================================================================
 
-func edgeFromCreateRow(row dbgen.EdgeCreateRow) *model.Edge {
+func edgeFromRow(row dbgen.Edge) *model.Edge {
 	return &model.Edge{
 		ID:         row.ID,
 		ProjectID:  row.ProjectID,
@@ -40,62 +42,18 @@ func edgeFromCreateRow(row dbgen.EdgeCreateRow) *model.Edge {
 		SourcePort: row.SourcePort,
 		TargetPort: row.TargetPort,
 		Waypoints:  json.RawMessage(row.Waypoints),
-		CreatedAt:  row.CreatedAt,
-	}
-}
-
-func edgeFromCreateWithRoutingRow(row dbgen.EdgeCreateWithRoutingRow) *model.Edge {
-	return &model.Edge{
-		ID:         row.ID,
-		ProjectID:  row.ProjectID,
-		SourceID:   row.SourceID,
-		TargetID:   row.TargetID,
-		EdgeType:   model.EdgeType(row.EdgeType),
-		Label:      row.Label,
-		SourcePort: row.SourcePort,
-		TargetPort: row.TargetPort,
-		Waypoints:  json.RawMessage(row.Waypoints),
-		CreatedAt:  row.CreatedAt,
-	}
-}
-
-func edgeFromFindByProjectIDRow(row dbgen.EdgeFindByProjectIDRow) *model.Edge {
-	return &model.Edge{
-		ID:         row.ID,
-		ProjectID:  row.ProjectID,
-		SourceID:   row.SourceID,
-		TargetID:   row.TargetID,
-		EdgeType:   model.EdgeType(row.EdgeType),
-		Label:      row.Label,
-		SourcePort: row.SourcePort,
-		TargetPort: row.TargetPort,
-		Waypoints:  json.RawMessage(row.Waypoints),
-		CreatedAt:  row.CreatedAt,
-	}
-}
-
-func edgeFromFindConnectedRow(row dbgen.EdgeFindConnectedRow) *model.Edge {
-	return &model.Edge{
-		ID:         row.ID,
-		ProjectID:  row.ProjectID,
-		SourceID:   row.SourceID,
-		TargetID:   row.TargetID,
-		EdgeType:   model.EdgeType(row.EdgeType),
-		Label:      row.Label,
-		SourcePort: row.SourcePort,
-		TargetPort: row.TargetPort,
-		Waypoints:  json.RawMessage(row.Waypoints),
+		Metadata:   row.Metadata,
 		CreatedAt:  row.CreatedAt,
 	}
 }
 
 // edgeCols is kept for the dynamic FindByProjectIDPaginated raw query.
-const edgeCols = `id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, created_at`
+const edgeCols = `id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, metadata, created_at`
 
 // scanEdge is kept for the dynamic raw-pgx query paths.
 func scanEdge(row interface{ Scan(...any) error }) (*model.Edge, error) {
 	var e model.Edge
-	err := row.Scan(&e.ID, &e.ProjectID, &e.SourceID, &e.TargetID, &e.EdgeType, &e.Label, &e.SourcePort, &e.TargetPort, &e.Waypoints, &e.CreatedAt)
+	err := row.Scan(&e.ID, &e.ProjectID, &e.SourceID, &e.TargetID, &e.EdgeType, &e.Label, &e.SourcePort, &e.TargetPort, &e.Waypoints, &e.Metadata, &e.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +75,7 @@ func (r *EdgeRepo) Create(ctx context.Context, projectID, sourceID, targetID str
 	if err != nil {
 		return nil, err
 	}
-	return edgeFromCreateRow(row), nil
+	return edgeFromRow(row), nil
 }
 
 func (r *EdgeRepo) CreateWithRouting(ctx context.Context, projectID, sourceID, targetID string, edgeType model.EdgeType, label *string, sourcePort, targetPort string, waypoints any) (*model.Edge, error) {
@@ -150,7 +108,7 @@ func (r *EdgeRepo) CreateWithRouting(ctx context.Context, projectID, sourceID, t
 	if err != nil {
 		return nil, err
 	}
-	return edgeFromCreateWithRoutingRow(row), nil
+	return edgeFromRow(row), nil
 }
 
 func (r *EdgeRepo) FindByProjectID(ctx context.Context, projectID string) ([]model.Edge, error) {
@@ -160,7 +118,7 @@ func (r *EdgeRepo) FindByProjectID(ctx context.Context, projectID string) ([]mod
 	}
 	out := make([]model.Edge, len(rows))
 	for i, row := range rows {
-		out[i] = *edgeFromFindByProjectIDRow(row)
+		out[i] = *edgeFromRow(row)
 	}
 	return out, nil
 }
@@ -172,7 +130,7 @@ func (r *EdgeRepo) FindConnected(ctx context.Context, nodeID string) ([]model.Ed
 	}
 	out := make([]model.Edge, len(rows))
 	for i, row := range rows {
-		out[i] = *edgeFromFindConnectedRow(row)
+		out[i] = *edgeFromRow(row)
 	}
 	return out, nil
 }
@@ -203,6 +161,41 @@ func (r *EdgeRepo) UpdateRouting(ctx context.Context, id string, sourcePort, tar
 		 WHERE id = $4
 		 RETURNING `+edgeCols,
 		sourcePort, targetPort, waypoints, id,
+	)
+	return scanEdge(row)
+}
+
+// UpdateAll consolidates the base / routing / metadata patch surface into a
+// single UPDATE. Each *param is nil to mean "leave as-is" (COALESCE keeps the
+// old value); non-nil means "replace". Runs in one round-trip so a partial
+// mid-update failure can't leave the row in a half-changed state — the
+// previous 3-statement handler path could commit label but drop metadata if
+// the second statement errored (v0.6.0 review CVE-KOS-009).
+//
+// waypoints/metadata are json.RawMessage — the handler must translate JSON
+// `null` into `[]` / `{}` (metadata is NOT NULL) before calling. Passing nil
+// here means "field omitted, don't touch"; passing raw bytes means "replace
+// with this".
+func (r *EdgeRepo) UpdateAll(
+	ctx context.Context,
+	id string,
+	edgeType *model.EdgeType,
+	label *string,
+	sourcePort, targetPort *string,
+	waypoints json.RawMessage,
+	metadata json.RawMessage,
+) (*model.Edge, error) {
+	row := r.pool.QueryRow(ctx,
+		`UPDATE edges SET
+		   edge_type   = COALESCE($1, edge_type),
+		   label       = COALESCE($2, label),
+		   source_port = COALESCE($3, source_port),
+		   target_port = COALESCE($4, target_port),
+		   waypoints   = COALESCE($5, waypoints),
+		   metadata    = COALESCE($6, metadata)
+		 WHERE id = $7
+		 RETURNING `+edgeCols,
+		edgeType, label, sourcePort, targetPort, []byte(waypoints), []byte(metadata), id,
 	)
 	return scanEdge(row)
 }

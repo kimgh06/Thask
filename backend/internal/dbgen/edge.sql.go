@@ -7,14 +7,13 @@ package dbgen
 
 import (
 	"context"
-	"time"
 )
 
 const edgeCreate = `-- name: EdgeCreate :one
 
 INSERT INTO edges (project_id, source_id, target_id, edge_type, label)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, created_at
+RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, metadata, created_at
 `
 
 type EdgeCreateParams struct {
@@ -25,26 +24,13 @@ type EdgeCreateParams struct {
 	Label     *string `db:"label" json:"label"`
 }
 
-type EdgeCreateRow struct {
-	ID         string    `db:"id" json:"id"`
-	ProjectID  string    `db:"project_id" json:"project_id"`
-	SourceID   string    `db:"source_id" json:"source_id"`
-	TargetID   string    `db:"target_id" json:"target_id"`
-	EdgeType   string    `db:"edge_type" json:"edge_type"`
-	Label      *string   `db:"label" json:"label"`
-	SourcePort string    `db:"source_port" json:"source_port"`
-	TargetPort string    `db:"target_port" json:"target_port"`
-	Waypoints  []byte    `db:"waypoints" json:"waypoints"`
-	CreatedAt  time.Time `db:"created_at" json:"created_at"`
-}
-
 // ============================================================================
 // Edge static queries (sqlc-generated)
 //
 // Dynamic queries (FindByProjectIDPaginated with cursor, BatchUpdateWaypoints
 // loop) stay as hand-written pgx in internal/repository/edge.go.
 // ============================================================================
-func (q *Queries) EdgeCreate(ctx context.Context, arg EdgeCreateParams) (EdgeCreateRow, error) {
+func (q *Queries) EdgeCreate(ctx context.Context, arg EdgeCreateParams) (Edge, error) {
 	row := q.db.QueryRow(ctx, edgeCreate,
 		arg.ProjectID,
 		arg.SourceID,
@@ -52,7 +38,7 @@ func (q *Queries) EdgeCreate(ctx context.Context, arg EdgeCreateParams) (EdgeCre
 		arg.EdgeType,
 		arg.Label,
 	)
-	var i EdgeCreateRow
+	var i Edge
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
@@ -63,6 +49,7 @@ func (q *Queries) EdgeCreate(ctx context.Context, arg EdgeCreateParams) (EdgeCre
 		&i.SourcePort,
 		&i.TargetPort,
 		&i.Waypoints,
+		&i.Metadata,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -71,7 +58,7 @@ func (q *Queries) EdgeCreate(ctx context.Context, arg EdgeCreateParams) (EdgeCre
 const edgeCreateWithRouting = `-- name: EdgeCreateWithRouting :one
 INSERT INTO edges (project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, created_at
+RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, metadata, created_at
 `
 
 type EdgeCreateWithRoutingParams struct {
@@ -85,20 +72,7 @@ type EdgeCreateWithRoutingParams struct {
 	Waypoints  []byte  `db:"waypoints" json:"waypoints"`
 }
 
-type EdgeCreateWithRoutingRow struct {
-	ID         string    `db:"id" json:"id"`
-	ProjectID  string    `db:"project_id" json:"project_id"`
-	SourceID   string    `db:"source_id" json:"source_id"`
-	TargetID   string    `db:"target_id" json:"target_id"`
-	EdgeType   string    `db:"edge_type" json:"edge_type"`
-	Label      *string   `db:"label" json:"label"`
-	SourcePort string    `db:"source_port" json:"source_port"`
-	TargetPort string    `db:"target_port" json:"target_port"`
-	Waypoints  []byte    `db:"waypoints" json:"waypoints"`
-	CreatedAt  time.Time `db:"created_at" json:"created_at"`
-}
-
-func (q *Queries) EdgeCreateWithRouting(ctx context.Context, arg EdgeCreateWithRoutingParams) (EdgeCreateWithRoutingRow, error) {
+func (q *Queries) EdgeCreateWithRouting(ctx context.Context, arg EdgeCreateWithRoutingParams) (Edge, error) {
 	row := q.db.QueryRow(ctx, edgeCreateWithRouting,
 		arg.ProjectID,
 		arg.SourceID,
@@ -109,7 +83,7 @@ func (q *Queries) EdgeCreateWithRouting(ctx context.Context, arg EdgeCreateWithR
 		arg.TargetPort,
 		arg.Waypoints,
 	)
-	var i EdgeCreateWithRoutingRow
+	var i Edge
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
@@ -120,6 +94,7 @@ func (q *Queries) EdgeCreateWithRouting(ctx context.Context, arg EdgeCreateWithR
 		&i.SourcePort,
 		&i.TargetPort,
 		&i.Waypoints,
+		&i.Metadata,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -152,33 +127,20 @@ func (q *Queries) EdgeDeleteScoped(ctx context.Context, arg EdgeDeleteScopedPara
 }
 
 const edgeFindByProjectID = `-- name: EdgeFindByProjectID :many
-SELECT id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, created_at
+SELECT id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, metadata, created_at
 FROM edges
 WHERE project_id = $1
 `
 
-type EdgeFindByProjectIDRow struct {
-	ID         string    `db:"id" json:"id"`
-	ProjectID  string    `db:"project_id" json:"project_id"`
-	SourceID   string    `db:"source_id" json:"source_id"`
-	TargetID   string    `db:"target_id" json:"target_id"`
-	EdgeType   string    `db:"edge_type" json:"edge_type"`
-	Label      *string   `db:"label" json:"label"`
-	SourcePort string    `db:"source_port" json:"source_port"`
-	TargetPort string    `db:"target_port" json:"target_port"`
-	Waypoints  []byte    `db:"waypoints" json:"waypoints"`
-	CreatedAt  time.Time `db:"created_at" json:"created_at"`
-}
-
-func (q *Queries) EdgeFindByProjectID(ctx context.Context, projectID string) ([]EdgeFindByProjectIDRow, error) {
+func (q *Queries) EdgeFindByProjectID(ctx context.Context, projectID string) ([]Edge, error) {
 	rows, err := q.db.Query(ctx, edgeFindByProjectID, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []EdgeFindByProjectIDRow{}
+	items := []Edge{}
 	for rows.Next() {
-		var i EdgeFindByProjectIDRow
+		var i Edge
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProjectID,
@@ -189,6 +151,7 @@ func (q *Queries) EdgeFindByProjectID(ctx context.Context, projectID string) ([]
 			&i.SourcePort,
 			&i.TargetPort,
 			&i.Waypoints,
+			&i.Metadata,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -202,33 +165,20 @@ func (q *Queries) EdgeFindByProjectID(ctx context.Context, projectID string) ([]
 }
 
 const edgeFindConnected = `-- name: EdgeFindConnected :many
-SELECT id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, created_at
+SELECT id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, metadata, created_at
 FROM edges
 WHERE source_id = $1 OR target_id = $1
 `
 
-type EdgeFindConnectedRow struct {
-	ID         string    `db:"id" json:"id"`
-	ProjectID  string    `db:"project_id" json:"project_id"`
-	SourceID   string    `db:"source_id" json:"source_id"`
-	TargetID   string    `db:"target_id" json:"target_id"`
-	EdgeType   string    `db:"edge_type" json:"edge_type"`
-	Label      *string   `db:"label" json:"label"`
-	SourcePort string    `db:"source_port" json:"source_port"`
-	TargetPort string    `db:"target_port" json:"target_port"`
-	Waypoints  []byte    `db:"waypoints" json:"waypoints"`
-	CreatedAt  time.Time `db:"created_at" json:"created_at"`
-}
-
-func (q *Queries) EdgeFindConnected(ctx context.Context, sourceID string) ([]EdgeFindConnectedRow, error) {
+func (q *Queries) EdgeFindConnected(ctx context.Context, sourceID string) ([]Edge, error) {
 	rows, err := q.db.Query(ctx, edgeFindConnected, sourceID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []EdgeFindConnectedRow{}
+	items := []Edge{}
 	for rows.Next() {
-		var i EdgeFindConnectedRow
+		var i Edge
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProjectID,
@@ -239,6 +189,7 @@ func (q *Queries) EdgeFindConnected(ctx context.Context, sourceID string) ([]Edg
 			&i.SourcePort,
 			&i.TargetPort,
 			&i.Waypoints,
+			&i.Metadata,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -300,7 +251,7 @@ UPDATE edges SET
   edge_type = COALESCE($1, edge_type),
   label = COALESCE($2, label)
 WHERE id = $3
-RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, created_at
+RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, metadata, created_at
 `
 
 type EdgeUpdateParams struct {
@@ -309,22 +260,9 @@ type EdgeUpdateParams struct {
 	ID       string  `db:"id" json:"id"`
 }
 
-type EdgeUpdateRow struct {
-	ID         string    `db:"id" json:"id"`
-	ProjectID  string    `db:"project_id" json:"project_id"`
-	SourceID   string    `db:"source_id" json:"source_id"`
-	TargetID   string    `db:"target_id" json:"target_id"`
-	EdgeType   string    `db:"edge_type" json:"edge_type"`
-	Label      *string   `db:"label" json:"label"`
-	SourcePort string    `db:"source_port" json:"source_port"`
-	TargetPort string    `db:"target_port" json:"target_port"`
-	Waypoints  []byte    `db:"waypoints" json:"waypoints"`
-	CreatedAt  time.Time `db:"created_at" json:"created_at"`
-}
-
-func (q *Queries) EdgeUpdate(ctx context.Context, arg EdgeUpdateParams) (EdgeUpdateRow, error) {
+func (q *Queries) EdgeUpdate(ctx context.Context, arg EdgeUpdateParams) (Edge, error) {
 	row := q.db.QueryRow(ctx, edgeUpdate, arg.EdgeType, arg.Label, arg.ID)
-	var i EdgeUpdateRow
+	var i Edge
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
@@ -335,6 +273,7 @@ func (q *Queries) EdgeUpdate(ctx context.Context, arg EdgeUpdateParams) (EdgeUpd
 		&i.SourcePort,
 		&i.TargetPort,
 		&i.Waypoints,
+		&i.Metadata,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -346,7 +285,7 @@ UPDATE edges SET
   target_port = COALESCE($2, target_port),
   waypoints = COALESCE($3, waypoints)
 WHERE id = $4
-RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, created_at
+RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, metadata, created_at
 `
 
 type EdgeUpdateRoutingParams struct {
@@ -356,27 +295,14 @@ type EdgeUpdateRoutingParams struct {
 	ID         string `db:"id" json:"id"`
 }
 
-type EdgeUpdateRoutingRow struct {
-	ID         string    `db:"id" json:"id"`
-	ProjectID  string    `db:"project_id" json:"project_id"`
-	SourceID   string    `db:"source_id" json:"source_id"`
-	TargetID   string    `db:"target_id" json:"target_id"`
-	EdgeType   string    `db:"edge_type" json:"edge_type"`
-	Label      *string   `db:"label" json:"label"`
-	SourcePort string    `db:"source_port" json:"source_port"`
-	TargetPort string    `db:"target_port" json:"target_port"`
-	Waypoints  []byte    `db:"waypoints" json:"waypoints"`
-	CreatedAt  time.Time `db:"created_at" json:"created_at"`
-}
-
-func (q *Queries) EdgeUpdateRouting(ctx context.Context, arg EdgeUpdateRoutingParams) (EdgeUpdateRoutingRow, error) {
+func (q *Queries) EdgeUpdateRouting(ctx context.Context, arg EdgeUpdateRoutingParams) (Edge, error) {
 	row := q.db.QueryRow(ctx, edgeUpdateRouting,
 		arg.SourcePort,
 		arg.TargetPort,
 		arg.Waypoints,
 		arg.ID,
 	)
-	var i EdgeUpdateRoutingRow
+	var i Edge
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
@@ -387,6 +313,7 @@ func (q *Queries) EdgeUpdateRouting(ctx context.Context, arg EdgeUpdateRoutingPa
 		&i.SourcePort,
 		&i.TargetPort,
 		&i.Waypoints,
+		&i.Metadata,
 		&i.CreatedAt,
 	)
 	return i, err

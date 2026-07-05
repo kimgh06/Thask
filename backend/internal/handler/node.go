@@ -277,6 +277,18 @@ func (h *NodeHandler) Update(c echo.Context) error {
 	if req.Height != nil {
 		fields["height"] = *req.Height
 	}
+	if req.LifecycleState != nil {
+		if *req.LifecycleState != "" {
+			fields["lifecycle_state"] = *req.LifecycleState
+		} else {
+			fields["lifecycle_state"] = nil
+		}
+		// Repository sees lifecycle_state in fields and stamps
+		// lifecycle_state_changed_at = now() unconditionally on every write —
+		// even idempotent identity writes bump it. Cheap and correct; if the
+		// bump becomes noisy we can switch to `IS DISTINCT FROM` once fields
+		// is threaded as an ordered slice.
+	}
 
 	if len(fields) == 0 {
 		return c.JSON(http.StatusOK, dto.OK(map[string]any{"node": existing, "propagated": []service.StatusChange{}}))
@@ -304,7 +316,13 @@ func (h *NodeHandler) Update(c echo.Context) error {
 	// Record history (skip for anonymous shared access) + parallel audit_log row.
 	for field, val := range fields {
 		oldVal := getOldValue(existing, field)
-		newVal := fmt.Sprintf("%v", val)
+		// Explicit-clear writes (assignee_id / parent_id / lifecycle_state → nil)
+		// used to serialize as the literal string "<nil>" via %v; store an empty
+		// string instead so downstream readers see a real cleared value.
+		var newVal string
+		if val != nil {
+			newVal = fmt.Sprintf("%v", val)
+		}
 		mk := mutationKindForNodeField(field)
 
 		if userID != mw.AnonymousUserID {
@@ -338,7 +356,7 @@ func (h *NodeHandler) Update(c echo.Context) error {
 	// Waterfall propagation
 	var propagated []service.StatusChange
 	if req.Status != nil && model.NodeStatus(*req.Status) != existing.Status {
-		propagated = h.propagateWaterfall(ctx, projectID, nodeID, model.NodeStatus(*req.Status), userID)
+		propagated = h.propagateWaterfall(c, projectID, nodeID, model.NodeStatus(*req.Status), userID)
 	}
 
 	h.hub.Publish(service.Event{Type: service.EventNodeUpdated, ProjectID: projectID, Data: updated, UserID: userID})
@@ -377,7 +395,8 @@ func (h *NodeHandler) Delete(c echo.Context) error {
 }
 
 // propagateWaterfall computes and applies status changes to downstream nodes.
-func (h *NodeHandler) propagateWaterfall(ctx context.Context, projectID, nodeID string, newStatus model.NodeStatus, userID string) []service.StatusChange {
+func (h *NodeHandler) propagateWaterfall(c echo.Context, projectID, nodeID string, newStatus model.NodeStatus, userID string) []service.StatusChange {
+	ctx := c.Request().Context()
 	if newStatus != model.NodeStatusPass && newStatus != model.NodeStatusFail {
 		return nil
 	}
@@ -408,9 +427,25 @@ func (h *NodeHandler) propagateWaterfall(ctx context.Context, projectID, nodeID 
 		_ = h.nodeRepo.BatchUpdateStatus(ctx, projectID, ids, status)
 	}
 
-	// Batch history insert
-	if userID != mw.AnonymousUserID {
-		h.historyRepo.BatchCreateStatusChanges(ctx, projectID, userID, propagated)
+	// Audit trail for waterfall (v0.6.0: was historyRepo.BatchCreateStatusChanges
+	// before audit_log took over). One row per propagated node with the same
+	// batch_id so the History tab groups them under a single trigger event.
+	if userID != mw.AnonymousUserID && len(propagated) > 0 {
+		batchID := newBatchID()
+		for _, wc := range propagated {
+			h.audit.Log(c, audit.Event{
+				ProjectID:    projectID,
+				EntityType:   "node",
+				EntityID:     wc.NodeID,
+				Action:       audit.ActionStatusChanged,
+				FieldName:    "status",
+				OldValue:     string(wc.OldStatus),
+				NewValue:     string(wc.NewStatus),
+				MutationKind: audit.MutationMeta,
+				Trigger:      "waterfall",
+				BatchID:      batchID,
+			})
+		}
 	}
 
 	return propagated

@@ -27,6 +27,7 @@ func apiKeyFromCreateRow(r dbgen.APIKeyCreateRow) *model.APIKey {
 		KeyPrefix:   r.KeyPrefix,
 		Kind:        model.APIKeyKind(r.Kind),
 		Permissions: r.Permissions,
+		ProjectID:   r.ProjectID,
 		LastUsedAt:  r.LastUsedAt,
 		ExpiresAt:   r.ExpiresAt,
 		CreatedAt:   r.CreatedAt,
@@ -41,13 +42,14 @@ func apiKeyFromFindByUserIDRow(r dbgen.APIKeyFindByUserIDRow) model.APIKey {
 		KeyPrefix:   r.KeyPrefix,
 		Kind:        model.APIKeyKind(r.Kind),
 		Permissions: r.Permissions,
+		ProjectID:   r.ProjectID,
 		LastUsedAt:  r.LastUsedAt,
 		ExpiresAt:   r.ExpiresAt,
 		CreatedAt:   r.CreatedAt,
 	}
 }
 
-func (r *APIKeyRepo) Create(ctx context.Context, userID, name, keyPrefix, keyHash string, kind model.APIKeyKind, perms model.APIKeyPermissions, expiresAt *time.Time) (*model.APIKey, error) {
+func (r *APIKeyRepo) Create(ctx context.Context, userID, name, keyPrefix, keyHash string, kind model.APIKeyKind, perms model.APIKeyPermissions, expiresAt *time.Time, projectID *string) (*model.APIKey, error) {
 	row, err := r.q.APIKeyCreate(ctx, dbgen.APIKeyCreateParams{
 		UserID:      userID,
 		Name:        name,
@@ -56,6 +58,7 @@ func (r *APIKeyRepo) Create(ctx context.Context, userID, name, keyPrefix, keyHas
 		Kind:        string(kind),
 		Permissions: perms,
 		ExpiresAt:   expiresAt,
+		ProjectID:   projectID,
 	})
 	if err != nil {
 		return nil, err
@@ -70,7 +73,7 @@ func (r *APIKeyRepo) FindByKeyHash(ctx context.Context, keyHash string) (*model.
 	var k model.APIKey
 	var u model.User
 	err := r.pool.QueryRow(ctx,
-		`SELECT ak.id, ak.user_id, ak.name, ak.key_prefix, ak.kind, ak.permissions, ak.last_used_at, ak.expires_at, ak.created_at,
+		`SELECT ak.id, ak.user_id, ak.name, ak.key_prefix, ak.kind, ak.permissions, ak.project_id, ak.last_used_at, ak.expires_at, ak.created_at,
 		        u.id, u.email, u.display_name, u.created_at, u.updated_at
 		 FROM api_keys ak
 		 INNER JOIN users u ON ak.user_id = u.id
@@ -78,7 +81,7 @@ func (r *APIKeyRepo) FindByKeyHash(ctx context.Context, keyHash string) (*model.
 		   AND (ak.expires_at IS NULL OR ak.expires_at > now())`,
 		keyHash,
 	).Scan(
-		&k.ID, &k.UserID, &k.Name, &k.KeyPrefix, &k.Kind, &k.Permissions, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt,
+		&k.ID, &k.UserID, &k.Name, &k.KeyPrefix, &k.Kind, &k.Permissions, &k.ProjectID, &k.LastUsedAt, &k.ExpiresAt, &k.CreatedAt,
 		&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {

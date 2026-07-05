@@ -56,8 +56,10 @@ func nodeFromCreateRow(r dbgen.Node) *model.Node {
 		LastVerifiedAt:        r.LastVerifiedAt,
 		LastVerifiedBy:        r.LastVerifiedBy,
 		LastVerifiedCommit:    r.LastVerifiedCommit,
-		FieldProvenance:       r.FieldProvenance,
-		CreatedBy:             r.CreatedBy,
+		FieldProvenance:         r.FieldProvenance,
+		CreatedBy:               r.CreatedBy,
+		LifecycleState:          r.LifecycleState,
+		LifecycleStateChangedAt: r.LifecycleStateChangedAt,
 		// CreatorEmail left empty — Create RETURNING can't JOIN users.
 		// Re-fetch via FindByID if the caller needs it immediately.
 	}
@@ -75,6 +77,7 @@ func nodeFromFindByIDRow(r dbgen.NodeFindByIDRow) *model.Node {
 		LastVerifiedAt: r.LastVerifiedAt, LastVerifiedBy: r.LastVerifiedBy,
 		LastVerifiedCommit: r.LastVerifiedCommit, FieldProvenance: r.FieldProvenance,
 		CreatedBy: r.CreatedBy, CreatorEmail: r.CreatorEmail,
+		LifecycleState: r.LifecycleState, LifecycleStateChangedAt: r.LifecycleStateChangedAt,
 	}
 }
 
@@ -90,6 +93,7 @@ func nodeFromFindByIDsRow(r dbgen.NodeFindByIDsRow) *model.Node {
 		LastVerifiedAt: r.LastVerifiedAt, LastVerifiedBy: r.LastVerifiedBy,
 		LastVerifiedCommit: r.LastVerifiedCommit, FieldProvenance: r.FieldProvenance,
 		CreatedBy: r.CreatedBy, CreatorEmail: r.CreatorEmail,
+		LifecycleState: r.LifecycleState, LifecycleStateChangedAt: r.LifecycleStateChangedAt,
 	}
 }
 
@@ -105,6 +109,7 @@ func nodeFromFindByProjectIDSimpleRow(r dbgen.NodeFindByProjectIDSimpleRow) *mod
 		LastVerifiedAt: r.LastVerifiedAt, LastVerifiedBy: r.LastVerifiedBy,
 		LastVerifiedCommit: r.LastVerifiedCommit, FieldProvenance: r.FieldProvenance,
 		CreatedBy: r.CreatedBy, CreatorEmail: r.CreatorEmail,
+		LifecycleState: r.LifecycleState, LifecycleStateChangedAt: r.LifecycleStateChangedAt,
 	}
 }
 
@@ -120,6 +125,7 @@ func nodeFromFindChangedSinceRow(r dbgen.NodeFindChangedSinceRow) *model.Node {
 		LastVerifiedAt: r.LastVerifiedAt, LastVerifiedBy: r.LastVerifiedBy,
 		LastVerifiedCommit: r.LastVerifiedCommit, FieldProvenance: r.FieldProvenance,
 		CreatedBy: r.CreatedBy, CreatorEmail: r.CreatorEmail,
+		LifecycleState: r.LifecycleState, LifecycleStateChangedAt: r.LifecycleStateChangedAt,
 	}
 }
 
@@ -135,13 +141,14 @@ func nodeFromFindFailOrBugRow(r dbgen.NodeFindFailOrBugRow) *model.Node {
 		LastVerifiedAt: r.LastVerifiedAt, LastVerifiedBy: r.LastVerifiedBy,
 		LastVerifiedCommit: r.LastVerifiedCommit, FieldProvenance: r.FieldProvenance,
 		CreatedBy: r.CreatedBy, CreatorEmail: r.CreatorEmail,
+		LifecycleState: r.LifecycleState, LifecycleStateChangedAt: r.LifecycleStateChangedAt,
 	}
 }
 
 // nodeColsWithCreator is the SELECT list for the hand-written dynamic queries
 // below (FindByProjectIDPaginated, FindByProjectID-with-filters). The alias
 // "n" must be applied to the nodes table.
-const nodeColsWithCreator = `n.id, n.project_id, n.type, n.title, n.description, n.status, n.assignee_id, n.tags, n.metadata, n.parent_id, n.position_x, n.position_y, n.width, n.height, n.created_at, n.updated_at, n.description_source, n.description_authored_by, n.description_authored_at, n.description_agent_model, n.last_verified_at, n.last_verified_by, n.last_verified_commit, n.field_provenance, n.created_by, COALESCE(u.email, '') AS creator_email`
+const nodeColsWithCreator = `n.id, n.project_id, n.type, n.title, n.description, n.status, n.assignee_id, n.tags, n.metadata, n.parent_id, n.position_x, n.position_y, n.width, n.height, n.created_at, n.updated_at, n.description_source, n.description_authored_by, n.description_authored_at, n.description_agent_model, n.last_verified_at, n.last_verified_by, n.last_verified_commit, n.field_provenance, n.created_by, COALESCE(u.email, '') AS creator_email, n.lifecycle_state, n.lifecycle_state_changed_at`
 
 // ============================================================================
 // Repo methods — static = sqlc-generated wrappers, dynamic = hand-written pgx
@@ -220,6 +227,16 @@ func (r *NodeRepo) Update(ctx context.Context, id string, fields map[string]any)
 	// Dynamic setClauses path stays as hand-written pgx — RETURN just the keys
 	// we need to re-fetch the full row through the sqlc-generated FindByID.
 	setClauses := []string{"updated_at = now()"}
+	// lifecycle_state_changed_at auto-stamps on every write that carries
+	// lifecycle_state. Handlers don't have to remember to bump the timestamp;
+	// the repository owns that invariant so any future path (batch update,
+	// MCP tool, import) inherits it for free. Idempotent identity writes will
+	// over-bump the timestamp — acceptable for v0.6.0; if that becomes noisy
+	// we can swap in `IS DISTINCT FROM` once fields is threaded as an ordered
+	// slice with known parameter positions.
+	if _, ok := fields["lifecycle_state"]; ok {
+		setClauses = append(setClauses, "lifecycle_state_changed_at = now()")
+	}
 	args := []any{}
 	idx := 1
 	for col, val := range fields {
@@ -433,8 +450,20 @@ func (r *NodeRepo) FindByProjectIDPaginated(ctx context.Context, projectID strin
 	return nodes, hasMore, nil
 }
 
+// scanArgCount is the number of pointer args scanNodesRaw passes to Scan.
+// Kept in sync with the actual call below AND with nodeColsWithCreator's
+// column count — the invariant is enforced by
+// TestNodeReadPaths_IncludeAllPersistedFields.
+const scanArgCount = 28
+
 // scanNodesRaw is the manual scanner for dynamic-WHERE queries that can't go
 // through sqlc. Field order MUST match nodeColsWithCreator.
+//
+// INVARIANT: this list, nodeColsWithCreator, and every nodeFrom*Row converter
+// must all mention every column persisted on the `nodes` table. See
+// ~/.claude memory `feedback_sql_scan_safety` for prior incidents. Adding a
+// column here without updating the const or the converters is caught by
+// TestNodeReadPaths_IncludeAllPersistedFields in the same package.
 func scanNodesRaw(rows interface {
 	Next() bool
 	Scan(dest ...any) error
@@ -450,6 +479,7 @@ func scanNodesRaw(rows interface {
 			&n.DescriptionSource, &n.DescriptionAuthoredBy, &n.DescriptionAuthoredAt, &n.DescriptionAgentModel,
 			&n.LastVerifiedAt, &n.LastVerifiedBy, &n.LastVerifiedCommit, &n.FieldProvenance,
 			&n.CreatedBy, &n.CreatorEmail,
+			&n.LifecycleState, &n.LifecycleStateChangedAt,
 		); err != nil {
 			return nil, err
 		}

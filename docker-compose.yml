@@ -29,6 +29,13 @@ services:
       FRONTEND_URL: ${APP_URL:-http://localhost:7243}
       CAPTURE_URL: http://capture:7241
       CAPTURE_INTERNAL_SECRET: ${CAPTURE_INTERNAL_SECRET:-}
+      # v0.6.0 B-2: local filesystem attachment storage. Point at the mounted
+      # named volume so uploads survive backend restarts. MinIO/S3 swap-in
+      # keeps this env var (as the S3 prefix) so no callers change.
+      THASK_ATTACHMENT_DIR: /data/attachments
+      THASK_ATTACHMENT_MAX_BYTES: ${THASK_ATTACHMENT_MAX_BYTES:-10485760}
+    volumes:
+      - thask-attachments:/data/attachments
     depends_on:
       postgres:
         condition: service_healthy
@@ -103,3 +110,4 @@ services:
 
 volumes:
   pgdata:
+  thask-attachments:

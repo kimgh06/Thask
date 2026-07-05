@@ -5,11 +5,250 @@
 package dbgen
 
 import (
+	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	model "github.com/thask/backend/internal/model"
 )
+
+type EdgeType string
+
+const (
+	EdgeTypeDependsOn   EdgeType = "depends_on"
+	EdgeTypeBlocks      EdgeType = "blocks"
+	EdgeTypeRelated     EdgeType = "related"
+	EdgeTypeParentChild EdgeType = "parent_child"
+	EdgeTypeTriggers    EdgeType = "triggers"
+	EdgeTypeRealizes    EdgeType = "realizes"
+	EdgeTypeConflicts   EdgeType = "conflicts"
+	EdgeTypeDrives      EdgeType = "drives"
+	EdgeTypeSupersedes  EdgeType = "supersedes"
+	EdgeTypeTests       EdgeType = "tests"
+	EdgeTypeProduced    EdgeType = "produced"
+	EdgeTypeOwns        EdgeType = "owns"
+	EdgeTypeDecided     EdgeType = "decided"
+	EdgeTypeReported    EdgeType = "reported"
+)
+
+func (e *EdgeType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = EdgeType(s)
+	case string:
+		*e = EdgeType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for EdgeType: %T", src)
+	}
+	return nil
+}
+
+type NullEdgeType struct {
+	EdgeType EdgeType `json:"edge_type"`
+	Valid    bool     `json:"valid"` // Valid is true if EdgeType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullEdgeType) Scan(value interface{}) error {
+	if value == nil {
+		ns.EdgeType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.EdgeType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullEdgeType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.EdgeType), nil
+}
+
+type HistoryAction string
+
+const (
+	HistoryActionCreated       HistoryAction = "created"
+	HistoryActionUpdated       HistoryAction = "updated"
+	HistoryActionDeleted       HistoryAction = "deleted"
+	HistoryActionStatusChanged HistoryAction = "status_changed"
+)
+
+func (e *HistoryAction) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = HistoryAction(s)
+	case string:
+		*e = HistoryAction(s)
+	default:
+		return fmt.Errorf("unsupported scan type for HistoryAction: %T", src)
+	}
+	return nil
+}
+
+type NullHistoryAction struct {
+	HistoryAction HistoryAction `json:"history_action"`
+	Valid         bool          `json:"valid"` // Valid is true if HistoryAction is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullHistoryAction) Scan(value interface{}) error {
+	if value == nil {
+		ns.HistoryAction, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.HistoryAction.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullHistoryAction) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.HistoryAction), nil
+}
+
+type NodeStatus string
+
+const (
+	NodeStatusPASS       NodeStatus = "PASS"
+	NodeStatusFAIL       NodeStatus = "FAIL"
+	NodeStatusINPROGRESS NodeStatus = "IN_PROGRESS"
+	NodeStatusBLOCKED    NodeStatus = "BLOCKED"
+)
+
+func (e *NodeStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = NodeStatus(s)
+	case string:
+		*e = NodeStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for NodeStatus: %T", src)
+	}
+	return nil
+}
+
+type NullNodeStatus struct {
+	NodeStatus NodeStatus `json:"node_status"`
+	Valid      bool       `json:"valid"` // Valid is true if NodeStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullNodeStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.NodeStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.NodeStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullNodeStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.NodeStatus), nil
+}
+
+type NodeType string
+
+const (
+	NodeTypeFLOW        NodeType = "FLOW"
+	NodeTypeBRANCH      NodeType = "BRANCH"
+	NodeTypeTASK        NodeType = "TASK"
+	NodeTypeBUG         NodeType = "BUG"
+	NodeTypeAPI         NodeType = "API"
+	NodeTypeUI          NodeType = "UI"
+	NodeTypeGROUP       NodeType = "GROUP"
+	NodeTypeREQUIREMENT NodeType = "REQUIREMENT"
+	NodeTypeDECISION    NodeType = "DECISION"
+	NodeTypeEXPERIMENT  NodeType = "EXPERIMENT"
+	NodeTypePERSON      NodeType = "PERSON"
+)
+
+func (e *NodeType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = NodeType(s)
+	case string:
+		*e = NodeType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for NodeType: %T", src)
+	}
+	return nil
+}
+
+type NullNodeType struct {
+	NodeType NodeType `json:"node_type"`
+	Valid    bool     `json:"valid"` // Valid is true if NodeType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullNodeType) Scan(value interface{}) error {
+	if value == nil {
+		ns.NodeType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.NodeType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullNodeType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.NodeType), nil
+}
+
+type TeamRole string
+
+const (
+	TeamRoleOwner  TeamRole = "owner"
+	TeamRoleAdmin  TeamRole = "admin"
+	TeamRoleMember TeamRole = "member"
+	TeamRoleViewer TeamRole = "viewer"
+)
+
+func (e *TeamRole) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = TeamRole(s)
+	case string:
+		*e = TeamRole(s)
+	default:
+		return fmt.Errorf("unsupported scan type for TeamRole: %T", src)
+	}
+	return nil
+}
+
+type NullTeamRole struct {
+	TeamRole TeamRole `json:"team_role"`
+	Valid    bool     `json:"valid"` // Valid is true if TeamRole is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullTeamRole) Scan(value interface{}) error {
+	if value == nil {
+		ns.TeamRole, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.TeamRole.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullTeamRole) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.TeamRole), nil
+}
 
 type ApiKey struct {
 	ID          string                  `db:"id" json:"id"`
@@ -22,6 +261,7 @@ type ApiKey struct {
 	CreatedAt   time.Time               `db:"created_at" json:"created_at"`
 	Kind        string                  `db:"kind" json:"kind"`
 	Permissions model.APIKeyPermissions `db:"permissions" json:"permissions"`
+	ProjectID   *string                 `db:"project_id" json:"project_id"`
 }
 
 type AuditLog struct {
@@ -51,16 +291,17 @@ type AuditLog struct {
 }
 
 type Edge struct {
-	ID         string    `db:"id" json:"id"`
-	ProjectID  string    `db:"project_id" json:"project_id"`
-	SourceID   string    `db:"source_id" json:"source_id"`
-	TargetID   string    `db:"target_id" json:"target_id"`
-	EdgeType   string    `db:"edge_type" json:"edge_type"`
-	Label      *string   `db:"label" json:"label"`
-	CreatedAt  time.Time `db:"created_at" json:"created_at"`
-	SourcePort string    `db:"source_port" json:"source_port"`
-	TargetPort string    `db:"target_port" json:"target_port"`
-	Waypoints  []byte    `db:"waypoints" json:"waypoints"`
+	ID         string          `db:"id" json:"id"`
+	ProjectID  string          `db:"project_id" json:"project_id"`
+	SourceID   string          `db:"source_id" json:"source_id"`
+	TargetID   string          `db:"target_id" json:"target_id"`
+	EdgeType   string          `db:"edge_type" json:"edge_type"`
+	Label      *string         `db:"label" json:"label"`
+	SourcePort string          `db:"source_port" json:"source_port"`
+	TargetPort string          `db:"target_port" json:"target_port"`
+	Waypoints  []byte          `db:"waypoints" json:"waypoints"`
+	Metadata   json.RawMessage `db:"metadata" json:"metadata"`
+	CreatedAt  time.Time       `db:"created_at" json:"created_at"`
 }
 
 type IdempotencyKey struct {
@@ -75,43 +316,71 @@ type IdempotencyKey struct {
 }
 
 type Node struct {
-	ID                    string          `db:"id" json:"id"`
-	ProjectID             string          `db:"project_id" json:"project_id"`
-	Type                  string          `db:"type" json:"type"`
-	Title                 string          `db:"title" json:"title"`
-	Description           *string         `db:"description" json:"description"`
-	Status                string          `db:"status" json:"status"`
-	AssigneeID            *string         `db:"assignee_id" json:"assignee_id"`
-	Tags                  []string        `db:"tags" json:"tags"`
-	Metadata              json.RawMessage `db:"metadata" json:"metadata"`
-	ParentID              *string         `db:"parent_id" json:"parent_id"`
-	PositionX             float64         `db:"position_x" json:"position_x"`
-	PositionY             float64         `db:"position_y" json:"position_y"`
-	Width                 *float64        `db:"width" json:"width"`
-	Height                *float64        `db:"height" json:"height"`
-	CreatedAt             time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt             time.Time       `db:"updated_at" json:"updated_at"`
-	DescriptionSource     string          `db:"description_source" json:"description_source"`
-	DescriptionAuthoredBy *string         `db:"description_authored_by" json:"description_authored_by"`
-	DescriptionAuthoredAt *time.Time      `db:"description_authored_at" json:"description_authored_at"`
-	DescriptionAgentModel *string         `db:"description_agent_model" json:"description_agent_model"`
-	LastVerifiedAt        *time.Time      `db:"last_verified_at" json:"last_verified_at"`
-	LastVerifiedBy        *string         `db:"last_verified_by" json:"last_verified_by"`
-	LastVerifiedCommit    *string         `db:"last_verified_commit" json:"last_verified_commit"`
-	FieldProvenance       json.RawMessage `db:"field_provenance" json:"field_provenance"`
-	CreatedBy             *string         `db:"created_by" json:"created_by"`
+	ID                      string          `db:"id" json:"id"`
+	ProjectID               string          `db:"project_id" json:"project_id"`
+	Type                    string          `db:"type" json:"type"`
+	Title                   string          `db:"title" json:"title"`
+	Description             *string         `db:"description" json:"description"`
+	Status                  string          `db:"status" json:"status"`
+	AssigneeID              *string         `db:"assignee_id" json:"assignee_id"`
+	Tags                    []string        `db:"tags" json:"tags"`
+	Metadata                json.RawMessage `db:"metadata" json:"metadata"`
+	ParentID                *string         `db:"parent_id" json:"parent_id"`
+	PositionX               float64         `db:"position_x" json:"position_x"`
+	PositionY               float64         `db:"position_y" json:"position_y"`
+	Width                   *float64        `db:"width" json:"width"`
+	Height                  *float64        `db:"height" json:"height"`
+	CreatedAt               time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt               time.Time       `db:"updated_at" json:"updated_at"`
+	DescriptionSource       string          `db:"description_source" json:"description_source"`
+	DescriptionAuthoredBy   *string         `db:"description_authored_by" json:"description_authored_by"`
+	DescriptionAuthoredAt   *time.Time      `db:"description_authored_at" json:"description_authored_at"`
+	DescriptionAgentModel   *string         `db:"description_agent_model" json:"description_agent_model"`
+	LastVerifiedAt          *time.Time      `db:"last_verified_at" json:"last_verified_at"`
+	LastVerifiedBy          *string         `db:"last_verified_by" json:"last_verified_by"`
+	LastVerifiedCommit      *string         `db:"last_verified_commit" json:"last_verified_commit"`
+	FieldProvenance         json.RawMessage `db:"field_provenance" json:"field_provenance"`
+	CreatedBy               *string         `db:"created_by" json:"created_by"`
+	LifecycleState          *string         `db:"lifecycle_state" json:"lifecycle_state"`
+	LifecycleStateChangedAt *time.Time      `db:"lifecycle_state_changed_at" json:"lifecycle_state_changed_at"`
+}
+
+type NodeAttachment struct {
+	ID         string    `db:"id" json:"id"`
+	NodeID     string    `db:"node_id" json:"node_id"`
+	ProjectID  string    `db:"project_id" json:"project_id"`
+	Filename   string    `db:"filename" json:"filename"`
+	MimeType   string    `db:"mime_type" json:"mime_type"`
+	SizeBytes  int64     `db:"size_bytes" json:"size_bytes"`
+	StorageKey string    `db:"storage_key" json:"storage_key"`
+	Sha256     string    `db:"sha256" json:"sha256"`
+	UploadedBy string    `db:"uploaded_by" json:"uploaded_by"`
+	CreatedAt  time.Time `db:"created_at" json:"created_at"`
+}
+
+type NodeComment struct {
+	ID         string     `db:"id" json:"id"`
+	NodeID     string     `db:"node_id" json:"node_id"`
+	ProjectID  string     `db:"project_id" json:"project_id"`
+	AuthorID   string     `db:"author_id" json:"author_id"`
+	ParentID   *string    `db:"parent_id" json:"parent_id"`
+	Body       string     `db:"body" json:"body"`
+	ResolvedAt *time.Time `db:"resolved_at" json:"resolved_at"`
+	ResolvedBy *string    `db:"resolved_by" json:"resolved_by"`
+	CreatedAt  time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt  time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 type NodeHistory struct {
-	ID        string      `db:"id" json:"id"`
-	NodeID    string      `db:"node_id" json:"node_id"`
-	ProjectID string      `db:"project_id" json:"project_id"`
-	UserID    string      `db:"user_id" json:"user_id"`
-	Action    interface{} `db:"action" json:"action"`
-	FieldName *string     `db:"field_name" json:"field_name"`
-	OldValue  *string     `db:"old_value" json:"old_value"`
-	NewValue  *string     `db:"new_value" json:"new_value"`
-	CreatedAt time.Time   `db:"created_at" json:"created_at"`
+	ID        string    `db:"id" json:"id"`
+	NodeID    string    `db:"node_id" json:"node_id"`
+	ProjectID string    `db:"project_id" json:"project_id"`
+	UserID    string    `db:"user_id" json:"user_id"`
+	Action    string    `db:"action" json:"action"`
+	FieldName *string   `db:"field_name" json:"field_name"`
+	OldValue  *string   `db:"old_value" json:"old_value"`
+	NewValue  *string   `db:"new_value" json:"new_value"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }
 
 type NodeSuggestion struct {
@@ -152,6 +421,15 @@ type ProjectMember struct {
 	UserID    string    `db:"user_id" json:"user_id"`
 	Role      string    `db:"role" json:"role"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
+}
+
+type ProjectTag struct {
+	ProjectID   string    `db:"project_id" json:"project_id"`
+	Tag         string    `db:"tag" json:"tag"`
+	Color       *string   `db:"color" json:"color"`
+	Description *string   `db:"description" json:"description"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+	CreatedBy   *string   `db:"created_by" json:"created_by"`
 }
 
 type SchemaMigration struct {

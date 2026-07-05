@@ -8,20 +8,20 @@
 -- name: EdgeCreate :one
 INSERT INTO edges (project_id, source_id, target_id, edge_type, label)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, created_at;
+RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, metadata, created_at;
 
 -- name: EdgeCreateWithRouting :one
 INSERT INTO edges (project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, created_at;
+RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, metadata, created_at;
 
 -- name: EdgeFindByProjectID :many
-SELECT id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, created_at
+SELECT id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, metadata, created_at
 FROM edges
 WHERE project_id = $1;
 
 -- name: EdgeFindConnected :many
-SELECT id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, created_at
+SELECT id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, metadata, created_at
 FROM edges
 WHERE source_id = $1 OR target_id = $1;
 
@@ -30,7 +30,7 @@ UPDATE edges SET
   edge_type = COALESCE($1, edge_type),
   label = COALESCE($2, label)
 WHERE id = $3
-RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, created_at;
+RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, metadata, created_at;
 
 -- name: EdgeUpdateRouting :one
 UPDATE edges SET
@@ -38,7 +38,7 @@ UPDATE edges SET
   target_port = COALESCE($2, target_port),
   waypoints = COALESCE($3, waypoints)
 WHERE id = $4
-RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, created_at;
+RETURNING id, project_id, source_id, target_id, edge_type, label, source_port, target_port, waypoints, metadata, created_at;
 
 -- name: EdgeResetWaypoints :exec
 UPDATE edges SET waypoints = '[]', source_port = 'auto', target_port = 'auto'

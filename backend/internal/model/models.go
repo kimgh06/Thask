@@ -111,6 +111,13 @@ type Node struct {
 	// on users. Empty when the user account has been deleted or for legacy nodes.
 	CreatedBy    *string `json:"createdBy,omitempty" db:"created_by"`
 	CreatorEmail string  `json:"creatorEmail,omitempty" db:"creator_email"`
+
+	// Domain lifecycle (migration 012). Orthogonal to Status: Status tracks
+	// operational progress (PASS/FAIL/IN_PROGRESS/BLOCKED), LifecycleState
+	// tracks per-type semantic phase (e.g., REQUIREMENT ACCEPTED,
+	// DECISION APPROVED). LifecycleStateChangedAt records when it last flipped.
+	LifecycleState          *string    `json:"lifecycleState,omitempty" db:"lifecycle_state"`
+	LifecycleStateChangedAt *time.Time `json:"lifecycleStateChangedAt,omitempty" db:"lifecycle_state_changed_at"`
 }
 
 type NodeDetail struct {
@@ -130,6 +137,7 @@ type Edge struct {
 	SourcePort string    `json:"sourcePort" db:"source_port"`
 	TargetPort string    `json:"targetPort" db:"target_port"`
 	Waypoints  any       `json:"waypoints" db:"waypoints"`
+	Metadata   any       `json:"metadata" db:"metadata"`
 	CreatedAt  time.Time `json:"createdAt" db:"created_at"`
 }
 
@@ -145,14 +153,18 @@ type NodeHistory struct {
 	CreatedAt time.Time     `json:"createdAt" db:"created_at"`
 }
 
+// NodeHistoryEntry is the frontend/CLI-facing shape of a single audit_log
+// row. Action is a plain string because audit_log.action can carry values
+// (`imported`, `verified`, `resolved`, ...) that fall outside the smaller
+// HistoryAction enum — the client just renders it as text.
 type NodeHistoryEntry struct {
-	ID        string        `json:"id" db:"id"`
-	Action    HistoryAction `json:"action" db:"action"`
-	FieldName *string       `json:"fieldName" db:"field_name"`
-	OldValue  *string       `json:"oldValue" db:"old_value"`
-	NewValue  *string       `json:"newValue" db:"new_value"`
-	CreatedAt time.Time     `json:"createdAt" db:"created_at"`
-	UserName  string        `json:"userName" db:"display_name"`
+	ID        string    `json:"id" db:"id"`
+	Action    string    `json:"action" db:"action"`
+	FieldName *string   `json:"fieldName" db:"field_name"`
+	OldValue  *string   `json:"oldValue" db:"old_value"`
+	NewValue  *string   `json:"newValue" db:"new_value"`
+	CreatedAt time.Time `json:"createdAt" db:"created_at"`
+	UserName  string    `json:"userName" db:"display_name"`
 }
 
 type APIKey struct {
@@ -163,6 +175,9 @@ type APIKey struct {
 	KeyHash     string             `json:"-" db:"key_hash"`
 	Kind        APIKeyKind         `json:"kind" db:"kind"`
 	Permissions APIKeyPermissions  `json:"permissions" db:"permissions"`
+	// ProjectID scopes the key to a single project. NULL = all of the user's
+	// projects (v0.5.x behavior). Set on create in v0.6.0+.
+	ProjectID   *string            `json:"projectId,omitempty" db:"project_id"`
 	LastUsedAt  *time.Time         `json:"lastUsedAt,omitempty" db:"last_used_at"`
 	ExpiresAt   *time.Time         `json:"expiresAt,omitempty" db:"expires_at"`
 	CreatedAt   time.Time          `json:"createdAt" db:"created_at"`
@@ -323,4 +338,48 @@ type NodeSuggestion struct {
 	DecidedAt       *time.Time `json:"decidedAt,omitempty" db:"decided_at"`
 	DecidedReason   *string    `json:"decidedReason,omitempty" db:"decided_reason"`
 	CreatedAt       time.Time  `json:"createdAt" db:"created_at"`
+}
+
+// NodeComment is a threaded discussion note attached to a node (v0.6.0 B-1).
+// parent_id is self-referential to model one-level threads. resolved_at is
+// set when a reviewer marks the thread resolved.
+type NodeComment struct {
+	ID         string     `json:"id" db:"id"`
+	NodeID     string     `json:"nodeId" db:"node_id"`
+	ProjectID  string     `json:"projectId" db:"project_id"`
+	AuthorID   string     `json:"authorId" db:"author_id"`
+	ParentID   *string    `json:"parentId,omitempty" db:"parent_id"`
+	Body       string     `json:"body" db:"body"`
+	ResolvedAt *time.Time `json:"resolvedAt,omitempty" db:"resolved_at"`
+	ResolvedBy *string    `json:"resolvedBy,omitempty" db:"resolved_by"`
+	CreatedAt  time.Time  `json:"createdAt" db:"created_at"`
+	UpdatedAt  time.Time  `json:"updatedAt" db:"updated_at"`
+}
+
+// NodeAttachment is a file attached to a node (v0.6.0 B-2). storage_key is a
+// relative path inside THASK_ATTACHMENT_DIR (local filesystem) — swap for an
+// S3 object key when MinIO backend lands.
+type NodeAttachment struct {
+	ID         string    `json:"id" db:"id"`
+	NodeID     string    `json:"nodeId" db:"node_id"`
+	ProjectID  string    `json:"projectId" db:"project_id"`
+	Filename   string    `json:"filename" db:"filename"`
+	MimeType   string    `json:"mimeType" db:"mime_type"`
+	SizeBytes  int64     `json:"sizeBytes" db:"size_bytes"`
+	StorageKey string    `json:"-" db:"storage_key"`
+	SHA256     string    `json:"sha256" db:"sha256"`
+	UploadedBy string    `json:"uploadedBy" db:"uploaded_by"`
+	CreatedAt  time.Time `json:"createdAt" db:"created_at"`
+}
+
+// ProjectTag is canonical metadata for a tag used across a project (v0.6.0 B-3).
+// nodes.tags TEXT[] stays the primary storage — this table augments it so the
+// UI can offer autocomplete + consistent styling.
+type ProjectTag struct {
+	ProjectID   string    `json:"projectId" db:"project_id"`
+	Tag         string    `json:"tag" db:"tag"`
+	Color       *string   `json:"color,omitempty" db:"color"`
+	Description *string   `json:"description,omitempty" db:"description"`
+	CreatedAt   time.Time `json:"createdAt" db:"created_at"`
+	CreatedBy   *string   `json:"createdBy,omitempty" db:"created_by"`
 }
