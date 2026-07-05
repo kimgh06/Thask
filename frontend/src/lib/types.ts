@@ -1,6 +1,31 @@
-export type NodeType = 'FLOW' | 'BRANCH' | 'TASK' | 'BUG' | 'API' | 'UI' | 'GROUP';
+export type NodeType =
+	| 'FLOW'
+	| 'BRANCH'
+	| 'TASK'
+	| 'BUG'
+	| 'API'
+	| 'UI'
+	| 'GROUP'
+	| 'REQUIREMENT'
+	| 'DECISION'
+	| 'EXPERIMENT'
+	| 'PERSON';
 export type NodeStatus = 'PASS' | 'FAIL' | 'IN_PROGRESS' | 'BLOCKED';
-export type EdgeType = 'depends_on' | 'blocks' | 'related' | 'parent_child' | 'triggers';
+export type EdgeType =
+	| 'depends_on'
+	| 'blocks'
+	| 'related'
+	| 'parent_child'
+	| 'triggers'
+	| 'realizes'
+	| 'conflicts'
+	| 'drives'
+	| 'supersedes'
+	| 'tests'
+	| 'produced'
+	| 'owns'
+	| 'decided'
+	| 'reported';
 export type TeamRole = 'owner' | 'admin' | 'member' | 'viewer';
 
 export interface User {
@@ -49,6 +74,8 @@ export interface GraphNode {
 	updatedAt: string;
 	createdBy?: string;
 	creatorEmail?: string;
+	lifecycleState?: string | null;
+	lifecycleStateChangedAt?: string | null;
 }
 
 export interface GraphEdge {
@@ -60,6 +87,7 @@ export interface GraphEdge {
 	label: string | null;
 	sourcePort: string;
 	targetPort: string;
+	metadata?: Record<string, unknown>;
 	createdAt: string;
 }
 

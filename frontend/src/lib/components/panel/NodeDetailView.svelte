@@ -282,6 +282,29 @@
 			{/if}
 		</div>
 
+		<!-- Lifecycle state (v0.6.0). Shown for REQUIREMENT/DECISION/EXPERIMENT/PERSON;
+		     other types leave it blank. Free-form text input for the phase-A
+		     "lazy" editor — per-type dropdowns land with v0.6.1. -->
+		{#if node.type === 'REQUIREMENT' || node.type === 'DECISION' || node.type === 'EXPERIMENT' || node.type === 'PERSON'}
+			<div class="flex flex-col gap-1">
+				<span class="text-xs font-medium" style="color: var(--color-text-muted);">Lifecycle state</span>
+				<input
+					type="text"
+					value={node.lifecycleState ?? ''}
+					{...(readonly ? { readonly: true } : {})}
+					onchange={(e) => onupdate?.(node.id, { lifecycleState: (e.currentTarget as HTMLInputElement).value })}
+					placeholder="e.g. APPROVED, RUNNING, DEPRECATED"
+					class="px-2 py-1 rounded text-xs outline-none"
+					style="background: var(--color-bg); color: var(--color-text); border: 1px solid var(--color-border);"
+				/>
+				{#if node.lifecycleStateChangedAt}
+					<span class="text-[10px]" style="color: var(--color-text-muted);">
+						Last changed {relativeDate(node.lifecycleStateChangedAt)}
+					</span>
+				{/if}
+			</div>
+		{/if}
+
 		<div class="grid grid-cols-2 gap-2">
 			<div class="flex flex-col gap-0.5">
 				<span class="text-[10px] font-medium flex items-center gap-1" style="color: var(--color-text-muted);"><Clock size={10} /> Created</span>

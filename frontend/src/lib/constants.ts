@@ -1,7 +1,30 @@
 import type { NodeType, NodeStatus, EdgeType } from '$lib/types';
 
-export const NODE_TYPES: NodeType[] = ['FLOW', 'BRANCH', 'TASK', 'BUG', 'API', 'UI', 'GROUP'];
-export const NODE_TYPES_NO_GROUP: NodeType[] = ['FLOW', 'BRANCH', 'TASK', 'BUG', 'API', 'UI'];
+export const NODE_TYPES: NodeType[] = [
+	'FLOW',
+	'BRANCH',
+	'TASK',
+	'BUG',
+	'API',
+	'UI',
+	'GROUP',
+	'REQUIREMENT',
+	'DECISION',
+	'EXPERIMENT',
+	'PERSON',
+];
+export const NODE_TYPES_NO_GROUP: NodeType[] = [
+	'FLOW',
+	'BRANCH',
+	'TASK',
+	'BUG',
+	'API',
+	'UI',
+	'REQUIREMENT',
+	'DECISION',
+	'EXPERIMENT',
+	'PERSON',
+];
 export const STATUS_OPTIONS: NodeStatus[] = ['PASS', 'FAIL', 'IN_PROGRESS', 'BLOCKED'];
 
 export const TYPE_COLORS: Record<NodeType, string> = {
@@ -12,6 +35,13 @@ export const TYPE_COLORS: Record<NodeType, string> = {
 	API: '#5ea87a',
 	UI: '#d4915a',
 	GROUP: '#7c7570',
+	// v0.6.0 Knowledge OS entities. Palette picks lean on the "Amber Precision"
+	// spectrum: teal for REQUIREMENT (specifies), amber for DECISION (chosen),
+	// violet for EXPERIMENT (probing), warm neutral for PERSON (human).
+	REQUIREMENT: '#4a9fb0',
+	DECISION: '#c9942e',
+	EXPERIMENT: '#9370c4',
+	PERSON: '#c48a4d',
 };
 
 export const STATUS_COLORS: Record<NodeStatus, string> = {
@@ -36,6 +66,10 @@ export const NODE_SHAPES: Record<string, string> = {
 	API: 'barrel',
 	UI: 'ellipse',
 	GROUP: 'round-rectangle',
+	REQUIREMENT: 'round-rectangle',
+	DECISION: 'diamond',
+	EXPERIMENT: 'octagon',
+	PERSON: 'ellipse',
 };
 
 export const EDGE_COLORS: Record<EdgeType, string> = {
@@ -44,6 +78,17 @@ export const EDGE_COLORS: Record<EdgeType, string> = {
 	related: '#7c7570',
 	parent_child: '#7ca3c4',
 	triggers: '#e2b340',
+	// v0.6.0 semantic edges reuse category hues from TYPE_COLORS so viewers
+	// can trace at a glance which entity kind an edge belongs to.
+	realizes: '#4a9fb0',
+	conflicts: '#e05252',
+	drives: '#c9942e',
+	supersedes: '#c9942e',
+	tests: '#9370c4',
+	produced: '#9370c4',
+	owns: '#c48a4d',
+	decided: '#c48a4d',
+	reported: '#c48a4d',
 };
 
 /** Design system color constants for use in Cytoscape styles (which cannot use CSS variables) */
